@@ -1,9 +1,6 @@
 #include "kernel_cfg.h"
 #include "app.h"
 #include <stdio.h>
-#include <serial/newlib.h>
-#include <serial/serial.h>
-#include <cstdio>
 #include "LineTracer.h"
 
 #include <spike/pup/forcesensor.h>
@@ -22,7 +19,6 @@ void main_task(intptr_t unused) {
   printf("+---------------------------------+\n");
   /* フォースセンサーが押下されるまで待機 */
   pup_device_t *force_sensor = pup_force_sensor_get_device(force_sensor_port);
-  
   while (!pup_force_sensor_touched(force_sensor)) {
     dly_tsk(10*1000);
   }

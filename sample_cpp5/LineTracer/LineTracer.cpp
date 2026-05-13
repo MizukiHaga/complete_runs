@@ -4,7 +4,7 @@
 
 #include <spike/pup/motor.h>
 #include <spike/pup/colorsensor.h>
-#include <spike/hub/system.h>
+
 /* 関数プロトタイプ宣言 */
 static int16_t steering_amount_calculation(void);
 static void motor_drive_control(int16_t);
@@ -23,7 +23,6 @@ void LineTracer_Configure(pbio_port_id_t left_motor_port, pbio_port_id_t right_m
 
   pup_motor_setup(fg_left_motor,PUP_DIRECTION_COUNTERCLOCKWISE,true);
   pup_motor_setup(fg_right_motor,PUP_DIRECTION_CLOCKWISE,true);  
-  printf("aho\n");
 
 }
 

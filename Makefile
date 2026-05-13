@@ -68,7 +68,10 @@ PYBRICKS_LIB =
 endif
 
 img: $(APPLDIRS) $(BUILDDIR)/Makefile $(DEPKERNEL)
-	echo "$(APPLDIRS)" > $(WSPDIR)/appdir && \
+ifneq (,$(wildcard HUB_NAME))
+	@$(COMMONDIR)/check_hub-name.sh HUB_NAME $(BUILDDIR)/HUB_NAME
+endif
+	@echo "$(APPLDIRS)" > $(WSPDIR)/appdir && \
 	make -j $(JOB_NUM) -C $(BUILDDIR) && \
 	cp $(BUILDDIR)/$(OBJBINARY) $(WSPDIR)
 ifdef KERNEL_LIB
@@ -76,7 +79,7 @@ ifdef KERNEL_LIB
 	@echo "$(abspath $(PYBRICKS_LIB))" > $(BUILDDIR)/.PYBRICKS_LIB
 endif
 
-$(BUILDDIR)/Makefile:
+$(BUILDDIR)/Makefile:	Makefile $(MKFILE_DIR)/$(MKFILENAME)
 	@mkdir -p $(BUILDDIR)
 	@cd $(BUILDDIR) && \
 	$(SRCDIR)/configure.rb -T $(TARGET) $(OPTKERNEL) \
@@ -88,7 +91,7 @@ $(BUILDDIR)/Makefile:
 	  -m $(MKFILE_DIR)/$(MKFILENAME)
 
 ifdef KERNEL_LIB
-$(KERNEL_LIB)/Makefile:
+$(KERNEL_LIB)/Makefile:	Makefile $(COMMONDIR)/kernel.mk
 	@mkdir -p $(KERNEL_LIB)
 	@cd $(KERNEL_LIB) && \
 	$(SRCDIR)/configure.rb -T $(TARGET) -f -m $(COMMONDIR)/kernel.mk
@@ -100,7 +103,7 @@ endif
 endif
 
 usage:
-	@cho "Usage:"
+	@echo "Usage:"
 	@echo "  make img=\"<folder>\""
 	@echo "  make upload"
 	@echo "  make clean"
@@ -131,5 +134,10 @@ endif
 cleanup:	
 	@rm -rf $(notdir $(OBJFILENAME)) $(OBJBINARY) firmware.dfu $(DEPKERNEL)
 
-.PHONY: usage img upload clean cleanup realclean
+distclean:
+	@$(foreach app,$(wildcard */build),make -C $(app) realclean;)
+	@$(foreach app,$(wildcard */build),rm -rf $(app);)
+	@rm -rf appdir asp.bin ../../build
+
+.PHONY: usage img upload clean cleanup realclean distclean
 	
