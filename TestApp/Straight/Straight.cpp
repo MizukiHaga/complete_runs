@@ -13,6 +13,7 @@ static int clamp_motor_power(int power) {
   if (power < -100) {
     return -100;
   }
+  printf("Clamping motor power: %d\n", power);
   return power;
 }
 
