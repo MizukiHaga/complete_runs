@@ -96,7 +96,13 @@ $(KERNEL_LIB)/Makefile:	Makefile $(COMMONDIR)/kernel.mk
 	@cd $(KERNEL_LIB) && \
 	$(SRCDIR)/configure.rb -T $(TARGET) -f -m $(COMMONDIR)/kernel.mk
 
-$(DEPKERNEL): $(KERNEL_LIB)/Makefile
+# libkernel.a must be rebuilt when driver sources change; the generated
+# KERNEL_LIB/Makefile timestamp alone does not reflect edits under drivers/.
+KERNEL_LIB_DRIVER_SOURCES := \
+	$(SPIKE_RT_DIR)/drivers/spike/hub/speaker.c \
+	$(SPIKE_RT_DIR)/drivers/spike/pup/pup_device.c
+
+$(DEPKERNEL): $(KERNEL_LIB)/Makefile $(KERNEL_LIB_DRIVER_SOURCES)
 	@make libkernel.a -j $(JOB_NUM) -C $(KERNEL_LIB)
 endif
 

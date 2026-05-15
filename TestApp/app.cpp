@@ -37,7 +37,7 @@ void main_task(intptr_t unused) {
   printf("Start Line Trace!!\n");
 
   /* ライントレースタスクの起動 */
-  Straight_RunFor(50, 50, 1000);
+  Straight_RunFor(-85, -80, 3000);
   /* タスク終了 */
   ext_tsk();
 }
