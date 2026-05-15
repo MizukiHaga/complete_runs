@@ -40,14 +40,18 @@ void Straight_RunFor(int left_power, int right_power, uint32_t duration_ms) {
     Straight_Stop();
     return;
   }
+  // 時間が長すぎる場合は最大時間にする
   if (duration_ms > STRAIGHT_MAX_DURATION_MS) {
     duration_ms = STRAIGHT_MAX_DURATION_MS;
   }
 
+  // 減速
   uint32_t decel_ms = STRAIGHT_DECEL_MS;
   if (decel_ms > duration_ms) {
     decel_ms = duration_ms;
   }
+
+  //実際に設定した時間で走る時間を計算
   const uint32_t cruise_ms = duration_ms - decel_ms;
 
   if (cruise_ms > 0U) {
@@ -55,16 +59,15 @@ void Straight_RunFor(int left_power, int right_power, uint32_t duration_ms) {
     dly_tsk((RELTIM)(cruise_ms * 1000U));
   }
 
+  // 線形減速
   for (uint32_t t = 0U; t < decel_ms;) {
     uint32_t slice = STRAIGHT_DECEL_STEP_MS;
     if (t + slice > decel_ms) {
       slice = decel_ms - t;
     }
     const uint32_t numer = decel_ms - t;
-    const int left =
-        (int)((int64_t)left_power * (int64_t)numer / (int64_t)decel_ms);
-    const int right =
-        (int)((int64_t)right_power * (int64_t)numer / (int64_t)decel_ms);
+    const int left = (int)((int64_t)left_power * (int64_t)numer / (int64_t)decel_ms);
+    const int right = (int)((int64_t)right_power * (int64_t)numer / (int64_t)decel_ms);
     Straight_Run(left, right);
     dly_tsk((RELTIM)(slice * 1000U));
     t += slice;
