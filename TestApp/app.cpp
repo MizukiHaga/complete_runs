@@ -32,6 +32,7 @@ void main_task(intptr_t unused) {
   }
 
   printf("Start Line Trace!!\n");
+
   /* タスク終了 */
   ext_tsk();
 }
