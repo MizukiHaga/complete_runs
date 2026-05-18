@@ -18,6 +18,7 @@
 #endif
 #include "drivers.h"
 #include "pybricks.h"
+#include "app_init.h"
 #include "tTask_tecsgen.h"
 #include "tInitializeRoutine_tecsgen.h"
 #include "tTerminateRoutine_tecsgen.h"
@@ -30,12 +31,16 @@
 const ID _kernel_tmax_tskid = (TMIN_TSKID + TNUM_TSKID - 1);
 
 static STK_T _kernel_stack_PYBRICKS_TASK[COUNT_STK_T(PYBRICKS_STACK_SIZE)];
+static STK_T _kernel_stack_APP_INIT_TASK[COUNT_STK_T(4096)];
+static STK_T _kernel_stack_APP_SYNC_TASK[COUNT_STK_T(4096)];
 static STK_T _kernel_stack_TSKID_tTask_LogTask_Task[COUNT_STK_T(4096)];
 static STK_T _kernel_stack_MAIN_TASK[COUNT_STK_T(STACK_SIZE)];
 static STK_T _kernel_stack_LINE_TRACER_TASK[COUNT_STK_T(STACK_SIZE)];
 static STK_T _kernel_stack_STRAIGHT_TASK[COUNT_STK_T(STACK_SIZE)];
 const TINIB _kernel_tinib_table[TNUM_TSKID] = {
 	{ (PYBRICKS_TASK_ATR), (EXINF)(0), (TASK)(pb_main_task), INT_PRIORITY(PYBRICKS_PRIORITY), {	(void *)(_kernel_stack_PYBRICKS_TASK), 	((void *)((char *)(_kernel_stack_PYBRICKS_TASK) + (ROUND_STK_T(PYBRICKS_STACK_SIZE)))), }, },
+	{ (TA_ACT), (EXINF)(0), (TASK)(_app_init_task), INT_PRIORITY(TPRI_APP_INIT_TASK), {	(void *)(_kernel_stack_APP_INIT_TASK), 	((void *)((char *)(_kernel_stack_APP_INIT_TASK) + (ROUND_STK_T(4096)))), }, },
+	{ (TA_ACT), (EXINF)(0), (TASK)(_app_sync_task), INT_PRIORITY(TPRI_APP_SYNC_TASK), {	(void *)(_kernel_stack_APP_SYNC_TASK), 	((void *)((char *)(_kernel_stack_APP_SYNC_TASK) + (ROUND_STK_T(4096)))), }, },
 	{ (TA_ACT), (EXINF)(&tTask_INIB_tab[0]), (TASK)(tTask_start), INT_PRIORITY(4), {	(void *)(_kernel_stack_TSKID_tTask_LogTask_Task), 	((void *)((char *)(_kernel_stack_TSKID_tTask_LogTask_Task) + (ROUND_STK_T(4096)))), }, },
 	{ (TA_ACT), (EXINF)(0), (TASK)(main_task), INT_PRIORITY(MAIN_PRIORITY), {	(void *)(_kernel_stack_MAIN_TASK), 	((void *)((char *)(_kernel_stack_MAIN_TASK) + (ROUND_STK_T(STACK_SIZE)))), }, },
 	{ (TA_NULL), (EXINF)(0), (TASK)(tracer_task), INT_PRIORITY(TRACER_PRIORITY), {	(void *)(_kernel_stack_LINE_TRACER_TASK), 	((void *)((char *)(_kernel_stack_LINE_TRACER_TASK) + (ROUND_STK_T(STACK_SIZE)))), }, },
@@ -45,7 +50,7 @@ const TINIB _kernel_tinib_table[TNUM_TSKID] = {
 TCB _kernel_tcb_table[TNUM_TSKID];
 
 const ID _kernel_torder_table[TNUM_TSKID] = { 
-	PYBRICKS_TASK, TSKID_tTask_LogTask_Task, MAIN_TASK, LINE_TRACER_TASK, STRAIGHT_TASK
+	PYBRICKS_TASK, APP_INIT_TASK, APP_SYNC_TASK, TSKID_tTask_LogTask_Task, MAIN_TASK, LINE_TRACER_TASK, STRAIGHT_TASK
 };
 
 /*

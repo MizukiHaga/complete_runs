@@ -2,12 +2,14 @@
 #ifndef TOPPERS_KERNEL_CFG_H
 #define TOPPERS_KERNEL_CFG_H
 
-#define TNUM_TSKID	5
+#define TNUM_TSKID	7
 #define PYBRICKS_TASK	1
-#define TSKID_tTask_LogTask_Task	2
-#define MAIN_TASK	3
-#define LINE_TRACER_TASK	4
-#define STRAIGHT_TASK	5
+#define APP_INIT_TASK	2
+#define APP_SYNC_TASK	3
+#define TSKID_tTask_LogTask_Task	4
+#define MAIN_TASK	5
+#define LINE_TRACER_TASK	6
+#define STRAIGHT_TASK	7
 
 #define TNUM_SEMID	7
 #define APP_HEAP_SEM	1

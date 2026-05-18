@@ -36,8 +36,13 @@ void main_task(intptr_t unused) {
   Straight_Configure(left_motor_port, right_motor_port);
   printf("Start Line Trace!!\n");
 
-  /* ライントレースタスクの起動 */
-  Straight_RunFor(-85, -80, 3000);
+  /* 起動時の動作シーケンス：1秒前進 → 右折(500ms) → 1秒前進 */
+  /* 1 秒前進 */
+  Straight_RunFor(STRAIGHT_LEFT_POWER, STRAIGHT_RIGHT_POWER, 1000U);
+  /* 右折（ピボット）：左前進、右逆転を 500 ms */
+  Straight_RunFor(50, -50, 500U);
+  /* さらに 1 秒前進 */
+  Straight_RunFor(STRAIGHT_LEFT_POWER, STRAIGHT_RIGHT_POWER, 1000U);
   /* タスク終了 */
   ext_tsk();
 }

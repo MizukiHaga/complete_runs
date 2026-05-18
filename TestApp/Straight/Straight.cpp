@@ -74,6 +74,14 @@ void Straight_RunFor(int left_power, int right_power, uint32_t duration_ms) {
 }
 
 void straight_task(intptr_t unused) {
-  Straight_RunFor(STRAIGHT_LEFT_POWER, STRAIGHT_RIGHT_POWER, STRAIGHT_TIME);
+  /* 1 秒前進 */
+  Straight_RunFor(STRAIGHT_LEFT_POWER, STRAIGHT_RIGHT_POWER, 1000U);
+
+  /* 右折（ピボットターン）：左モータ前進、右モータ逆回転を 500 ms */
+  Straight_RunFor(50, -50, 500U);
+
+  /* さらに 1 秒前進 */
+  Straight_RunFor(STRAIGHT_LEFT_POWER, STRAIGHT_RIGHT_POWER, 1000U);
+
   ext_tsk();
 }
