@@ -2,12 +2,13 @@
 #ifndef TOPPERS_KERNEL_CFG_H
 #define TOPPERS_KERNEL_CFG_H
 
-#define TNUM_TSKID	5
+#define TNUM_TSKID	6
 #define PYBRICKS_TASK	1
 #define TSKID_tTask_LogTask_Task	2
 #define MAIN_TASK	3
 #define ANGLE_TASK	4
 #define MORTER_TASK	5
+#define DISTANCE_TASK	6
 
 #define TNUM_SEMID	7
 #define APP_HEAP_SEM	1
@@ -28,10 +29,11 @@
 
 #define TNUM_MPFID	0
 
-#define TNUM_CYCID	3
+#define TNUM_CYCID	4
 #define PB_CYCHDR	1
 #define ANGLE_TASK_CYC	2
 #define MORTER_TASK_CYC	3
+#define DISTANCE_TASK_CYC	4
 
 #define TNUM_ALMID	0
 

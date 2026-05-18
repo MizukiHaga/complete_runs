@@ -915,25 +915,47 @@ const unsigned_t TOPPERS_cfg_valueof_stksz_68 = (unsigned_t)(STACK_SIZE);
 
 #line 8 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
 const unsigned_t TOPPERS_cfg_static_api_69 = 69;
-#define ANGLE_TASK_CYC	(<>)
+#define DISTANCE_TASK	(<>)
 #line 8 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
-const unsigned_t TOPPERS_cfg_valueof_cycatr_69 = (unsigned_t)(TA_NULL);
+const unsigned_t TOPPERS_cfg_valueof_tskatr_69 = (unsigned_t)(TA_NULL);
 #line 8 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
-const unsigned_t TOPPERS_cfg_valueof_nfymode_69 = (unsigned_t)(TNFY_ACTTSK);
+const signed_t TOPPERS_cfg_valueof_itskpri_69 = (signed_t)(DISTANCE_PRIORITY);
 #line 8 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
-const unsigned_t TOPPERS_cfg_valueof_cyctim_69 = (unsigned_t)(ANGLE_PERIOD);
-#line 8 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
-const unsigned_t TOPPERS_cfg_valueof_cycphs_69 = (unsigned_t)(0);
+const unsigned_t TOPPERS_cfg_valueof_stksz_69 = (unsigned_t)(STACK_SIZE);
 
 #line 9 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
 const unsigned_t TOPPERS_cfg_static_api_70 = 70;
-#define MORTER_TASK_CYC	(<>)
+#define ANGLE_TASK_CYC	(<>)
 #line 9 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
 const unsigned_t TOPPERS_cfg_valueof_cycatr_70 = (unsigned_t)(TA_NULL);
 #line 9 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
 const unsigned_t TOPPERS_cfg_valueof_nfymode_70 = (unsigned_t)(TNFY_ACTTSK);
 #line 9 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
-const unsigned_t TOPPERS_cfg_valueof_cyctim_70 = (unsigned_t)(MORTER_PERIOD);
+const unsigned_t TOPPERS_cfg_valueof_cyctim_70 = (unsigned_t)(ANGLE_PERIOD);
 #line 9 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
 const unsigned_t TOPPERS_cfg_valueof_cycphs_70 = (unsigned_t)(0);
+
+#line 10 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_static_api_71 = 71;
+#define MORTER_TASK_CYC	(<>)
+#line 10 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_cycatr_71 = (unsigned_t)(TA_NULL);
+#line 10 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_nfymode_71 = (unsigned_t)(TNFY_ACTTSK);
+#line 10 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_cyctim_71 = (unsigned_t)(MORTER_PERIOD);
+#line 10 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_cycphs_71 = (unsigned_t)(0);
+
+#line 11 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_static_api_72 = 72;
+#define DISTANCE_TASK_CYC	(<>)
+#line 11 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_cycatr_72 = (unsigned_t)(TA_NULL);
+#line 11 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_nfymode_72 = (unsigned_t)(TNFY_ACTTSK);
+#line 11 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_cyctim_72 = (unsigned_t)(DISTANCE_PERIOD);
+#line 11 "/home/wsoez/etrobo/spike-rt/sdk/workspace/LogTest/app.cfg"
+const unsigned_t TOPPERS_cfg_valueof_cycphs_72 = (unsigned_t)(0);
 
