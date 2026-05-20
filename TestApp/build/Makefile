@@ -64,7 +64,7 @@ endif
 #
 #  ソースファイルのディレクトリの定義
 #
-SRCDIR = /home/ipodt/etrobo/spike-rt/asp3
+SRCDIR = /home/wsoez/etrobo/spike-rt/asp3
 
 #
 #  オブジェクトファイル名の拡張子の設定
@@ -75,7 +75,7 @@ OBJEXT =
 #  カーネルライブラリ（libkernel.a）のディレクトリ名
 #  （カーネルライブラリもmake対象にする時は，空に定義する）
 #
-KERNEL_LIB = /home/ipodt/etrobo/spike-rt/build/obj-primehub_kernel
+KERNEL_LIB = /home/wsoez/etrobo/spike-rt/build/obj-primehub_kernel
 
 #
 #  カーネルを関数単位でコンパイルするかどうかの定義
@@ -123,8 +123,8 @@ endif
 #
 #  中間オブジェクトファイルと依存関係ファイルを置くディレクトリの定義
 #
-OBJDIR = /home/ipodt/etrobo/spike-rt/sdk/workspace/TestApp/build/dep
-DEPDIR = /home/ipodt/etrobo/spike-rt/sdk/workspace/TestApp/build/dep
+OBJDIR = /home/wsoez/etrobo/spike-rt/sdk/workspace/TestApp/build/dep
+DEPDIR = /home/wsoez/etrobo/spike-rt/sdk/workspace/TestApp/build/dep
 
 #
 # SPIKE-RTのトップディレクトリの定義
@@ -190,19 +190,15 @@ CFLAGS = $(COPTS) $(CDEFS) $(INCLUDES)
 #  アプリケーションプログラムに関する定義
 #
 APPLNAME = app
-APPLDIRS = /home/ipodt/etrobo/spike-rt/sdk/workspace/TestApp
+APPLDIRS = /home/wsoez/etrobo/spike-rt/sdk/workspace/TestApp
 APPL_CFG = app.cfg
-APPL_CDL = /home/ipodt/etrobo/spike-rt/sdk/workspace/TestApp/app.cdl
-
-# for backward compatibilities, add obsolete files there
-INCLUDES += -I$(abspath /home/ipodt/etrobo/spike-rt/sdk/workspace/TestApp/../../common/compat)
+APPL_CDL = /home/wsoez/etrobo/spike-rt/sdk/workspace/TestApp/app.cdl
 
 APPL_DIRS := $(APPLDIRS) $(SRCDIR)/library
 APPL_ASMOBJS :=
 ifdef USE_CXX
 	APPL_CXXOBJS := app.o
 	APPL_COBJS :=
-	INCLUDES := $(INCLUDES) -I$(DRIVERS_DIR)/include/libcpp -I$(DRIVERS_DIR)/include/libcpp/spike
 else
 	APPL_COBJS := app.o
 endif
@@ -442,11 +438,7 @@ $(OBJNAME).syms: $(OBJFILE)
 #  バイナリファイルの生成
 #
 $(OBJNAME).bin: $(OBJFILE)
-ifneq ("$(wildcard HUB_NAME)","")
-	$(OBJCOPY) --update-section .name=HUB_NAME -O binary -S $(OBJFILE) $(OBJNAME).bin
-else
 	$(OBJCOPY) -O binary -S $(OBJFILE) $(OBJNAME).bin
-endif
 
 #
 #  Sレコードファイルの生成
@@ -470,7 +462,7 @@ check.timestamp: cfg2_out.db $(OBJNAME).syms $(OBJNAME).srec
 .PHONY: clean
 clean:
 	rm -f \#* *~ $(OBJDIR)/*.o $(DEPDIR)/*.d $(CLEAN_FILES) check.timestamp
-	rm -f $(OBJFILE) $(OBJNAME).syms $(OBJNAME).srec $(OBJNAME).bin $(OBJNAME).dfu HUB_NAME
+	rm -f $(OBJFILE) $(OBJNAME).syms $(OBJNAME).srec $(OBJNAME).bin $(OBJNAME).dfu
 	rm -f kernel_cfg.timestamp $(CFG2_OUT_SRCS) cfg2_out.db
 	rm -f offset.timestamp $(OFFSET_H)
 	rm -f cfg1_out.syms cfg1_out.srec $(CFG1_OUT)

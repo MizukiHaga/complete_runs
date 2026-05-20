@@ -76,6 +76,62 @@ void Straight_RunFor(int left_power, int right_power, uint32_t duration_ms) {
   Straight_Stop();
 }
 
+#define STRAIGHT_SERPENTINE_STEP_MS  (10U)
+
+void Straight_RunSerpentine(int left_base, int right_base, int steer,
+                            uint32_t phase_ms, uint32_t total_ms,
+                            straight_serpentine_poll_fn poll)
+{
+  if (phase_ms == 0U) {
+    Straight_Stop();
+    return;
+  }
+  const bool run_forever = (total_ms == STRAIGHT_SERPENTINE_FOREVER);
+  if (!run_forever && total_ms > STRAIGHT_MAX_DURATION_MS) {
+    total_ms = STRAIGHT_MAX_DURATION_MS;
+  }
+
+  uint32_t elapsed_ms = 0U;
+  uint32_t phase_elapsed_ms = 0U;
+  bool steer_left = true;
+
+  for (;;) {
+    if (poll != nullptr && poll()) {
+      break;
+    }
+    if (!run_forever && elapsed_ms >= total_ms) {
+      break;
+    }
+
+    int left_power;
+    int right_power;
+    if (steer_left) {
+      left_power = left_base + steer;
+      right_power = right_base - steer;
+    } else {
+      left_power = left_base - steer;
+      right_power = right_base + steer;
+    }
+
+    Straight_Run(left_power, right_power);
+
+    uint32_t step_ms = STRAIGHT_SERPENTINE_STEP_MS;
+    if (!run_forever && elapsed_ms + step_ms > total_ms) {
+      step_ms = total_ms - elapsed_ms;
+    }
+    dly_tsk((RELTIM)(step_ms * 1000U));
+    elapsed_ms += step_ms;
+    phase_elapsed_ms += step_ms;
+
+    if (phase_elapsed_ms >= phase_ms) {
+      phase_elapsed_ms = 0U;
+      steer_left = !steer_left;
+    }
+  }
+
+  Straight_Stop();
+}
+
 void straight_task(intptr_t unused) {
   /* 1 秒前進 */
   Straight_RunFor(STRAIGHT_LEFT_POWER, STRAIGHT_RIGHT_POWER, 1000U);

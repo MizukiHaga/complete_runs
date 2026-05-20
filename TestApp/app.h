@@ -8,6 +8,7 @@ extern "C" {
 /* タスク優先度 */
 #define MAIN_PRIORITY     5 /* メインタスク */
 #define TRACER_PRIORITY   6 /* ライントレースタスク */
+#define NANSHO1_PRIORITY  6 /* Nansho1タスク */
 #define STRAIGHT_PRIORITY 7 /* 直進タスク（数値が大きいほど低優先度） */
 
 /* タスク周期の定義 */
@@ -23,6 +24,7 @@ extern "C" {
 
 extern void main_task(intptr_t exinf);
 extern void tracer_task(intptr_t exinf);
+extern void Nansho1Task(intptr_t exinf);
 extern void straight_task(intptr_t exinf);
 
 #endif /* TOPPERS_MACRO_ONLY */

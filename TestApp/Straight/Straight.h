@@ -15,6 +15,7 @@
 #define STRAIGHT_DECEL_STEP_MS (40U)
 
 #include <pbio/port.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 /* Straight_RunFor で指定可能な時間の上限 [ms]
@@ -30,6 +31,25 @@ extern void Straight_Stop(void);
  * duration_ms が 0 の場合は走行せずに停止のみ行う。
  * 上限は STRAIGHT_MAX_DURATION_MS にクランプされる。 */
 extern void Straight_RunFor(int left_power, int right_power, uint32_t duration_ms);
+
+/* 蛇行走行: 左右パワー差を phase_ms ごとに切り替える */
+#define STRAIGHT_SERPENTINE_STEER      (15)
+#define STRAIGHT_SERPENTINE_PHASE_MS   (300U)
+#define STRAIGHT_SERPENTINE_TIME       (2000U)
+/* total_ms が 0 のとき時間無制限で走り続ける */
+#define STRAIGHT_SERPENTINE_FOREVER    (0U)
+
+/* 10ms ごとに呼ばれる。true を返すと蛇行を止める。不要なら nullptr */
+typedef bool (*straight_serpentine_poll_fn)(void);
+
+extern void Straight_RunSerpentine(int left_base, int right_base, int steer,
+                                   uint32_t phase_ms, uint32_t total_ms,
+                                   straight_serpentine_poll_fn poll);
+
+/* total_ms 省略版: 時間無制限で蛇行 */
+extern void Straight_RunSerpentineLoop(int left_base, int right_base, int steer,
+                                       uint32_t phase_ms,
+                                       straight_serpentine_poll_fn poll);
 
 //#ifdef __cplusplus
 //}
