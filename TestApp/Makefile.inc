@@ -2,24 +2,31 @@ mkfile_path := $(dir $(lastword $(MAKEFILE_LIST)))
 
 SRCLANG = c++
 
-APPL_CXXOBJS +=\
-LineTracer.o\
-Straight.o\
-Color.o\
-Sonic.o\
-Nansho1.o\
+# === Common modules (要レビュー) =========================
+APPL_CXXOBJS += \
+	LineTracer.o \
+	Straight.o \
+	Color.o \
+	Sonic.o
+
+APPL_DIRS += \
+	$(mkfile_path)Common/LineTracer \
+	$(mkfile_path)Common/Straight \
+	$(mkfile_path)Common/Color \
+	$(mkfile_path)Common/Sonic
+
+INCLUDES += \
+	-I$(mkfile_path)Common/LineTracer \
+	-I$(mkfile_path)Common/Straight \
+	-I$(mkfile_path)Common/Color \
+	-I$(mkfile_path)Common/Sonic
 
 APPL_LIBS += -lm
 
-APPL_DIRS += $(mkfile_path)LineTracer
-APPL_DIRS += $(mkfile_path)Straight
-APPL_DIRS += $(mkfile_path)Color
-APPL_DIRS += $(mkfile_path)Sonic
-APPL_DIRS += $(mkfile_path)Nansho1
+# === Scene: Member A =====================================
+APPL_CXXOBJS += Nansho1.o
+APPL_DIRS    += $(mkfile_path)Scene/Nansho1
+INCLUDES     += -I$(mkfile_path)Scene/Nansho1
 
-INCLUDES += \
-	-I$(mkfile_path)LineTracer\
-	-I$(mkfile_path)Straight\
-	-I$(mkfile_path)Color\
-	-I$(mkfile_path)Sonic\
-	-I$(mkfile_path)Nansho1\
+# === Scene: Member B =====================================
+# (ここにメンバー B が追記)
