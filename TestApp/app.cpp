@@ -4,24 +4,35 @@
 #include <serial/newlib.h>
 #include <serial/serial.h>
 #include <cstdio>
+
 #include "LineTracer.h"
 #include "Nansho1.h"
 #include "Color.h"
 #include "Sonic.h"
 #include "Straight.h"
 
+extern "C" {
 #include <spike/pup/forcesensor.h>
+}
+
+/* === Common インスタンス === */
+Straight gMotors;
+Color gColor;
+Sonic gSonic;
+
+/* === Scene: Member A === */
+Nansho1Scene gNansho1(gMotors, gColor, gSonic);
 
 /* センサーポートの定義 */
-static const pbio_port_id_t
-  color_sensor_port    = PBIO_PORT_ID_E,
-  left_motor_port      = PBIO_PORT_ID_B,
-  right_motor_port     = PBIO_PORT_ID_A,
-  force_sensor_port    = PBIO_PORT_ID_D,
-  ultrasonic_port      = NANSHO1_ULTRASONIC_PORT;
+static const pbio_port_id_t color_sensor_port = PBIO_PORT_ID_E,
+                            left_motor_port = PBIO_PORT_ID_B,
+                            right_motor_port = PBIO_PORT_ID_A,
+                            force_sensor_port = PBIO_PORT_ID_D,
+                            ultrasonic_port = NANSHO1_ULTRASONIC_PORT;
 
 /* メインタスク(起動時にのみ関数コールされる) */
-void main_task(intptr_t unused) {
+void main_task(intptr_t unused)
+{
   (void)unused;
 
   printf("+---------------------------------+\n");
@@ -36,10 +47,9 @@ void main_task(intptr_t unused) {
     dly_tsk(10 * 1000);
   }
 
-  Straight_Configure(left_motor_port, right_motor_port);
-  Color_Configure(color_sensor_port);
-  Sonic_Configure(ultrasonic_port);
-  Nansho1_Configure();
+  gMotors.configure(left_motor_port, right_motor_port);
+  gColor.configure(color_sensor_port);
+  gSonic.configure(ultrasonic_port);
 
   printf("Start Nansho1\n");
   act_tsk(NANSHO1_TASK);
