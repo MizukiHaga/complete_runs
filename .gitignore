@@ -1,54 +1,23 @@
-# etrobo related files
-app
-asp
-*.asp
-currentapp
-*.status
-__race/
-*.log
-log.txt
-*.md5sum
-result.json
+# workspace 直下は基本的に追跡しない（TestApp / LogTest だけホワイトリスト）
+/*
 
+# 必要なものだけ許可
+!/.gitignore
+!/TestApp/
+!/LogTest/
 
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
+# TestApp / LogTest 内のビルド成果物は追跡しない
+TestApp/build/
+LogTest/build/
 *.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
+*.d
 *.a
-*.lib
-
-# Executables
+*.bin
+*.srec
+*.syms
+*.elf
+*.lo
+*.slo
+*.obj
 *.exe
 *.out
-*.app
-
-# debug information files
-*.dwo
