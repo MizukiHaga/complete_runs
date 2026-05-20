@@ -3,6 +3,8 @@
 
 # 必要なものだけ許可
 !/.gitignore
+!/Makefile
+!/README.md
 !/TestApp/
 !/LogTest/
 
