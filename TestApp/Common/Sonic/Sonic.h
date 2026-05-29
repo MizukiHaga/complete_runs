@@ -32,6 +32,9 @@ public:
    *   ultrasonic_port: 超音波センサを接続したポート (例: PBIO_PORT_ID_F) */
   void configure(pbio_port_id_t ultrasonic_port);
 
+  /* configure 済みで PUP デバイスを取得できているか。 */
+  bool isConfigured() const { return device_ != nullptr; }
+
   /* 距離 [mm] を返す。未検出 / 未初期化 / エラー時は DistanceInvalid。 */
   int32_t readDistanceMm();
 

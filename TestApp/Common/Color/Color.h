@@ -50,6 +50,10 @@ public:
   /* 初期化。app.cpp で 1 回だけ呼ぶこと。 */
   void configure(pbio_port_id_t color_sensor_port);
 
+  /* configure 済みで PUP デバイスを取得できているか。
+   * false の場合はポート違い / 未接続 / 種類違いの可能性が高い。 */
+  bool isConfigured() const { return device_ != nullptr; }
+
   /* 生の HSV を読み出す。surface=true で表面反射を使う。
    * h / s / v のいずれかが nullptr のときはそれだけ読み飛ばす。 */
   void readHsv(bool surface, uint16_t *h, uint8_t *s, uint8_t *v);

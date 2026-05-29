@@ -44,6 +44,9 @@ void Straight::configure(pbio_port_id_t left_motor_port,
  * - 0     : 惰性停止 (set_power(0) はブレーキではない) */
 void Straight::run(int left_power, int right_power)
 {
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
   pup_motor_set_power(left_, clampMotorPower(left_power));
   pup_motor_set_power(right_, clampMotorPower(right_power));
 }
@@ -52,6 +55,9 @@ void Straight::run(int left_power, int right_power)
  * 急停止させたい場合は pup_motor_brake / pup_motor_hold を使う。 */
 void Straight::stop()
 {
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
   pup_motor_set_power(left_, 0);
   pup_motor_set_power(right_, 0);
 }
@@ -119,10 +125,31 @@ void Straight::runFor(int left_power, int right_power, uint32_t duration_ms)
   stop();
 }
 
-/* 蛇行走行: 左右のパワー差を phase_ms ごとに反転させてゆれながら進む。
+/* 蛇行走行: 左右のパワー差を一定周期で反転させてゆれながら進む。
  *
  *   左寄り: 左 = base+steer, 右 = base-steer
  *   右寄り: 左 = base-steer, 右 = base+steer
+ *
+ * フェーズ長の取り扱い:
+ *   - 初回フェーズ : phase_ms          (半周期)
+ *   - 2 回目以降   : phase_ms * 2      (全周期。中心線をまたいで両側に振れる)
+ *
+ *   直進状態からスタートするため、初回フェーズは半周期だけ片側に振り、
+ *   それ以降は中心線をまたいで両側に均等に振れるよう全周期 (2*phase_ms) を使う。
+ *   こうしないと初回の片寄りが解消されず、片側にだけ進んでしまう。
+ *
+ * 直進セグメントの挫み方:
+ *   直前のステアフェーズが「フル周期 (phase_ms * 2)」だった場合のみ、
+ *   反転前に SerpentineStraightMs だけ (base+steer) で直進してから次のステアへ。
+ *   初回の半周期 (phase_ms) フェーズの直後は直進を挫まず、即座に反対側へ振る。
+ *
+ *   直進セグメントを base そのままにすると、直前のステアで強い側だった
+ *   モータが急減速して慣性で止まりがちなので、両輪 base+steer に揃えて
+ *   勢いを保ったまま前進させる。
+ *
+ *   = 「ステップ時間が ×2 になったら (フェーズ終了時に) 直進」というルール。
+ *   こうすることで初回の片寄りを中心線をまたいで素早く相殺しつつ、
+ *   2 回目以降のフル周期反転では前進量を稼げる。
  *
  * 終了条件 (いずれかを満たすと stop() して return):
  *   - poll() が true を返した (外部からの停止要求)
@@ -144,9 +171,18 @@ void Straight::runSerpentine(int left_base, int right_base, int steer,
     total_ms = MaxDurationMs;
   }
 
+  /* --- フェーズ種別 ----------------------------------------
+   * PhaseSteer    : ステア中 (左寄り or 右寄り)
+   * PhaseStraight : フェーズ反転後に挫まれる直進セグメント */
+  enum class Phase { Steer, Straight };
+
   uint32_t elapsed_ms = 0U;        // 全体の経過時間
-  uint32_t phase_elapsed_ms = 0U;  // 今のフェーズ (左寄り/右寄り) の経過時間
+  uint32_t phase_elapsed_ms = 0U;  // 今のフェーズの経過時間
   bool steer_left = true;          // true: 左寄りステア, false: 右寄りステア
+  Phase phase = Phase::Steer;
+  /* 初回フェーズは半周期 (phase_ms)、2 回目以降は全周期 (phase_ms*2) */
+  const uint32_t full_phase_ms = phase_ms * 2U;
+  uint32_t current_phase_target_ms = phase_ms;
 
   while (1) {
     /* --- 終了判定 (ループ先頭で必ずチェック) --- */
@@ -157,10 +193,23 @@ void Straight::runSerpentine(int left_base, int right_base, int steer,
       break;  // 時間切れ
     }
 
-    /* --- パワー計算: 現在のステア方向に応じて左右の差を作る --- */
+    /* --- パワー計算: 現在のフェーズに応じて左右パワーを決める ---
+     * steer が base より大きいと内側モータのパワーは負になり、
+     * その輪は逆回転する (= ピボット気味の鋭い旋回)。
+     * 蛇行を意図的に鋭くしたいケースを想定し、負値はクランプせず
+     * そのまま set_power に渡す (clampMotorPower で ±100 まで丸めるだけ)。
+     *
+     * 直進セグメントは base そのままだと、直前のステアで強い側
+     * (base+steer) に出ていたモータが急に減速して慣性で止まりやすい。
+     * そのため直進セグメントでは両輪を base+steer まで上げ、
+     * 「強い側のパワー」を保ったまま前進させる。 */
     int left_power;
     int right_power;
-    if (steer_left) {
+    if (phase == Phase::Straight) {
+      /* 反転と反転の間の直進セグメント: 両輪を base + steer に揃える */
+      left_power = left_base + steer;
+      right_power = right_base + steer;
+    } else if (steer_left) {
       left_power = left_base + steer;
       right_power = right_base - steer;
     } else {
@@ -179,10 +228,29 @@ void Straight::runSerpentine(int left_base, int right_base, int steer,
     elapsed_ms += step_ms;
     phase_elapsed_ms += step_ms;
 
-    /* --- フェーズが終わったらステア方向を反転 --- */
-    if (phase_elapsed_ms >= phase_ms) {
+    /* --- フェーズが終わったら次のフェーズへ進む --- */
+    if (phase_elapsed_ms >= current_phase_target_ms) {
       phase_elapsed_ms = 0U;
-      steer_left = !steer_left;
+      if (phase == Phase::Steer) {
+        /* ステアフェーズ終了 → ステア方向を反転。
+         * 直前のフェーズが「ステップ時間 ×2 (= full_phase_ms)」だった場合のみ、
+         * 反転前に直進セグメントを挫む。半周期の初回フェーズ直後は飛ばして即反転。
+         * SerpentineStraightMs == 0 のときも直進セグメントは飛ばす。 */
+        const bool just_finished_full_phase =
+            (current_phase_target_ms >= full_phase_ms);
+        steer_left = !steer_left;
+        if (just_finished_full_phase && SerpentineStraightMs > 0U) {
+          phase = Phase::Straight;
+          current_phase_target_ms = SerpentineStraightMs;
+        } else {
+          phase = Phase::Steer;
+          current_phase_target_ms = full_phase_ms;
+        }
+      } else {
+        /* 直進セグメント終了 → 反転後のステアフェーズ (全周期) へ */
+        phase = Phase::Steer;
+        current_phase_target_ms = full_phase_ms;
+      }
     }
   }
 
