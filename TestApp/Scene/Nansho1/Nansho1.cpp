@@ -4,26 +4,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
-extern "C" {
-#include <spike/hub/imu.h>
-#include <spike/pup/ultrasonicsensor.h>
-}
-
 extern Sonic gSonic;
 extern Color gColor;
+extern Gyro gGyro;
 extern Straight gMotors;
-
-/* === ヘルパ ============================================================ *
- * 2 つの heading の差を [-180, 180] に折り畳む。
- * 連続値 (アンラップ済み) でも ±180 でラップする実装でも、
- * 1 ステップでの角度進捗を表すのに使える。
- * ====================================================================== */
-static float wrapDeg180(float diff)
-{
-  while (diff > 180.0f)  diff -= 360.0f;
-  while (diff < -180.0f) diff += 360.0f;
-  return diff;
-}
 
 /* ---------------------------------------------------------------------
  * 旋回中スキャン: target_heading までピボット旋回しつつ
@@ -43,7 +27,7 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading)
 
   while (elapsed_ms < TurnMaxMs) {
     const int32_t dist = gSonic.readDistanceMm();
-    const float   h    = hub_imu_get_heading();
+    const float   h    = gGyro.heading();
 
     /* (1) 超音波検知 (旋回中も常時監視) */
     if (dist > 0 && dist <= DetectMaxMm) {
@@ -57,20 +41,16 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading)
     }
 
     /* (2) 目標角度に到達? */
-    const float diff = wrapDeg180(target_heading - h);
-    if (fabsf(diff) <= TurnToleranceDeg) {
+    const float diff = gGyro.diffTo(target_heading);
+    if (gGyro.reached(target_heading, TurnToleranceDeg)) {
       gMotors.stop();
       return ScanResult::Completed;
     }
 
     /* (3) 短い方向にピボット旋回
-     *   diff > 0 → ヨー角を増やしたい → CW 旋回 (左 +, 右 -)
-     *   diff < 0 → ヨー角を減らしたい → CCW 旋回 (左 -, 右 +) */
-    if (diff > 0.0f) {
-      gMotors.run(TurnPower, -TurnPower);
-    } else {
-      gMotors.run(-TurnPower, TurnPower);
-    }
+     *   diff > 0 → ヨー角を増やしたい → CW
+     *   diff < 0 → ヨー角を減らしたい → CCW */
+    gMotors.pivotTowardDiff(TurnPower, diff);
 
     log_acc_ms += StepMs;
     if (log_acc_ms >= 500U) {
@@ -101,9 +81,8 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
   uint32_t log_acc_ms = 0U;
 
   while (elapsed_ms < duration_ms) {
-    const int32_t dist      = gSonic.readDistanceMm();
-    const float   h         = hub_imu_get_heading();
-    const bool    now_black = gColor.isBlack(true);
+    const int32_t dist = gSonic.readDistanceMm();
+    const float   h    = gGyro.heading();
 
     if (dist > 0 && dist <= DetectMaxMm) {
       gMotors.stop();
@@ -115,22 +94,20 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
       return ScanResult::SonicDetected;
     }
 
-    if (wigwag_off_black_ && now_black) {
+    /* 黒線エッジ判定は Color クラスに移譲。
+     * 「いったん非黒を踏んでから再び黒を踏んだ瞬間」だけ true。 */
+    if (gColor.blackEdgeHit(true)) {
       gMotors.stop();
       printf("WigWag forward HIT(black) heading=%d\n", (int)(h * 10.0f));
       return ScanResult::BlackDetected;
-    }
-    if (!now_black) {
-      wigwag_off_black_ = true;
     }
 
     gMotors.run(power, power);
 
     log_acc_ms += StepMs;
     if (log_acc_ms >= 500U) {
-      printf("WigWag forward dist=%d heading=%d elapsed=%u black=%d offb=%d\n",
-             (int)dist, (int)(h * 10.0f), (unsigned)elapsed_ms,
-             now_black ? 1 : 0, wigwag_off_black_ ? 1 : 0);
+      printf("WigWag forward dist=%d heading=%d elapsed=%u\n",
+             (int)dist, (int)(h * 10.0f), (unsigned)elapsed_ms);
       log_acc_ms = 0U;
     }
 
@@ -154,11 +131,11 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
  *   返り値:
  *     true  = 超音波検知 (out_heading に検知時ヨー角)
  *     false = 黒線エッジ検知 (= 黒線を再び踏んだ)
- *   呼ぶ前に wigwag_off_black_ を false に初期化すること。
+ *   関数の入口で gColor.resetBlackEdge() を呼ぶので、呼び側での初期化は不要。
  * --------------------------------------------------------------------- */
 bool Nansho1Scene::wigwagScan(float *out_heading)
 {
-  wigwag_off_black_ = false;  /* 開始は黒上にいる前提なのでクリア */
+  gColor.resetBlackEdge();  /* 開始は黒上にいる前提なのでクリア */
 
   int cycle = 0;
   while (true) {
@@ -200,7 +177,7 @@ bool Nansho1Scene::wigwagScan(float *out_heading)
     /* e) 次サイクルに備えてヨー角リセット。
      *    直進中の左右モータ差で多少ヨーが動いても、
      *    次の ±WigWagAmpDeg を「いまの向き」基準で振れるようにするため。 */
-    hub_imu_reset_heading();
+    gGyro.reset();
   }
 }
 
@@ -213,16 +190,17 @@ bool Nansho1Scene::wigwagScan(float *out_heading)
  * --------------------------------------------------------------------- */
 bool Nansho1Scene::scan360(float *out_heading)
 {
-  float    prev_heading = hub_imu_get_heading();
+  float    prev_heading = gGyro.heading();
   float    total_rot    = 0.0f;
   uint32_t elapsed_ms   = 0U;
   uint32_t log_acc_ms   = 0U;
 
+  /* 累積角の絶対値で判定 (機体差で IMU の符号が逆でも 1 周で抜けるように)。 */
   while (fabsf(total_rot) < 360.0f && elapsed_ms < ScanMaxMs) {
-    gMotors.run(ScanTurnPower, -ScanTurnPower);
+    gMotors.pivotCW(ScanTurnPower);
 
     const int32_t dist = gSonic.readDistanceMm();
-    const float   h    = hub_imu_get_heading();
+    const float   h    = gGyro.heading();
 
     if (dist > 0 && dist <= DetectMaxMm) {
       gMotors.stop();
@@ -234,7 +212,8 @@ bool Nansho1Scene::scan360(float *out_heading)
       return true;
     }
 
-    total_rot   += wrapDeg180(h - prev_heading);
+    /* CW 回転前提なのでヨー進捗は正の側に積む (符号付き diff の絶対値を加算)。 */
+    total_rot   += Gyro::wrapDeg180(h - prev_heading);
     prev_heading = h;
 
     log_acc_ms += StepMs;
@@ -264,24 +243,25 @@ void Nansho1Scene::turnToHeading(float target_heading)
   uint32_t elapsed_ms = 0U;
 
   while (elapsed_ms < TurnMaxMs) {
-    const float h    = hub_imu_get_heading();
-    const float diff = wrapDeg180(target_heading - h);
-
-    if (fabsf(diff) <= TurnToleranceDeg) {
+    if (gGyro.reached(target_heading, TurnToleranceDeg)) {
       break;
     }
-
-    if (diff > 0.0f) {
-      gMotors.run(TurnPower, -TurnPower);
-    } else {
-      gMotors.run(-TurnPower, TurnPower);
-    }
+    gMotors.pivotTowardDiff(TurnPower, gGyro.diffTo(target_heading));
 
     dly_tsk(StepMs * 1000U);
     elapsed_ms += StepMs;
   }
 
   gMotors.stop();
+}
+
+/* ---------------------------------------------------------------------
+ * シーン共通の終了動作: 検知方向を向いて一定時間前進する。
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::approachHeading(float heading)
+{
+  turnToHeading(heading);
+  gMotors.runFor(ApproachPower, ApproachPower, ApproachTimeMs);
 }
 
 /* ---------------------------------------------------------------------
@@ -308,7 +288,7 @@ void Nansho1Scene::run()
   }
 
   /* 2. ヨー角リセット */
-  hub_imu_reset_heading();
+  gGyro.reset();
 
   /* 3. ジグザグスキャン: 超音波検知 か 黒線エッジ検知 のいずれかで終了 */
   float detected_heading = 0.0f;
@@ -318,8 +298,7 @@ void Nansho1Scene::run()
     /* 4a. 超音波で検知 → 検知方向へ向き直って前進 */
     printf("Detected during wigwag (sonic), heading=%d (deci-deg)\n",
            (int)(detected_heading * 10.0f));
-    turnToHeading(detected_heading);
-    gMotors.runFor(ApproachPower, ApproachPower, ApproachTimeMs);
+    approachHeading(detected_heading);
     return;
   }
 
@@ -328,7 +307,7 @@ void Nansho1Scene::run()
   printf("WigWag terminated by black line. Start 360 scan.\n");
   gMotors.stop();
   dly_tsk(300 * 1000);
-  hub_imu_reset_heading();
+  gGyro.reset();
 
   float target_heading = 0.0f;
   const bool found = scan360(&target_heading);
@@ -339,8 +318,7 @@ void Nansho1Scene::run()
 
   printf("Scan360: detected at heading=%d (deci-deg)\n",
          (int)(target_heading * 10.0f));
-  turnToHeading(target_heading);
-  gMotors.runFor(ApproachPower, ApproachPower, ApproachTimeMs);
+  approachHeading(target_heading);
 }
 
 extern Nansho1Scene gNansho1;

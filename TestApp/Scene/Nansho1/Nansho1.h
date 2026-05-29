@@ -5,6 +5,7 @@
 #include <pbio/port.h>
 
 #include "Color.h"
+#include "Gyro.h"
 #include "Sonic.h"
 #include "Straight.h"
 
@@ -64,13 +65,9 @@ private:
   /* その場で 360° ピボット旋回しながら超音波を読み続ける (即時停止式)。 */
   bool scan360(float *out_heading);
 
-  /* === 内部状態 ============================================== *
-   * 前進中の黒線エッジ判定フラグ。
-   * wigwagScan の開始時に false に初期化。前進中にカラーが非黒に
-   * なった時点で true にする (= もう開始位置の線から離れた)。
-   * このフラグが true の状態で再び黒を踏んだら「新しい黒線を読んだ」
-   * とみなして終了する。旋回フェーズでは触らない。 */
-  bool wigwag_off_black_ = false;
+  /* 検知方向 (heading) に向き直って ApproachTimeMs だけ前進する
+   * シーン共通の終了動作。 */
+  void approachHeading(float heading);
 
   /* === 検知共通パラメータ ==================================== */
   /* 物体を「検知あり」とみなす最大距離 [mm]。

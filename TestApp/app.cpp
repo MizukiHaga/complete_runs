@@ -7,19 +7,20 @@
 #include "LineTracer.h"
 #include "Nansho1.h"
 #include "Color.h"
+#include "Gyro.h"
 #include "Sonic.h"
 #include "Straight.h"
 
 extern "C" {
 #include <spike/pup/forcesensor.h>
 #include <spike/hub/battery.h>
-#include <spike/hub/imu.h>
 }
 
 /* === Common インスタンス === */
 Straight gMotors;
 Color gColor;
 Sonic gSonic;
+Gyro gGyro;
 
 /* === Scene: Member A ===
  * SPIKE-RT では引数付きグローバル C++ コンストラクタに依存しない。
@@ -57,11 +58,8 @@ void main_task(intptr_t unused)
   gSonic.configure(ultrasonic_port);
 
   /* IMU 初期化と準備完了待ち。Nansho1 の旋回がヨー角に依存するため、
-   * シーン開始前に hub_imu_is_ready() が true になるのを待つ。 */
-  hub_imu_init();
-  while (!hub_imu_is_ready()) {
-    dly_tsk(10 * 1000);
-  }
+   * シーン開始前に IMU の is_ready が true になるのを待つ (内部で polling)。 */
+  gGyro.init();
 
   printf("Start Nansho1\n");
   act_tsk(NANSHO1_TASK);
