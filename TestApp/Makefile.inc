@@ -7,19 +7,22 @@ APPL_CXXOBJS += \
 	LineTracer.o \
 	Straight.o \
 	Color.o \
-	Sonic.o
+	Sonic.o \
+	Gyro.o
 
 APPL_DIRS += \
 	$(mkfile_path)Common/LineTracer \
 	$(mkfile_path)Common/Straight \
 	$(mkfile_path)Common/Color \
-	$(mkfile_path)Common/Sonic
+	$(mkfile_path)Common/Sonic \
+	$(mkfile_path)Common/Gyro
 
 INCLUDES += \
 	-I$(mkfile_path)Common/LineTracer \
 	-I$(mkfile_path)Common/Straight \
 	-I$(mkfile_path)Common/Color \
-	-I$(mkfile_path)Common/Sonic
+	-I$(mkfile_path)Common/Sonic \
+	-I$(mkfile_path)Common/Gyro
 
 APPL_LIBS += -lm
 

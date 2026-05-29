@@ -59,6 +59,25 @@ public:
    * MaxDurationMs を超える指定は MaxDurationMs にクランプ。 */
   void runFor(int left_power, int right_power, uint32_t duration_ms);
 
+  /* === ピボット旋回ヘルパ ====================================
+   * その場で左右逆符号同パワーを与えて旋回する (中心を変えない旋回)。
+   * power は常に正の値で渡すこと (内部で符号を組む)。 */
+
+  /* CW 方向 (機体上から見て時計回り、ヨー角が増える側) にピボット旋回。 */
+  void pivotCW(int power)  { run( power, -power); }
+  /* CCW 方向 (反時計回り、ヨー角が減る側) にピボット旋回。 */
+  void pivotCCW(int power) { run(-power,  power); }
+  /* 目標との角度差 diff_deg に応じて短い側にピボット旋回する。
+   *   diff_deg > 0 -> pivotCW
+   *   diff_deg < 0 -> pivotCCW
+   *   diff_deg = 0 -> stop
+   * power は常に正の値で渡すこと。 */
+  void pivotTowardDiff(int power, float diff_deg) {
+    if      (diff_deg > 0.0f) pivotCW(power);
+    else if (diff_deg < 0.0f) pivotCCW(power);
+    else                      stop();
+  }
+
 private:
   /* モータパワーを [-100, 100] に丸める。範囲外の値が来てもクラッシュしないため。 */
   static int clampMotorPower(int power);

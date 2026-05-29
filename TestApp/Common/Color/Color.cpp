@@ -150,3 +150,18 @@ bool Color::is(color_detect_t color, bool surface)
 {
   return detect(surface) == color;
 }
+
+/* 黒線エッジ検出。
+ *   - 「黒以外」を 1 度でも読んだら off_black_ を true にする
+ *   - その状態で再び黒を読んだ瞬間に true を返す (= 新しい黒線到達)
+ * 連続して黒を踏んでいる間 (開始位置の線にいる間など) は false のまま。
+ * resetBlackEdge() を呼ぶと off_black_ が false に戻り、最初からやり直せる。 */
+bool Color::blackEdgeHit(bool surface)
+{
+  const bool now_black = isBlack(surface);
+  if (!now_black) {
+    off_black_ = true;
+    return false;
+  }
+  return off_black_;
+}

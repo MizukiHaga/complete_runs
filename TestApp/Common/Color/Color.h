@@ -77,9 +77,34 @@ public:
   /* 今の検出色が指定した色と一致するか。 */
   bool is(color_detect_t color, bool surface);
 
+  /* === 黒線エッジ検出 ====================================
+   * 「いったん黒以外を踏んでから、再び黒を踏んだ瞬間」を検出するヘルパ。
+   * 連続して黒の上にいるだけでは true を返さない (= 開始位置の線で
+   * 即座にトリガしない)。
+   *
+   * 使い方:
+   *   gColor.resetBlackEdge();              // シーン開始時にクリア
+   *   while (1) {
+   *     if (gColor.blackEdgeHit(true)) {    // ループ内で毎周期呼ぶ
+   *       // 「新しい黒線を踏んだ」
+   *       break;
+   *     }
+   *   }
+   *
+   *   surface : isBlack に渡すフラグ (false で内側反射、true で表面)
+   *   戻り値  : 一度非黒を見たことがある状態で、いま黒を見ているなら true */
+  void resetBlackEdge() { off_black_ = false; }
+  bool blackEdgeHit(bool surface);
+
 private:
   /* 取得した PUP デバイスのハンドル。configure() で初期化。 */
   pup_device_t *device_ = nullptr;
+
+  /* 黒線エッジ検出用の内部状態。
+   * blackEdgeHit が呼ばれて「黒以外」を読んだ時点で true になり、
+   * その後の「黒」読み取りで初めて true が返るトリガとして使う。
+   * resetBlackEdge() で false に戻る。 */
+  bool off_black_ = false;
 };
 
 /* === 後方互換マクロ ===================================== */
