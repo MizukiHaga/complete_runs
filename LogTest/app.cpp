@@ -3,6 +3,8 @@
 #include "Angle/Angle.h"
 #include "Morter/Morter.h"
 #include "DistanceSensor/DistanceSensor.h"
+#include "Battery/Battery.h"
+#include "Sonic/Sonic.h"
 #include <pbio/port.h>
 #include <stdio.h>
 #include <serial/newlib.h>
@@ -26,8 +28,13 @@ void main_task(intptr_t unused)
   Angle_Init(bt_out);
   Morter_Configure(morter_left_motor_port, morter_right_motor_port);
   DistanceSensor_Init(bt_out, DISTANCE_SENSOR_PORT);
+  Battery_Init(bt_out);
+  SonicLight_Init(nullptr, SONIC_LIGHT_PORT);
 
   //sta_cyc(ANGLE_TASK_CYC);
   //sta_cyc(MORTER_TASK_CYC);
-  sta_cyc(DISTANCE_TASK_CYC);
+  //sta_cyc(DISTANCE_TASK_CYC);
+  //sta_cyc(BATTERY_TASK_CYC);
+  //sta_cyc(SONIC_LIGHT_TASK_CYC);
+
 }

@@ -51,11 +51,17 @@ public:
   static constexpr uint32_t SerpentineTimeMs = 2000U;
   /* runSerpentine の total_ms にこれを渡すと時間制限なしで走り続ける (= 0) */
   static constexpr uint32_t SerpentineForever = 0U;
+  /* フェーズ反転時 (2 回目以降) に挫む直進セグメントの長さ [ms]。
+   * 0 にすると以前の挙動 (反転直後にすぐ反対側へステア) になる。 */
+  static constexpr uint32_t SerpentineStraightMs = 900U;
 
   /* === API ================================================ */
   /* 初期化: 左右モータデバイスを取得し、回転方向を設定する。
    * 第3引数 true でエンコーダをリセット。 */
   void configure(pbio_port_id_t left_motor_port, pbio_port_id_t right_motor_port);
+
+  /* 左右両方の PUP モータが取れているか。 */
+  bool isConfigured() const { return left_ != nullptr && right_ != nullptr; }
 
   /* 左右モータに指定パワーをセットする。すぐ戻る。
    * 正: 前進方向 / 負: 後退方向 / 0: 惰性停止 (ブレーキではない) */
@@ -72,7 +78,12 @@ public:
   /* 蛇行走行 (ブロッキング)。
    *   left_base, right_base : 基準パワー
    *   steer                  : 左右のパワー差 (大きいほど大きく蛇行)
-   *   phase_ms               : ステア方向を切り替える周期 [ms]
+   *   phase_ms               : ステア方向の基準周期 [ms]
+   *                            初回フェーズは phase_ms、2 回目以降は
+   *                            phase_ms*2 を使う (直進開始位置から中心線を
+   *                            またいで両側に均等に振れるようにするため)
+   *                            フェーズ反転時 (2 回目以降) には
+   *                            SerpentineStraightMs だけ base/base で直進する
    *   total_ms               : 全体の走行時間 [ms]
    *                            SerpentineForever (0) で時間制限なし
    *   poll                   : 10ms ごとに呼ばれる関数。

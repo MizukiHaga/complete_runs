@@ -16,6 +16,12 @@ void Color::configure(pbio_port_id_t color_sensor_port)
  * 引数が nullptr の要素はスキップする (h だけ欲しい、などに対応)。 */
 void Color::readHsv(bool surface, uint16_t *h, uint8_t *s, uint8_t *v)
 {
+  if (device_ == nullptr) {
+    if (h != nullptr) *h = 0;
+    if (s != nullptr) *s = 0;
+    if (v != nullptr) *v = 0;
+    return;
+  }
   const pup_color_hsv_t hsv = pup_color_sensor_hsv(device_, surface);
   if (h != nullptr) {
     *h = hsv.h;
@@ -31,6 +37,9 @@ void Color::readHsv(bool surface, uint16_t *h, uint8_t *s, uint8_t *v)
 /* 反射値 0〜100 を返す。エラー時は負値。 */
 int32_t Color::readReflection()
 {
+  if (device_ == nullptr) {
+    return -1;
+  }
   return pup_color_sensor_reflection(device_);
 }
 
