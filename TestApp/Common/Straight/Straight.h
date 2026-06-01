@@ -39,6 +39,16 @@ public:
   /* dly_tsk の上限 TMAX_RELTIM (4,000,000 ms) を超えないようにするためのクランプ */
   static constexpr uint32_t MaxDurationMs = 4000000U;
 
+  /* === 左右エンコーダ PID 補正 (既定値) ==================== */
+  /* エンコーダ差分 error に対する比例ゲイン */
+  static constexpr float    DefaultBalanceKp   = 0.10f;
+  /* 積分ゲイン (定常ズレを消す) */
+  static constexpr float    DefaultBalanceKi   = 0.02f;
+  /* 積分項の上限 (ワインドアップ防止) */
+  static constexpr float    BalanceIntegralMax = 200.0f;
+  /* run / runFor 内の補正更新周期 [ms] */
+  static constexpr uint32_t BalanceStepMs      = 10U;
+
   /* === API ================================================ */
   /* 初期化: 左右モータデバイスを取得し、回転方向を設定する。
    * 第3引数 true でエンコーダをリセット。 */
@@ -78,13 +88,52 @@ public:
     else                      stop();
   }
 
+  /* === 左右エンコーダ PID 補正 ============================== */
+  /* 補正の有効/無効 (既定: true)。false で従来の open-loop 動作。 */
+  void setCorrectionEnabled(bool enabled) { correction_enabled_ = enabled; }
+  bool isCorrectionEnabled() const { return correction_enabled_; }
+
+  /* Kp / Ki / 積分上限をまとめて設定。 */
+  void setCorrectionGains(float kp, float ki, float i_max);
+
+  /* 積分・前回エンコーダ・前回コマンドを手動リセット。 */
+  void resetCorrection();
+
+  /* true にすると applyWithCorrection が error/integral/trim を printf する。 */
+  void setCorrectionDebug(bool enabled) { correction_debug_ = enabled; }
+
+  /* バックグラウンド周期タスクから BalanceStepMs ごとに呼ぶ。
+   * 最後に run() でセットされたコマンドをエンコーダ PID 補正付きで再適用する。
+   * 未 configure / 未コマンド / (0, 0) のときは何もしない。 */
+  void tickCorrection();
+
 private:
   /* モータパワーを [-100, 100] に丸める。範囲外の値が来てもクラッシュしないため。 */
   static int clampMotorPower(int power);
+  static float clampFloat(float value, float min_value, float max_value);
+
+  /* 補正なしで set_power し、前回エンコーダ値を更新する。 */
+  void setPowerRaw(int left_power, int right_power);
+
+  /* エンコーダ PID で左右パワーを補正して set_power する。 */
+  void applyWithCorrection(int left_power, int right_power);
 
   /* 取得した左右モータデバイス。configure() で初期化、以降の関数で使い回す。 */
   pup_motor_t *left_ = nullptr;
   pup_motor_t *right_ = nullptr;
+
+  /* --- 補正内部状態 --- */
+  int32_t prev_cL_         = 0;
+  int32_t prev_cR_         = 0;
+  float   integral_        = 0.0f;
+  int     last_cmd_left_   = 0;
+  int     last_cmd_right_  = 0;
+  bool    cmd_initialized_ = false;
+  bool    correction_enabled_ = true;
+  bool    correction_debug_   = false;
+  float   kp_              = DefaultBalanceKp;
+  float   ki_              = DefaultBalanceKi;
+  float   i_max_           = BalanceIntegralMax;
 };
 
 /* === 後方互換マクロ ======================================

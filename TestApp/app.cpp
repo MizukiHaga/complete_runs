@@ -66,3 +66,14 @@ void main_task(intptr_t unused)
 
   ext_tsk();
 }
+
+/* Straight PID 補正タスク。
+ * CRE_CYC の TA_STA で起動時から STRAIGHT_BALANCE_PERIOD ごとに活性化される。
+ * gMotors.tickCorrection() が未 configure / 停止指令中は何もしないので、
+ * configure 前から回っていても安全。 */
+extern "C" void StraightBalanceTask(intptr_t exinf)
+{
+  (void)exinf;
+  gMotors.tickCorrection();
+  ext_tsk();
+}
