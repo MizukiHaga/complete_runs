@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "Common/Straight/Straight.h"
+
 extern Sonic gSonic;
 extern Color gColor;
 extern Gyro gGyro;
@@ -321,11 +323,11 @@ void Nansho1Scene::run()
   approachHeading(target_heading);
 }
 
-extern Nansho1Scene gNansho1;
-
 extern "C" void Nansho1Task(intptr_t exinf)
 {
   (void)exinf;
-  gNansho1.run();
+  /* PID 補正は周期呼び出しで効くので runFor で BalanceStepMs ごとに run() を回す。
+   * 5 秒間 30/30 で走らせて左右差補正の効きを確認する。 */
+  gMotors.run(30, 30);
   ext_tsk();
 }

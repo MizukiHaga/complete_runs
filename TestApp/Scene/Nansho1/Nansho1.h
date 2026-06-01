@@ -31,8 +31,8 @@ public:
 
   /* === 公開パラメータ ======================================== */
   /* 黒線到達まで直進するときの左右パワー (機械差吸収のため別値) */
-  static constexpr int LeftPower  = 64;
-  static constexpr int RightPower = 60;
+  static constexpr int LeftPower  = 30;
+  static constexpr int RightPower = 30;
 
 private:
   /* ジグザグ確認スキャン (回数制限なし)。
