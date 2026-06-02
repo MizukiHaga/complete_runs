@@ -37,13 +37,6 @@ int Straight::clampMotorPower(int power)
   return power;
 }
 
-void Straight::setCorrectionGains(float kp, float ki, float i_max)
-{
-  kp_    = kp;
-  ki_    = ki;
-  i_max_ = i_max;
-}
-
 void Straight::resetCorrection()
 {
   integral_        = 0.0f;

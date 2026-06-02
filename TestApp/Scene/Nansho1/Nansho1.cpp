@@ -10,6 +10,7 @@ extern Sonic gSonic;
 extern Color gColor;
 extern Gyro gGyro;
 extern Straight gMotors;
+extern Nansho1Scene gNansho1;
 
 /* ---------------------------------------------------------------------
  * 旋回中スキャン: target_heading までピボット旋回しつつ
@@ -326,8 +327,6 @@ void Nansho1Scene::run()
 extern "C" void Nansho1Task(intptr_t exinf)
 {
   (void)exinf;
-  /* PID 補正は周期呼び出しで効くので runFor で BalanceStepMs ごとに run() を回す。
-   * 5 秒間 30/30 で走らせて左右差補正の効きを確認する。 */
-  gMotors.run(30, 30);
+  gNansho1.run();
   ext_tsk();
 }
