@@ -4,7 +4,8 @@
 #include <kernel.h>
 #include <pbio/port.h>
 
-#include "Color.h"
+#include "ColorHSV.h"
+#include "ColorRGB.h"
 #include "Gyro.h"
 #include "Sonic.h"
 #include "Straight.h"

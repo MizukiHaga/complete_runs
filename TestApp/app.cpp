@@ -6,8 +6,9 @@
 #include <cstdio>
 #include "LineTracer.h"
 #include "Nansho1.h"
-#include "Color.h"
-#include "Gyro.h"
+#include "ColorHSV.h"
+#include "ColorRGB.h"
+  #include "Gyro.h"
 #include "Sonic.h"
 #include "Straight.h"
 
@@ -18,13 +19,14 @@ extern "C" {
 
 /* === Common インスタンス === */
 Straight gMotors;
-Color gColor;
+ColorHSV gColorHSV;
+ColorRGB gColorRGB;
 Sonic gSonic;
 Gyro gGyro;
 
 /* === Scene: Member A ===
  * SPIKE-RT では引数付きグローバル C++ コンストラクタに依存しない。
- * Nansho1Scene は実行時に gMotors/gColor/gSonic を直接参照する。 */
+ * Nansho1Scene は実行時に gMotors/gColorHSV/gColorRGB/gSonic を直接参照する。 */
 Nansho1Scene gNansho1;
 
 /* センサーポートの定義 */
@@ -40,7 +42,8 @@ void main_task(intptr_t unused)
   (void)unused;
 
   gMotors.configure(left_motor_port, right_motor_port);
-  gColor.configure(color_sensor_port);
+  gColorHSV.configure(color_sensor_port);
+  gColorRGB.configure(color_sensor_port);
   gSonic.configure(ultrasonic_port);
 
   gGyro.init();
