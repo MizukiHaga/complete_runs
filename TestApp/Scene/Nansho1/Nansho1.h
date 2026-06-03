@@ -79,7 +79,7 @@ private:
   /* 左右に振る角度 [°] (±この値)。 */
   static constexpr float    WigWagAmpDeg       = 90.0f;
   /* 1 サイクル末の「少し直進」する時間 [ms] とパワー。 */
-  static constexpr uint32_t WigWagForwardMs    = 800U;
+  static constexpr uint32_t WigWagForwardMs    = 400U;
   static constexpr int      WigWagForwardPower = 35;
 
   /* === 360° スキャンフェーズ用パラメータ ===================== */
@@ -90,7 +90,7 @@ private:
 
   /* === 目標方向への旋回パラメータ ============================ */
   static constexpr int      TurnPower          = 33;
-  static constexpr float    TurnToleranceDeg   = 3.8f;
+  static constexpr float    TurnToleranceDeg   = 3.7f;
   /* turnToHeading / rotateToHeadingWithScan の打ち切り時間 [ms] (安全用) */
   static constexpr uint32_t TurnMaxMs          = 8000U;
 

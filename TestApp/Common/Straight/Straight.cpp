@@ -124,8 +124,13 @@ void Straight::applyWithCorrection(int left_power, int right_power)
   const float trim = kp_ * error + ki_ * integral_;
   const int   half = (int)(trim / 2.0f);
 
-  const int out_left  = clampMotorPower(left_power  - half);
-  const int out_right = clampMotorPower(right_power + half);
+  /* 補正はパワーの符号に合わせて「速い車輪の絶対値を減らす」方向に効かせる。
+   * こうしないと後退 (負パワー) のとき符号が逆になり、ズレを増幅して曲がる。 */
+  const int sgnL = (left_power  >= 0) ? 1 : -1;
+  const int sgnR = (right_power >= 0) ? 1 : -1;
+
+  const int out_left  = clampMotorPower(left_power  - sgnL * half);
+  const int out_right = clampMotorPower(right_power + sgnR * half);
 
   if (correction_debug_) {
     printf("Balance dcL=%d dcR=%d err=%d int=%d trim=%d -> L=%d R=%d\n",

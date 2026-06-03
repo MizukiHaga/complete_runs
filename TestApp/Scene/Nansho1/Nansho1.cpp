@@ -273,13 +273,14 @@ void Nansho1Scene::approachHeading(float heading)
  * --------------------------------------------------------------------- */
 void Nansho1Scene::run()
 {
-  /* 0. センサ死活確認 (デバッグ用) */
-  printf("Sonic configured=%d\n", gSonic.isConfigured() ? 1 : 0);
-  for (int i = 0; i < 5; ++i) {
-    const int32_t d = gSonic.readDistanceMm();
-    printf("Sonic warmup dist=%d (mm)\n", (int)d);
-    dly_tsk(100 * 1000);
-  }
+
+  gGyro.reset();
+  dly_tsk(StepMs * 1000U);
+  gMotors.runFor((-1*LeftPower), (-1*RightPower), 4000U);
+  dly_tsk(StepMs * 1000U);
+  approachHeading(-90.0f);
+  dly_tsk(StepMs * 1000U);
+
 
   /* 1. 黒線を踏むまで前進 */
   while (1) {
