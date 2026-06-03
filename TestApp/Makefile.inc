@@ -6,21 +6,24 @@ SRCLANG = c++
 APPL_CXXOBJS += \
 	LineTracer.o \
 	Straight.o \
-	Color.o \
+	ColorHSV.o \
+	ColorRGB.o \
 	Sonic.o \
 	Gyro.o
 
 APPL_DIRS += \
 	$(mkfile_path)Common/LineTracer \
 	$(mkfile_path)Common/Straight \
-	$(mkfile_path)Common/Color \
+	$(mkfile_path)Common/Color/ColorHSV \
+	$(mkfile_path)Common/Color/ColorRGB \
 	$(mkfile_path)Common/Sonic \
 	$(mkfile_path)Common/Gyro
 
 INCLUDES += \
 	-I$(mkfile_path)Common/LineTracer \
 	-I$(mkfile_path)Common/Straight \
-	-I$(mkfile_path)Common/Color \
+	-I$(mkfile_path)Common/Color/ColorHSV \
+	-I$(mkfile_path)Common/Color/ColorRGB \
 	-I$(mkfile_path)Common/Sonic \
 	-I$(mkfile_path)Common/Gyro
 

@@ -26,12 +26,6 @@ extern "C" {
 
 class Straight {
 public:
-  /* === 既定値 / 定数 ====================================== */
-  /* 直進時のデフォルト左右パワー。機械差を吸収するため左右で別値にできる。 */
-  static constexpr int DefaultLeftPower = 70;
-  static constexpr int DefaultRightPower = 65;
-  /* runFor で直進する既定時間 [ms] */
-  static constexpr uint32_t DefaultTimeMs = 2000U;
   /* runFor の最後で線形減速にかける時間 [ms] */
   static constexpr uint32_t DecelMs = 800U;
   /* 減速中のパワー更新間隔 [ms] (小さいほど滑らかだが負荷が増える) */
@@ -53,9 +47,6 @@ public:
   /* 初期化: 左右モータデバイスを取得し、回転方向を設定する。
    * 第3引数 true でエンコーダをリセット。 */
   void configure(pbio_port_id_t left_motor_port, pbio_port_id_t right_motor_port);
-
-  /* 左右両方の PUP モータが取れているか。 */
-  bool isConfigured() const { return left_ != nullptr && right_ != nullptr; }
 
   /* 左右モータに指定パワーをセットする。すぐ戻る。
    * 正: 前進方向 / 負: 後退方向 / 0: 惰性停止 (ブレーキではない) */
@@ -88,20 +79,6 @@ public:
     else                      stop();
   }
 
-  /* === 左右エンコーダ PID 補正 ============================== */
-  /* 補正の有効/無効 (既定: true)。false で従来の open-loop 動作。 */
-  void setCorrectionEnabled(bool enabled) { correction_enabled_ = enabled; }
-  bool isCorrectionEnabled() const { return correction_enabled_; }
-
-  /* Kp / Ki / 積分上限をまとめて設定。 */
-  void setCorrectionGains(float kp, float ki, float i_max);
-
-  /* 積分・前回エンコーダ・前回コマンドを手動リセット。 */
-  void resetCorrection();
-
-  /* true にすると applyWithCorrection が error/integral/trim を printf する。 */
-  void setCorrectionDebug(bool enabled) { correction_debug_ = enabled; }
-
   /* バックグラウンド周期タスクから BalanceStepMs ごとに呼ぶ。
    * 最後に run() でセットされたコマンドをエンコーダ PID 補正付きで再適用する。
    * 未 configure / 未コマンド / (0, 0) のときは何もしない。 */
@@ -117,6 +94,9 @@ private:
 
   /* エンコーダ PID で左右パワーを補正して set_power する。 */
   void applyWithCorrection(int left_power, int right_power);
+
+  /* 積分・前回エンコーダ・前回コマンドをリセットする。 */
+  void resetCorrection();
 
   /* 取得した左右モータデバイス。configure() で初期化、以降の関数で使い回す。 */
   pup_motor_t *left_ = nullptr;
@@ -135,15 +115,5 @@ private:
   float   ki_              = DefaultBalanceKi;
   float   i_max_           = BalanceIntegralMax;
 };
-
-/* === 後方互換マクロ ======================================
- * 旧 C スタイルのコードから参照されている名前を、クラスの定数に橋渡しする。
- * 新規コードでは Straight::DefaultLeftPower のように直接書く方がよい。 */
-#define STRAIGHT_LEFT_POWER        Straight::DefaultLeftPower
-#define STRAIGHT_RIGHT_POWER       Straight::DefaultRightPower
-#define STRAIGHT_TIME              Straight::DefaultTimeMs
-#define STRAIGHT_DECEL_MS          Straight::DecelMs
-#define STRAIGHT_DECEL_STEP_MS     Straight::DecelStepMs
-#define STRAIGHT_MAX_DURATION_MS   Straight::MaxDurationMs
 
 #endif  // TESTAPP_STRAIGHT_H_

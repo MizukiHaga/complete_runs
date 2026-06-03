@@ -7,9 +7,11 @@
 #include "Common/Straight/Straight.h"
 
 extern Sonic gSonic;
-extern Color gColor;
+extern ColorRGB gColorRGB;
+extern ColorHSV gColorHSV;
 extern Gyro gGyro;
 extern Straight gMotors;
+extern Nansho1Scene gNansho1;
 
 /* ---------------------------------------------------------------------
  * 旋回中スキャン: target_heading までピボット旋回しつつ
@@ -98,7 +100,7 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
 
     /* 黒線エッジ判定は Color クラスに移譲。
      * 「いったん非黒を踏んでから再び黒を踏んだ瞬間」だけ true。 */
-    if (gColor.blackEdgeHit(true)) {
+    if (gColorHSV.blackEdgeHit(true)) {
       gMotors.stop();
       printf("WigWag forward HIT(black) heading=%d\n", (int)(h * 10.0f));
       return ScanResult::BlackDetected;
@@ -133,11 +135,11 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
  *   返り値:
  *     true  = 超音波検知 (out_heading に検知時ヨー角)
  *     false = 黒線エッジ検知 (= 黒線を再び踏んだ)
- *   関数の入口で gColor.resetBlackEdge() を呼ぶので、呼び側での初期化は不要。
+ *   関数の入口で gColorHSV.resetBlackEdge() を呼ぶので、呼び側での初期化は不要。
  * --------------------------------------------------------------------- */
 bool Nansho1Scene::wigwagScan(float *out_heading)
 {
-  gColor.resetBlackEdge();  /* 開始は黒上にいる前提なのでクリア */
+  gColorHSV.resetBlackEdge();  /* 開始は黒上にいる前提なのでクリア */
 
   int cycle = 0;
   while (true) {
@@ -281,7 +283,7 @@ void Nansho1Scene::run()
 
   /* 1. 黒線を踏むまで前進 */
   while (1) {
-    if (gColor.isBlack(true)) {
+    if (gColorRGB.isGrayLine()) {
       gMotors.stop();
       break;
     }
@@ -326,8 +328,6 @@ void Nansho1Scene::run()
 extern "C" void Nansho1Task(intptr_t exinf)
 {
   (void)exinf;
-  /* PID 補正は周期呼び出しで効くので runFor で BalanceStepMs ごとに run() を回す。
-   * 5 秒間 30/30 で走らせて左右差補正の効きを確認する。 */
-  gMotors.run(30, 30);
+  gNansho1.run();
   ext_tsk();
 }

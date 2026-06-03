@@ -4,7 +4,8 @@
 #include <kernel.h>
 #include <pbio/port.h>
 
-#include "Color.h"
+#include "ColorHSV.h"
+#include "ColorRGB.h"
 #include "Gyro.h"
 #include "Sonic.h"
 #include "Straight.h"
@@ -31,8 +32,8 @@ public:
 
   /* === 公開パラメータ ======================================== */
   /* 黒線到達まで直進するときの左右パワー (機械差吸収のため別値) */
-  static constexpr int LeftPower  = 30;
-  static constexpr int RightPower = 30;
+  static constexpr int LeftPower  = 50;
+  static constexpr int RightPower = 50;
 
 private:
   /* ジグザグ確認スキャン (回数制限なし)。
@@ -78,7 +79,7 @@ private:
   /* 左右に振る角度 [°] (±この値)。 */
   static constexpr float    WigWagAmpDeg       = 90.0f;
   /* 1 サイクル末の「少し直進」する時間 [ms] とパワー。 */
-  static constexpr uint32_t WigWagForwardMs    = 1000U;
+  static constexpr uint32_t WigWagForwardMs    = 800U;
   static constexpr int      WigWagForwardPower = 35;
 
   /* === 360° スキャンフェーズ用パラメータ ===================== */
@@ -88,8 +89,8 @@ private:
   static constexpr uint32_t ScanMaxMs          = 15000U;
 
   /* === 目標方向への旋回パラメータ ============================ */
-  static constexpr int      TurnPower          = 30;
-  static constexpr float    TurnToleranceDeg   = 5.0f;
+  static constexpr int      TurnPower          = 33;
+  static constexpr float    TurnToleranceDeg   = 3.8f;
   /* turnToHeading / rotateToHeadingWithScan の打ち切り時間 [ms] (安全用) */
   static constexpr uint32_t TurnMaxMs          = 8000U;
 

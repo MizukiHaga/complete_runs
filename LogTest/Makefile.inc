@@ -8,6 +8,9 @@ APPL_CXXOBJS +=\
 	DistanceSensor.o\
 	Battery.o\
 	Sonic.o\
+	ColorHsv.o\
+	ColorSensor.o\
+	ColorRgbSensor.o\
 
 APPL_LIBS += -lm
 
@@ -15,7 +18,10 @@ APPL_DIRS += $(mkfile_path)Viewcmd/Angle
 APPL_DIRS += $(mkfile_path)Viewcmd/Morter
 APPL_DIRS += $(mkfile_path)Viewcmd/DistanceSensor
 APPL_DIRS += $(mkfile_path)Viewcmd/Battery
+APPL_DIRS += $(mkfile_path)Viewcmd/ColorSensor
+APPL_DIRS += $(mkfile_path)Viewcmd/ColorRgbSensor
 APPL_DIRS += $(mkfile_path)ViewLight/Sonic
+APPL_DIRS += $(mkfile_path)ViewLight/ColorHsv
 
 INCLUDES += \
 	-I$(mkfile_path)Viewcmd\
@@ -23,5 +29,8 @@ INCLUDES += \
 	-I$(mkfile_path)Viewcmd/Morter\
 	-I$(mkfile_path)Viewcmd/DistanceSensor\
 	-I$(mkfile_path)Viewcmd/Battery\
+	-I$(mkfile_path)Viewcmd/ColorSensor\
+	-I$(mkfile_path)Viewcmd/ColorRgbSensor\
 	-I$(mkfile_path)ViewLight\
 	-I$(mkfile_path)ViewLight/Sonic\
+	-I$(mkfile_path)ViewLight/ColorHsv\

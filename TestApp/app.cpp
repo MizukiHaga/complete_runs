@@ -6,8 +6,9 @@
 #include <cstdio>
 #include "LineTracer.h"
 #include "Nansho1.h"
-#include "Color.h"
-#include "Gyro.h"
+#include "ColorHSV.h"
+#include "ColorRGB.h"
+  #include "Gyro.h"
 #include "Sonic.h"
 #include "Straight.h"
 
@@ -18,13 +19,14 @@ extern "C" {
 
 /* === Common インスタンス === */
 Straight gMotors;
-Color gColor;
+ColorHSV gColorHSV;
+ColorRGB gColorRGB;
 Sonic gSonic;
 Gyro gGyro;
 
 /* === Scene: Member A ===
  * SPIKE-RT では引数付きグローバル C++ コンストラクタに依存しない。
- * Nansho1Scene は実行時に gMotors/gColor/gSonic を直接参照する。 */
+ * Nansho1Scene は実行時に gMotors/gColorHSV/gColorRGB/gSonic を直接参照する。 */
 Nansho1Scene gNansho1;
 
 /* センサーポートの定義 */
@@ -39,9 +41,12 @@ void main_task(intptr_t unused)
 {
   (void)unused;
 
-  printf("+---------------------------------+\n");
-  printf("|   Press force sensor to start   |\n");
-  printf("+---------------------------------+\n");
+  gMotors.configure(left_motor_port, right_motor_port);
+  gColorHSV.configure(color_sensor_port);
+  gColorRGB.configure(color_sensor_port);
+  gSonic.configure(ultrasonic_port);
+
+  gGyro.init();
 
   pup_device_t *force_sensor = pup_force_sensor_get_device(force_sensor_port);
   while (!pup_force_sensor_touched(force_sensor)) {
@@ -50,16 +55,6 @@ void main_task(intptr_t unused)
   while (pup_force_sensor_touched(force_sensor)) {
     dly_tsk(10 * 1000);
   }
-
-  printf("Battery: %u mV\n", (unsigned)hub_battery_get_voltage());
-
-  gMotors.configure(left_motor_port, right_motor_port);
-  gColor.configure(color_sensor_port);
-  gSonic.configure(ultrasonic_port);
-
-  /* IMU 初期化と準備完了待ち。Nansho1 の旋回がヨー角に依存するため、
-   * シーン開始前に IMU の is_ready が true になるのを待つ (内部で polling)。 */
-  gGyro.init();
 
   printf("Start Nansho1\n");
   act_tsk(NANSHO1_TASK);
