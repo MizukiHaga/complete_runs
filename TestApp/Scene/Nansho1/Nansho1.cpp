@@ -278,7 +278,9 @@ void Nansho1Scene::run()
   dly_tsk(StepMs * 1000U);
   gMotors.runFor((-1*LeftPower), (-1*RightPower), 4000U);
   dly_tsk(StepMs * 1000U);
-  approachHeading(-90.0f);
+  /* -90°へ旋回するだけ。ここで前進すると手前の線を通り越して
+   * 円の向こう側の線を踏んでしまうため、前進は次のライン検出ループに任せる。 */
+  turnToHeading(-90.0f);
   dly_tsk(StepMs * 1000U);
 
 
