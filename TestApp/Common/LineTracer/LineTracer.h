@@ -15,7 +15,7 @@
  * Kp: 大きいほど反応が鋭くなるが、振動が出やすい。
  * Ki: 累積誤差で定常偏差を消す。大きすぎると暴れる。
  * Kd: 振動を抑える。ノイズに弱いので大きくしすぎない。 */
-#define PID_DEFAULT_KP    (0.1F)
+#define PID_DEFAULT_KP    (0.15F)
 #define PID_DEFAULT_KI    (0.0005F)
 #define PID_DEFAULT_KD    (0.45F)
 #define PID_OUTPUT_MAX    (100.0F)  // PID 合計出力の絶対値上限
@@ -25,15 +25,15 @@
 #define PID_I_MAX         (100.0F)
 
 /* 左右モータの直進ベースパワー。機械差・曲がり癖をここで吸収。 */
-#define LEFT_BASE_SPEED   (60)
-#define RIGHT_BASE_SPEED  (60)
+#define LEFT_BASE_SPEED   (50)
+#define RIGHT_BASE_SPEED  (50)
 
 /* 走行エッジの切替（LEFT_EDGE / RIGHT_EDGE = 1 のとき有効）。
  *  - LEFT_EDGE  = 1 : 黒線の左側エッジを追従
  *  - RIGHT_EDGE = 1 : 黒線の右側エッジを追従（符号を反転して使う）
  * 両方 1 にすると左エッジが優先される (motor_drive_control の式参照)。 */
 #define LEFT_EDGE         (1)
-#define RIGHT_EDGE        (1)
+#define RIGHT_EDGE        (0)
 
 #include <pbio/port.h>
 
