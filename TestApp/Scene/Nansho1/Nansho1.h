@@ -70,6 +70,10 @@ private:
    * シーン共通の終了動作。 */
   void approachHeading(float heading);
 
+  /* 押し出した後の復帰動作: 180° 向き直って、黒線(グレーライン)を
+   * 踏むまで直進する。 */
+  void returnToLineAfterPush();
+
   /* === 検知共通パラメータ ==================================== */
   /* 物体を「検知あり」とみなす最大距離 [mm]。
    * ジグザグスキャン中・360° スキャン中・前進中いずれでも共通。 */
@@ -79,7 +83,7 @@ private:
   /* 左右に振る角度 [°] (±この値)。 */
   static constexpr float    WigWagAmpDeg       = 90.0f;
   /* 1 サイクル末の「少し直進」する時間 [ms] とパワー。 */
-  static constexpr uint32_t WigWagForwardMs    = 800U;
+  static constexpr uint32_t WigWagForwardMs    = 400U;
   static constexpr int      WigWagForwardPower = 35;
 
   /* === 360° スキャンフェーズ用パラメータ ===================== */
@@ -90,13 +94,18 @@ private:
 
   /* === 目標方向への旋回パラメータ ============================ */
   static constexpr int      TurnPower          = 33;
-  static constexpr float    TurnToleranceDeg   = 3.8f;
+  static constexpr float    TurnToleranceDeg   = 3.6f;
   /* turnToHeading / rotateToHeadingWithScan の打ち切り時間 [ms] (安全用) */
   static constexpr uint32_t TurnMaxMs          = 8000U;
 
   /* === 検知方向への前進パラメータ ============================ */
   static constexpr int      ApproachPower      = 40;
   static constexpr uint32_t ApproachTimeMs     = 3000U;
+
+  /* === 押し出し後の復帰 (returnToLineAfterPush) パラメータ ==== */
+  /* 直進を始める前に「少し後退」する量 (パワーと時間)。 */
+  static constexpr int      ReturnBackPower    = 40;
+  static constexpr uint32_t ReturnBackMs       = 500U;
 
   /* === 制御ループ周期 [ms] =================================== */
   static constexpr uint32_t StepMs             = 10U;

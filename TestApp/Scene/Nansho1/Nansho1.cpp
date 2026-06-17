@@ -269,17 +269,49 @@ void Nansho1Scene::approachHeading(float heading)
 }
 
 /* ---------------------------------------------------------------------
+ * 押し出した後の復帰動作:
+ *   1. 黒線を読むための旋回の前に、一度少し後退する
+ *   2. 灰色を読んだ時にリセットした 0° から見て 180° を向く
+ *      (ここでは gGyro.reset() しない。0° 基準のまま 180° へ旋回する)
+ *   3. 黒線(グレーライン)を踏むまで直進する
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::returnToLineAfterPush()
+{
+  /* 黒線を読むための旋回の前に、一度少し後退する。 */
+  gMotors.runFor((-1 * ReturnBackPower), (-1 * ReturnBackPower), ReturnBackMs);
+  dly_tsk(StepMs * 1000U);
+
+  /* 灰色を読んだ時の 0° 基準のまま、180° を向く。 */
+  turnToHeading(180.0f);
+  dly_tsk(StepMs * 1000U);
+
+  /* 黒線(グレーライン)を踏むまで直進する。 */
+  while (1) {
+    if (gColorHSV.blackEdgeHit(true)) {
+      gMotors.stop();
+      printf("returnToLineAfterPush: line detected. stop.\n");
+      break;
+    }
+    gMotors.run(LeftPower, RightPower);
+    dly_tsk(StepMs * 1000U);
+  }
+}
+
+/* ---------------------------------------------------------------------
  * シーン本体
  * --------------------------------------------------------------------- */
 void Nansho1Scene::run()
 {
-  /* 0. センサ死活確認 (デバッグ用) */
-  printf("Sonic configured=%d\n", gSonic.isConfigured() ? 1 : 0);
-  for (int i = 0; i < 5; ++i) {
-    const int32_t d = gSonic.readDistanceMm();
-    printf("Sonic warmup dist=%d (mm)\n", (int)d);
-    dly_tsk(100 * 1000);
-  }
+
+  gGyro.reset();
+  dly_tsk(StepMs * 1000U);
+  gMotors.runFor((-1*LeftPower), (-1*RightPower), 3850U);
+  dly_tsk(StepMs * 1000U);
+  /* -90°へ旋回するだけ。ここで前進すると手前の線を通り越して
+   * 円の向こう側の線を踏んでしまうため、前進は次のライン検出ループに任せる。 */
+  turnToHeading(-90.0f);
+  dly_tsk(StepMs * 1000U);
+
 
   /* 1. 黒線を踏むまで前進 */
   while (1) {
@@ -303,6 +335,8 @@ void Nansho1Scene::run()
     printf("Detected during wigwag (sonic), heading=%d (deci-deg)\n",
            (int)(detected_heading * 10.0f));
     approachHeading(detected_heading);
+    /* 押し出し後: 180° 向き直って黒線を踏むまで直進 */
+    returnToLineAfterPush();
     return;
   }
 
@@ -323,6 +357,8 @@ void Nansho1Scene::run()
   printf("Scan360: detected at heading=%d (deci-deg)\n",
          (int)(target_heading * 10.0f));
   approachHeading(target_heading);
+  /* 押し出し後: 180° 向き直って黒線を踏むまで直進 */
+  returnToLineAfterPush();
 }
 
 extern "C" void Nansho1Task(intptr_t exinf)

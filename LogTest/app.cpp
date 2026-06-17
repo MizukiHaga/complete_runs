@@ -39,7 +39,6 @@ void main_task(intptr_t unused)
   /* RGB ログ (Viewcmd) → BLE 出力。 */
   ColorRgbSensor_Configure(color_sensor_port);
   ColorRgbSensor_SetOutput(bt_out);
-  sta_cyc(COLOR_RGB_SENSOR_TASK_CYC);
 
   /* HSV ログ / フォース押下 HSV 表示は、同じセンサ(E)を二重駆動すると
    * モード切替が競合するため今は無効化。使うときは RGB を止めること。 */
@@ -57,9 +56,9 @@ void main_task(intptr_t unused)
 
   //sta_cyc(ANGLE_TASK_CYC);
   //sta_cyc(MORTER_TASK_CYC);
-  //sta_cyc(DISTANCE_TASK_CYC);
+  sta_cyc(DISTANCE_TASK_CYC);
   //sta_cyc(BATTERY_TASK_CYC);
   //sta_cyc(SONIC_LIGHT_TASK_CYC);
   //sta_cyc(COLOR_SENSOR_TASK_CYC);
-  sta_cyc(COLOR_RGB_SENSOR_TASK_CYC);
+  //sta_cyc(COLOR_RGB_SENSOR_TASK_CYC);
 }

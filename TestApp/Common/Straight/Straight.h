@@ -35,9 +35,9 @@ public:
 
   /* === 左右エンコーダ PID 補正 (既定値) ==================== */
   /* エンコーダ差分 error に対する比例ゲイン */
-  static constexpr float    DefaultBalanceKp   = 0.10f;
+  static constexpr float    DefaultBalanceKp   = 0.2f;
   /* 積分ゲイン (定常ズレを消す) */
-  static constexpr float    DefaultBalanceKi   = 0.02f;
+  static constexpr float    DefaultBalanceKi   = 0.05f;
   /* 積分項の上限 (ワインドアップ防止) */
   static constexpr float    BalanceIntegralMax = 200.0f;
   /* run / runFor 内の補正更新周期 [ms] */
