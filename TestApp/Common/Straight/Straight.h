@@ -5,15 +5,16 @@
  *  外からは run/stop/runFor などのメソッドで操作する。
  *
  *  直進補正:
- *    左右パワーが同じ (1:1) のとき、run() 開始時のヨー角を目標に
- *    gGyro の角度ずれを PI 補正する。弧走行 (左右パワー差あり) や
- *    ピボットでは補正しない。
+ *    左右パワーが同じ (1:1) のとき、目標ヨー角を維持するよう
+ *    gGyro の角度ずれを PI 補正する。目標角は run() 開始時の向きか、
+ *    setTargetHeading() で指定した角度。弧走行・ピボットでは補正しない。
  *
  *  使い方:
  *    Straight gMotors;
- *    gGyro.reset();                      // 直進の基準角を 0 にする
+ *    gGyro.reset();
  *    gMotors.configure(PBIO_PORT_ID_B, PBIO_PORT_ID_A);
- *    gMotors.run(50, 50);              // 走る
+ *    gMotors.setTargetHeading(0.0f);   // 任意: 目標角を明示指定
+ *    gMotors.run(50, 50);
  *    gMotors.stop();
  *    gMotors.runFor(50, 50, 2000);
  */
@@ -46,6 +47,11 @@ public:
   static constexpr uint32_t BalanceStepMs      = 10U;
 
   void configure(pbio_port_id_t left_motor_port, pbio_port_id_t right_motor_port);
+
+  /* 直進補正の目標ヨー角 [deg] を指定する (integral をリセット)。
+   * 未指定時は 1:1 直進開始時の gGyro.heading() が目標になる。
+   * stop() / resetCorrection() で自動目標に戻る。 */
+  void setTargetHeading(float heading_deg);
 
   void run(int left_power, int right_power);
   void stop();
@@ -81,6 +87,7 @@ private:
   bool    cmd_initialized_  = false;
   bool    correction_enabled_ = true;
   bool    correction_debug_   = false;
+  bool    manual_target_heading_ = false;
   float   kp_               = DefaultBalanceKp;
   float   ki_               = DefaultBalanceKi;
   float   i_max_            = BalanceIntegralMax;

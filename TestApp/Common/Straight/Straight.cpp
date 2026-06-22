@@ -53,11 +53,19 @@ bool Straight::samePowerRatio(int left, int right, int prev_left, int prev_right
 
 void Straight::resetCorrection()
 {
-  integral_        = 0.0f;
-  target_heading_  = 0.0f;
-  last_cmd_left_   = 0;
-  last_cmd_right_  = 0;
-  cmd_initialized_ = false;
+  integral_              = 0.0f;
+  target_heading_        = 0.0f;
+  last_cmd_left_         = 0;
+  last_cmd_right_        = 0;
+  cmd_initialized_       = false;
+  manual_target_heading_ = false;
+}
+
+void Straight::setTargetHeading(float heading_deg)
+{
+  target_heading_        = heading_deg;
+  manual_target_heading_ = true;
+  integral_              = 0.0f;
 }
 
 void Straight::setPowerRaw(int left_power, int right_power)
@@ -72,7 +80,7 @@ void Straight::setPowerRaw(int left_power, int right_power)
 
 /* ヨー角 PI で左右パワーを補正して set_power する。
  *
- * 目標角 = run() 開始時 (またはモード切替時) の gGyro.heading()
+ * 目標角 = setTargetHeading() で指定、または run() 開始時の gGyro.heading()
  * error  = wrap(現在角 − 目標角) [deg]
  *          (>0 なら左に曲がった → 右旋回方向へ補正)
  * trim   = Kp * error + Ki * integral
@@ -116,8 +124,10 @@ void Straight::applyWithCorrection(int left_power, int right_power)
                        last_cmd_left_, last_cmd_right_);
 
     if (!keep_heading) {
-      target_heading_ = gGyro.heading();
-      integral_       = 0.0f;
+      if (!manual_target_heading_) {
+        target_heading_ = gGyro.heading();
+      }
+      integral_ = 0.0f;
       setPowerRaw(left_power, right_power);
       return;
     }
