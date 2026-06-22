@@ -61,6 +61,7 @@ public:
   int32_t brightness();
 
   bool is(color_detect_t color);
+  bool isGrayLine();
 
 private:
   static int findMapIndex(color_detect_t color);

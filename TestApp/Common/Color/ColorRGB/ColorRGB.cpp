@@ -98,3 +98,8 @@ bool ColorRGB::is(color_detect_t color)
   readRgb(&r, &g, &b);
   return withinTolerance(r, g, b, rgb_map_edit[idx]);
 }
+
+bool ColorRGB::isGrayLine()
+{
+  return is(COLOR_DETECT_GRAYLINE);
+}

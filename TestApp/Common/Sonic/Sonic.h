@@ -13,12 +13,12 @@
 #ifndef TESTAPP_SONIC_H_
 #define TESTAPP_SONIC_H_
 
+extern "C" {
 #include <pbio/port.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 /* PUP の C API は C リンクで提供されているので extern "C" で囲む */
-extern "C" {
 #include <spike/pup/ultrasonicsensor.h>
 }
 
