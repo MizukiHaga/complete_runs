@@ -55,9 +55,21 @@ void main_task(intptr_t unused)
   while (pup_force_sensor_touched(force_sensor)) {
     dly_tsk(10 * 1000);
   }
+  
+  printf("Battery: %u mV\n", (unsigned)hub_battery_get_voltage());
+  
+  // gMotors.configure(left_motor_port, right_motor_port);
+  // gColor.configure(color_sensor_port);
+  // gSonic.configure(ultrasonic_port);
+  // gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
+  gHCR.run_hrc();
 
-  printf("Start Nansho1\n");
-  act_tsk(NANSHO1_TASK);
+
+  /* IMU 初期化と準備完了待ち。Nansho1 の旋回がヨー角に依存するため、
+   * シーン開始前に IMU の is_ready が true になるのを待つ (内部で polling)。 */
+
+  // printf("Start Nansho1\n");
+  // act_tsk(NANSHO1_TASK);
 
   ext_tsk();
 }

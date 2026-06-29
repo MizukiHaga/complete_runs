@@ -39,7 +39,7 @@ public:
   /* === ヨー角 PI 直進補正 (既定値) ==========================
    * error = 現在角 − 目標角 [deg] (±180 に折り畳み)
    * trim  = Kp * error + Ki * integral → 左右に ±trim/2 を分配 */
-  static constexpr float    DefaultBalanceKp   = 1.3f;
+  static constexpr float    DefaultBalanceKp   = 1.8f;
   static constexpr float    DefaultBalanceKi   = 0.01f;
   static constexpr float    BalanceIntegralMax = 50.0f;
   /* 1 周期あたりの左右パワー差分上限 (|half| の上限) */
