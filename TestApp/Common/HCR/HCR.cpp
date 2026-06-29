@@ -3,6 +3,7 @@
 #include "../Color/ColorRGB/ColorRGB.h"
 #include "LineTracer.h"
 #include "../Straight/Straight.h"
+#include "../Gyro/Gyro.h"
 #include "HCR.h"
 #include "kernel_cfg.h"
 
@@ -20,6 +21,7 @@ extern Straight gMotors;
 extern ColorHSV gColorHSV;
 extern ColorRGB gColorRGB;
 extern LineTracer gLineTracer;
+extern Gyro gGyro;
 
 void HCR::configure_hrc(pbio_port_id_t left_motor_port,
                     pbio_port_id_t right_motor_port,
@@ -30,9 +32,9 @@ void HCR::configure_hrc(pbio_port_id_t left_motor_port,
   color_sensor_port_ = color_sensor_port;
   configured_ = true;
 
-  gMotors.configure(left_motor_port, right_motor_port);
-  gColorHSV.configure(color_sensor_port);
-  gLineTracer.configure(left_motor_port, right_motor_port, color_sensor_port);
+  // gMotors.configure(left_motor_port, right_motor_port);
+  // gColorHSV.configure(color_sensor_port);
+  // gLineTracer.configure(left_motor_port, right_motor_port, color_sensor_port);
 }
 
 void HCR::turn_90(const char* direction, float inner_radius_mm)
@@ -134,42 +136,30 @@ void HCR::turn_90(const char* direction, float inner_radius_mm)
 
 void HCR::catch_blue_line()
 {
-  gLineTracer.setBaseSpeed(80.0f, 80.0f);
+  sta_cyc(LINE_TRACER_TASK_CYC);
+  dly_tsk(1500 * 1000);
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  gLineTracer.setBaseSpeed(40.0f, 40.0f);
   gLineTracer.setPid(0.04f,0.0004f,0.3f, 100.0f);
   gLineTracer.setScale(2.5f);
-  sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(800 * 1000);
-  stp_cyc(LINE_TRACER_TASK_CYC);
-  SlowDown(80.0f, 80.0f, 0.6f, 40.0f);
   while (true) {
     if (gColorHSV.is(COLOR_DETECT_SKYBLUE, true)) {
-      stp_cyc(LINE_TRACER_TASK_CYC);
-      gMotors.run(0, 0);
-      dly_tsk(500 * 1000);
       gMotors.stop();
       break;
     }
+    gLineTracer.step();
     dly_tsk(5 * 1000);
   }
 }
 void HCR::catch_black_line()
 {
-  if (!configured_) {
-    return;
-  }
-  gMotors.run(70, 70);
   while (true) {
     if (gColorHSV.isBlack(true)) {
       gMotors.stop();
       dly_tsk(500 * 1000);
-      gLineTracer.setBaseSpeed(70.0f, 70.0f);
-      gLineTracer.setPid(0.12f,0.0004f,0.8f, 100.0f);
-      gLineTracer.setScale(4.5f);
-      sta_cyc(LINE_TRACER_TASK_CYC);
-      dly_tsk(1000 * 1000);
-      stp_cyc(LINE_TRACER_TASK_CYC);
       break;
     }
+    gMotors.run(67, 70);
     dly_tsk(5 * 1000);
   }
 }
@@ -178,33 +168,27 @@ void HCR::catch_black_line()
 void HCR::run_hrc(void)
 {
   gLineTracer.setBaseSpeed(70.0f, 70.0f);
-  gLineTracer.setPid(0.12f,0.0004f,0.5f, 100.0f);
+  gLineTracer.setPid(0.1f,0.0004f,0.9f, 100.0f);
   gLineTracer.setScale(5.5f);
   sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(9800 * 1000);
+  dly_tsk(5500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
-
-  gMotors.run(0, 0);
-  dly_tsk(1000 * 1000);
-  gMotors.stop();
-  dly_tsk(5000 * 1000);
+  gGyro.reset();
+  sta_cyc(LINE_TRACER_TASK_CYC);
+  dly_tsk(4000 * 1000);
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  gMotors.setTargetHeading(-155.0f);
   gMotors.run(70, 70);
-  dly_tsk(2800 * 1000);
+  dly_tsk(1800 * 1000);
   gMotors.stop();
-  dly_tsk(1000 * 1000);
-  
-  // catch_black_line();
-  // catch_blue_line();
+  catch_black_line();
+  catch_blue_line();
 }
 
 void HCR::SlowDown(float left_speed, float right_speed, float duration_sec, float target_speed)
 {
   stp_cyc(LINE_TRACER_TASK_CYC);
   
-
-  if (!configured_) {
-    return;
-  }
 
   if (duration_sec <= 0.0f) {
     sta_cyc(LINE_TRACER_TASK_CYC);

@@ -67,7 +67,7 @@ void main_task(intptr_t unused)
   // gMotors.configure(left_motor_port, right_motor_port);
   // gColor.configure(color_sensor_port);
   // gSonic.configure(ultrasonic_port);
-  gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
+  // gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
   gHCR.run_hrc();
 
 
