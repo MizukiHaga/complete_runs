@@ -167,9 +167,9 @@ void HCR::catch_black_line()
 
 void HCR::run_hrc(void)
 {
-  gLineTracer.setBaseSpeed(70.0f, 70.0f);
-  gLineTracer.setPid(0.1f,0.0004f,0.9f, 100.0f);
-  gLineTracer.setScale(5.5f);
+  gLineTracer.setBaseSpeed(80.0f, 80.0f);
+  gLineTracer.setPid(0.12f,0.0004f,0.9f, 100.0f);
+  gLineTracer.setScale(5.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(5500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
