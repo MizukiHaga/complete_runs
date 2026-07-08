@@ -33,7 +33,7 @@
  *  - RIGHT_EDGE = 1 : 黒線の右側エッジを追従（符号を反転して使う）
  * 両方 1 にすると左エッジが優先される (motor_drive_control の式参照)。 */
 #define LEFT_EDGE         (1)
-#define RIGHT_EDGE        (1)
+#define RIGHT_EDGE        (0)
 
 /* 操舵量のスケール。振れ幅は小さいが曲がれない場合はここを大きくする（例: 1.0F -> 1.5F） */
 

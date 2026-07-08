@@ -139,12 +139,16 @@ void HCR::catch_blue_line()
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(1500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setBaseSpeed(40.0f, 40.0f);
+  gLineTracer.setBaseSpeed(35.0f, 35.0f);
   gLineTracer.setPid(0.04f,0.0004f,0.3f, 100.0f);
   gLineTracer.setScale(2.5f);
   while (true) {
-    if (gColorHSV.is(COLOR_DETECT_SKYBLUE, true)) {
+    if (!gColorHSV.isBlack(true) || gColorRGB.isBlue()) {
+      hub_speaker_set_volume(50);
+      hub_speaker_play_tone(1000, 300);
+      stp_cyc(LINE_TRACER_TASK_CYC);
       gMotors.stop();
+      dly_tsk(5000 * 1000);
       break;
     }
     gLineTracer.step();
@@ -167,20 +171,24 @@ void HCR::catch_black_line()
 
 void HCR::run_hrc(void)
 {
+  // gGyro.reset();
+  // hub_speaker_set_volume(50);
+  // hub_speaker_play_tone(1000, 300);
+  // gMotors.setTargetHeading(90.0f);
+  // gMotors.run(50.0f, 50.0f);
   gLineTracer.setBaseSpeed(80.0f, 80.0f);
-  gLineTracer.setPid(0.098f,0.0004f,0.9f, 100.0f);
-  gLineTracer.setScale(6.2f);
+  gLineTracer.setPid(0.082f,0.0006f,0.55f, 100.0f);
+  gLineTracer.setScale(8.6f);
   sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(5500 * 1000);
+  dly_tsk(4300 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
   gGyro.reset();
   sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(4000 * 1000);
+  dly_tsk(3500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
   gMotors.setTargetHeading(-155.0f);
-  gMotors.run(70, 70);
-  dly_tsk(1800 * 1000);
-  gMotors.stop();
+  SpeedUp(80.0f, 80.0f, 1.5f, 100.0f, true);
+
   catch_black_line();
   catch_blue_line();
 }
@@ -217,5 +225,46 @@ void HCR::SlowDown(float left_speed, float right_speed, float duration_sec, floa
   }
   gLineTracer.setBaseSpeed(target_speed, target_speed);
   sta_cyc(LINE_TRACER_TASK_CYC);
+  return;
+}
+
+void HCR::SpeedUp(float left_speed, float right_speed, float duration_sec, float target_speed, bool is_straight)
+{
+  stp_cyc(LINE_TRACER_TASK_CYC);
+
+  if (duration_sec <= 0.0f) {
+    sta_cyc(LINE_TRACER_TASK_CYC);
+    return;
+  }
+
+  const uint32_t total_us = (uint32_t)(duration_sec * 1000000.0f + 0.5f);
+  const uint32_t step_us = 10000U;
+
+  uint32_t elapsed_us = 0U;
+  while (elapsed_us < total_us) {
+    uint32_t slice_us = step_us;
+    if (elapsed_us + slice_us > total_us) {
+      slice_us = total_us - elapsed_us;
+    }
+
+    elapsed_us += slice_us;
+
+    const float ratio = (float)elapsed_us / (float)total_us;
+    const float cur_left = left_speed + (target_speed - left_speed) * ratio;
+    const float cur_right = right_speed + (target_speed - right_speed) * ratio;
+    if (is_straight) {
+      gMotors.run(cur_left, cur_right);
+    }else {
+      gLineTracer.setBaseSpeed(cur_left, cur_right);
+      sta_cyc(LINE_TRACER_TASK_CYC);
+    }
+    dly_tsk((RELTIM)slice_us);
+  }
+  if (is_straight) {
+    gMotors.run(target_speed, target_speed);
+  } else {
+    gLineTracer.setBaseSpeed(target_speed, target_speed);
+    sta_cyc(LINE_TRACER_TASK_CYC);
+  }
   return;
 }
