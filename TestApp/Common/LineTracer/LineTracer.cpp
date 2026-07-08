@@ -33,6 +33,9 @@ void LineTracer::configure(pbio_port_id_t left_motor_port,
 
 void LineTracer::step()
 {
+  if (!enabled_) {
+    return;
+  }
   const int16_t steering_amount = steeringAmountCalculation();
   motorDriveControl(steering_amount);
 }
@@ -52,6 +55,13 @@ void LineTracer::setPid(float kp, float ki, float kd, float out_max)
 
   integral_   = 0.0F;
   prev_error_ = 0.0F;
+}
+
+void LineTracer::setEdgeFollow(bool follow_left_edge)
+{
+  follow_left_edge_ = follow_left_edge;
+  integral_         = 0.0F;
+  prev_error_       = 0.0F;
 }
 
 /* PID 計算によるステアリング操舵量の算出。
@@ -99,7 +109,8 @@ void LineTracer::motorDriveControl(int16_t steering_amount)
 {
   const float dir_sign =
       ((left_base_speed_ + right_base_speed_) < 0.0F) ? -1.0F : 1.0F;
-  const int steer = (int)(steering_amount * LeftEdge * dir_sign);
+  const int edge_sign = follow_left_edge_ ? 1 : -1;
+  const int steer = (int)(steering_amount * edge_sign * dir_sign);
 
   int left_motor_power  = (int)left_base_speed_  + steer;
   int right_motor_power = (int)right_base_speed_ - steer;
