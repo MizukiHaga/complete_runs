@@ -46,7 +46,10 @@ async def list_devices(timeout: float) -> None:
         print("[list] no BLE devices found")
         return
 
-# デバイス接続用の非同期関数定義。
+    print(f"[list] found {len(seen)} device(s):")
+    for addr, (name, uuids) in sorted(seen.items()):
+        marker = "  <-- hub?" if PYBRICKS_SERVICE_UUID in [u.lower() for u in uuids] else ""
+        print(f"  {addr}  name={name!r}{marker}")
 async def run(name_filter: str, address: str | None, timeout: float) -> None:
     if address:
         print(f"[scan] connecting directly to {address} ...")
