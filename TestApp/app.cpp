@@ -7,6 +7,7 @@
 #include "LineTracer.h"
 #include "Nansho1.h"
 #include "ColorHSV.h"
+#include "ColorLAB.h"
 #include "ColorRGB.h"
   #include "Gyro.h"
 #include "Sonic.h"
@@ -22,6 +23,7 @@ extern "C" {
 /* === Common インスタンス === */
 Straight gMotors;
 ColorHSV gColorHSV;
+ColorLAB gColorLAB;
 ColorRGB gColorRGB;
 Sonic gSonic;
 Gyro gGyro;
@@ -47,6 +49,7 @@ void main_task(intptr_t unused)
   
   gMotors.configure(left_motor_port, right_motor_port);
   gColorHSV.configure(color_sensor_port);
+  gColorLAB.configure(color_sensor_port);
   gColorRGB.configure(color_sensor_port);
   gSonic.configure(ultrasonic_port);
   gGyro.init();

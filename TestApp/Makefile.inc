@@ -8,6 +8,7 @@ APPL_CXXOBJS += \
 	Straight.o \
 	HCR.o \
 	ColorHSV.o \
+	ColorLAB.o \
 	ColorRGB.o \
 	Sonic.o \
 	Gyro.o
@@ -17,6 +18,7 @@ APPL_DIRS += \
 	$(mkfile_path)Common/Straight \
 	$(mkfile_path)Common/HCR \
 	$(mkfile_path)Common/Color/ColorHSV \
+	$(mkfile_path)Common/Color/ColorLAB \
 	$(mkfile_path)Common/Color/ColorRGB \
 	$(mkfile_path)Common/Sonic \
 	$(mkfile_path)Common/Gyro
@@ -26,6 +28,7 @@ INCLUDES += \
 	-I$(mkfile_path)Common/Straight \
 	-I$(mkfile_path)Common/HCR \
 	-I$(mkfile_path)Common/Color/ColorHSV \
+	-I$(mkfile_path)Common/Color/ColorLAB \
 	-I$(mkfile_path)Common/Color/ColorRGB \
 	-I$(mkfile_path)Common/Sonic \
 	-I$(mkfile_path)Common/Gyro

@@ -83,7 +83,7 @@ public:
   static constexpr int LeftBaseSpeed  = 50;
   static constexpr int RightBaseSpeed = 50;
 
-  /* 走行エッジ (1=有効)。LeftEdge=1 で左エッジ追従。 */
+  /* 走行エッジの初期値 (1=左エッジ追従)。実行時は setEdgeFollow() で変更可。 */
   static constexpr int LeftEdge  = 1;
   static constexpr int RightEdge = 0;
 
@@ -103,6 +103,13 @@ public:
 
   /* PID ゲインと出力上限を実行時に変更する。設定時に積分項・前回偏差をリセット。 */
   void setPid(float kp, float ki, float kd, float out_max);
+
+  /* 追従エッジを切り替える。true=左エッジ、false=右エッジ。 */
+  void setEdgeFollow(bool follow_left_edge);
+
+  /* false のとき step() は何もしない（Straight 制御中の周期タスク干渉防止）。 */
+  void setEnabled(bool enabled) { enabled_ = enabled; }
+  bool isEnabled() const { return enabled_; }
 
   void setScale(float scale);
 
@@ -130,6 +137,8 @@ private:
 
   float left_base_speed_  = LeftBaseSpeed;
   float right_base_speed_ = RightBaseSpeed;
+  bool  follow_left_edge_ = (LeftEdge != 0);
+  bool  enabled_          = true;
 };
 
 #endif  // TESTAPP_LINETRACER_H_

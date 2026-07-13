@@ -5,18 +5,19 @@
 #include <stdio.h>
 
 #include "Common/Straight/Straight.h"
+#include "Common/LineTracer/LineTracer.h"
 
 extern Sonic gSonic;
 extern ColorRGB gColorRGB;
-extern ColorHSV gColorHSV;
+extern ColorLAB gColorLAB;
 extern Gyro gGyro;
-extern Straight gMotors;
+extern Straight   gMotors;
+extern LineTracer gLineTracer;
 extern Nansho1Scene gNansho1;
-
 /* ---------------------------------------------------------------------
  * 旋回中スキャン: target_heading までピボット旋回しつつ
  *   - 超音波で DetectMaxMm 以下を検知           → SonicDetected
- *   - 目標角に到達 (|diff| <= TurnToleranceDeg) → Completed
+ *   - 目標角に到達 (|diff| <= ScanTurnToleranceDeg) → Completed
  *   - TurnMaxMs 経過                            → Completed (安全停止)
  *
  *  注: 黒線判定はここでは行わない。
@@ -39,14 +40,12 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading)
       if (out_heading != nullptr) {
         *out_heading = h;
       }
-      printf("WigWag rotate HIT(sonic) dist=%d heading=%d\n",
-             (int)dist, (int)(h * 10.0f));
       return ScanResult::SonicDetected;
     }
 
     /* (2) 目標角度に到達? */
     const float diff = gGyro.diffTo(target_heading);
-    if (gGyro.reached(target_heading, TurnToleranceDeg)) {
+    if (gGyro.reached(target_heading, ScanTurnToleranceDeg)) {
       gMotors.stop();
       return ScanResult::Completed;
     }
@@ -54,12 +53,10 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading)
     /* (3) 短い方向にピボット旋回
      *   diff > 0 → ヨー角を増やしたい → CW
      *   diff < 0 → ヨー角を減らしたい → CCW */
-    gMotors.pivotTowardDiff(TurnPower, diff);
+    gMotors.pivotTowardDiff(ScanTurnPower, diff);
 
     log_acc_ms += StepMs;
-    if (log_acc_ms >= 500U) {
-      printf("WigWag rotate target=%d heading=%d dist=%d\n",
-             (int)(target_heading * 10.0f), (int)(h * 10.0f), (int)dist);
+    if (log_acc_ms >= 500U) { 
       log_acc_ms = 0U;
     }
 
@@ -75,7 +72,7 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading)
 /* ---------------------------------------------------------------------
  * 直進中スキャン: 指定時間 power で前進しつつ
  *   - 超音波で検知 → SonicDetected
- *   - 黒線エッジ   → BlackDetected
+ *   - 黒線       → BlackDetected
  *   - 時間切れ     → Completed
  * --------------------------------------------------------------------- */
 Nansho1Scene::ScanResult
@@ -93,16 +90,11 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
       if (out_heading != nullptr) {
         *out_heading = h;
       }
-      printf("WigWag forward HIT(sonic) dist=%d heading=%d\n",
-             (int)dist, (int)(h * 10.0f));
       return ScanResult::SonicDetected;
     }
 
-    /* 黒線エッジ判定は Color クラスに移譲。
-     * 「いったん非黒を踏んでから再び黒を踏んだ瞬間」だけ true。 */
-    if (gColorHSV.blackEdgeHit(true)) {
+    if (gColorLAB.is(COLOR_DETECT_BLACK, true)) {
       gMotors.stop();
-      printf("WigWag forward HIT(black) heading=%d\n", (int)(h * 10.0f));
       return ScanResult::BlackDetected;
     }
 
@@ -110,8 +102,6 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
 
     log_acc_ms += StepMs;
     if (log_acc_ms >= 500U) {
-      printf("WigWag forward dist=%d heading=%d elapsed=%u\n",
-             (int)dist, (int)(h * 10.0f), (unsigned)elapsed_ms);
       log_acc_ms = 0U;
     }
 
@@ -124,177 +114,262 @@ Nansho1Scene::driveForwardWithScan(uint32_t duration_ms, int power, float *out_h
 }
 
 /* ---------------------------------------------------------------------
- * ジグザグ確認スキャン (回数制限なし、黒線エッジ or 超音波検知で終了)
+ * 旋回走査 (片側振り・規定回数で打ち切り)
  *   各サイクル:
- *     a) +WigWagAmpDeg まで旋回 (検知監視)
- *     b) -WigWagAmpDeg まで旋回 (検知監視)
- *     c)  0° に戻る旋回         (検知監視)
- *     d) WigWagForwardMs だけ前進 (検知監視)
- *     e) 次サイクルに備えてヨー角リセット
+ *     a) amp_deg まで旋回 (検知監視)   ※右走査は +90、左走査は -90
+ *     b) 0° に戻る旋回         (検知監視)
+ *     c) WigWagForwardMs だけ前進 (検知監視)
+ *     d) 次サイクルに備えてヨー角リセット
  *
- *   返り値:
- *     true  = 超音波検知 (out_heading に検知時ヨー角)
- *     false = 黒線エッジ検知 (= 黒線を再び踏んだ)
- *   関数の入口で gColorHSV.resetBlackEdge() を呼ぶので、呼び側での初期化は不要。
+ *   返り値 (ScanResult):
+ *     SonicDetected  = 超音波検知 (out_heading に検知時ヨー角)
+ *     BlackDetected  = 前進中に黒線を踏んだ
+ *     Completed      = max_cycles サイクルを検知なしで完了
  * --------------------------------------------------------------------- */
-bool Nansho1Scene::wigwagScan(float *out_heading)
+Nansho1Scene::ScanResult
+Nansho1Scene::wigwagScan(float amp_deg, int max_cycles, float *out_heading)
 {
-  gColorHSV.resetBlackEdge();  /* 開始は黒上にいる前提なのでクリア */
-
-  int cycle = 0;
-  while (true) {
-    ++cycle;
-
-    /* a) +WigWagAmpDeg まで旋回 */
-    printf("WigWag cycle %d: -> +%d deg\n", cycle, (int)WigWagAmpDeg);
-    switch (rotateToHeadingWithScan(+WigWagAmpDeg, out_heading)) {
-      case ScanResult::SonicDetected:  return true;
-      case ScanResult::BlackDetected:  return false;
+  for (int cycle = 1; cycle <= max_cycles; ++cycle) {
+    /* a) amp_deg まで旋回 */
+    switch (rotateToHeadingWithScan(amp_deg, out_heading)) {
+      case ScanResult::SonicDetected:  return ScanResult::SonicDetected;
+      case ScanResult::BlackDetected:  return ScanResult::BlackDetected;
       case ScanResult::Completed:      break;
     }
 
-    /* b) -WigWagAmpDeg まで旋回 */
-    printf("WigWag cycle %d: -> -%d deg\n", cycle, (int)WigWagAmpDeg);
-    switch (rotateToHeadingWithScan(-WigWagAmpDeg, out_heading)) {
-      case ScanResult::SonicDetected:  return true;
-      case ScanResult::BlackDetected:  return false;
-      case ScanResult::Completed:      break;
-    }
-
-    /* c) 0° に戻る旋回 */
-    printf("WigWag cycle %d: -> 0 deg\n", cycle);
+    /* b) 0° に戻る旋回 */
     switch (rotateToHeadingWithScan(0.0f, out_heading)) {
-      case ScanResult::SonicDetected:  return true;
-      case ScanResult::BlackDetected:  return false;
+      case ScanResult::SonicDetected:  return ScanResult::SonicDetected;
+      case ScanResult::BlackDetected:  return ScanResult::BlackDetected;
       case ScanResult::Completed:      break;
     }
 
-    /* d) 少し前進 */
-    printf("WigWag cycle %d: forward %u ms\n",
-           cycle, (unsigned)WigWagForwardMs);
+    /* c) 少し前進 */
     switch (driveForwardWithScan(WigWagForwardMs, WigWagForwardPower, out_heading)) {
-      case ScanResult::SonicDetected:  return true;
-      case ScanResult::BlackDetected:  return false;
+      case ScanResult::SonicDetected:  return ScanResult::SonicDetected;
+      case ScanResult::BlackDetected:  return ScanResult::BlackDetected;
       case ScanResult::Completed:      break;
     }
 
-    /* e) 次サイクルに備えてヨー角リセット。
+    /* d) 次サイクルに備えてヨー角リセット。
      *    直進中の左右モータ差で多少ヨーが動いても、
-     *    次の ±WigWagAmpDeg を「いまの向き」基準で振れるようにするため。 */
+     *    次の amp_deg を「いまの向き」基準で振れるようにするため。 */
     gGyro.reset();
   }
+  return ScanResult::Completed;
 }
 
 /* ---------------------------------------------------------------------
- * その場 360° スキャン (即時停止式)
- *   ピボット旋回 (左右逆符号同パワー) で回りながら超音波を読み続け、
- *   DetectMaxMm 以下を検知した瞬間にモータを止めて、その時のヨー角を
- *   out_heading に入れて true を返す。
- *   1 周回り切っても検知できなければ false。
+ * 円の反対を読み取る動き:
+ *   1. まっすぐ指定時間直進
+ *   2. 右旋回 → 指定時間直進
+ *   3. 右旋回 → 灰色 (グレーライン) を踏むまで直進
  * --------------------------------------------------------------------- */
-bool Nansho1Scene::scan360(float *out_heading)
+Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
 {
-  float    prev_heading = gGyro.heading();
-  float    total_rot    = 0.0f;
-  uint32_t elapsed_ms   = 0U;
-  uint32_t log_acc_ms   = 0U;
-
-  /* 累積角の絶対値で判定 (機体差で IMU の符号が逆でも 1 周で抜けるように)。 */
-  while (fabsf(total_rot) < 360.0f && elapsed_ms < ScanMaxMs) {
-    gMotors.pivotCW(ScanTurnPower);
-
-    const int32_t dist = gSonic.readDistanceMm();
-    const float   h    = gGyro.heading();
-
-    if (dist > 0 && dist <= DetectMaxMm) {
-      gMotors.stop();
-      if (out_heading != nullptr) {
-        *out_heading = h;
-      }
-      printf("Scan360 HIT dist=%d heading=%d\n",
-             (int)dist, (int)(h * 10.0f));
-      return true;
-    }
-
-    /* CW 回転前提なのでヨー進捗は正の側に積む (符号付き diff の絶対値を加算)。 */
-    total_rot   += Gyro::wrapDeg180(h - prev_heading);
-    prev_heading = h;
-
-    log_acc_ms += StepMs;
-    if (log_acc_ms >= 500U) {
-      printf("Scan360 dist=%d heading=%d total_rot=%d\n",
-             (int)dist, (int)(h * 10.0f), (int)(total_rot * 10.0f));
-      log_acc_ms = 0U;
-    }
-
-    dly_tsk(StepMs * 1000U);
-    elapsed_ms += StepMs;
-  }
-
-  gMotors.stop();
-  if (out_heading != nullptr) {
-    *out_heading = 0.0f;
-  }
-  printf("Scan360 done. no detection.\n");
-  return false;
-}
-
-/* ---------------------------------------------------------------------
- * 目標ヨー角まで短い側にピボット旋回 (検知判定なし)
- * --------------------------------------------------------------------- */
-void Nansho1Scene::turnToHeading(float target_heading)
-{
-  uint32_t elapsed_ms = 0U;
-
-  while (elapsed_ms < TurnMaxMs) {
-    if (gGyro.reached(target_heading, TurnToleranceDeg)) {
-      break;
-    }
-    gMotors.pivotTowardDiff(TurnPower, gGyro.diffTo(target_heading));
-
-    dly_tsk(StepMs * 1000U);
-    elapsed_ms += StepMs;
-  }
-
-  gMotors.stop();
-}
-
-/* ---------------------------------------------------------------------
- * シーン共通の終了動作: 検知方向を向いて一定時間前進する。
- * --------------------------------------------------------------------- */
-void Nansho1Scene::approachHeading(float heading)
-{
-  turnToHeading(heading);
-  gMotors.runFor(ApproachPower, ApproachPower, ApproachTimeMs);
-}
-
-/* ---------------------------------------------------------------------
- * 押し出した後の復帰動作:
- *   1. 黒線を読むための旋回の前に、一度少し後退する
- *   2. 灰色を読んだ時にリセットした 0° から見て 180° を向く
- *      (ここでは gGyro.reset() しない。0° 基準のまま 180° へ旋回する)
- *   3. 黒線(グレーライン)を踏むまで直進する
- * --------------------------------------------------------------------- */
-void Nansho1Scene::returnToLineAfterPush()
-{
-  /* 黒線を読むための旋回の前に、一度少し後退する。 */
-  gMotors.runFor((-1 * ReturnBackPower), (-1 * ReturnBackPower), ReturnBackMs);
+  gMotors.runFor(OppositeForwardPower, OppositeForwardPower,
+                 OppositeForwardFirstMs);
   dly_tsk(StepMs * 1000U);
 
-  /* 灰色を読んだ時の 0° 基準のまま、180° を向く。 */
-  turnToHeading(180.0f);
+  turnToHeading(OppositeTurnRightDeg, OppositeTurnToleranceDeg,
+                OppositeTurnPower, OppositeTurnPower);
+  dly_tsk(StepMs * 1000U);
+  gGyro.reset();
+  gMotors.runFor(OppositeForwardPower, OppositeForwardPower,
+                 OppositeForwardSecondMs);
   dly_tsk(StepMs * 1000U);
 
-  /* 黒線(グレーライン)を踏むまで直進する。 */
+  turnToHeading(OppositeTurnRightDeg, OppositeTurnToleranceDeg,
+                OppositeTurnPower, OppositeTurnPower);
+  dly_tsk(StepMs * 1000U);
+  gGyro.reset();
+  driveUntilGrayLine(0U, OppositeForwardPower, OppositeForwardPower);
+
+  return ScanResult::Completed;
+}
+
+/* ---------------------------------------------------------------------
+ * 黒線を読む動き:
+ *   1. 初期化したゼロ度を基準とした 0° を向く
+ *      (ここでは gGyro.reset() しない。直前に初期化された 0° 基準のまま)
+ *   2. 黒線を踏むまで前進して停止する。
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::driveUntilBlackLine(float target_heading)
+{
+  turnToHeading(target_heading);
+  dly_tsk(StepMs * 1000U);
+
   while (1) {
-    if (gColorHSV.blackEdgeHit(true)) {
+    if (gColorLAB.is(COLOR_DETECT_BLACK, true)) {
       gMotors.stop();
-      printf("returnToLineAfterPush: line detected. stop.\n");
       break;
     }
     gMotors.run(LeftPower, RightPower);
     dly_tsk(StepMs * 1000U);
   }
+}
+
+/* ---------------------------------------------------------------------
+ * 灰色ラインを踏むまで直進して停止する。
+ * 開始直後 gray_ignore_ms の間は灰色を見ない (0 なら最初から判定)。
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::driveUntilGrayLine(uint32_t gray_ignore_ms,
+                                      int left_power, int right_power)
+{
+  uint32_t elapsed_ms = 0U;
+
+  while (1) {
+    if (elapsed_ms >= gray_ignore_ms &&
+        gColorRGB.is(COLOR_DETECT_GRAYLINE)) {
+      gMotors.stop();
+      break;
+    }
+    gMotors.run(left_power, right_power);
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * 現在の向きのまま黒線エッジを踏むまで前進して停止する。
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::driveForwardUntilBlackLine()
+{
+  while (1) {
+    if (gColorLAB.is(COLOR_DETECT_BLACK, true)) {
+      gMotors.stop();
+      break;
+    }
+    gMotors.run(LeftPower, RightPower);
+    dly_tsk(StepMs * 1000U);
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * 検知後の終了動作 (走査方向で分岐):
+ *   共通: 灰色直進後 → 待機 → バック
+ *   Right: 180° → 黒線まで直進
+ *   Left:  heading < -56° → (0°+offset) 向き黒線
+ *          heading >= -56° → (-90°+offset) → 直進 → (90°+offset) → 黒線まで直進
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
+{
+  dly_tsk(DetectFinishBackDelayMs * 1000U);
+  gMotors.runFor(-DetectFinishBackPower, -DetectFinishBackPower,
+                 DetectFinishBackMs);
+  dly_tsk(StepMs * 1000U);
+
+  if (side == ScanSide::Right) {
+    turnToHeading(DetectFinishRightTurnDeg);
+    driveForwardUntilBlackLine();
+    runAfterFinalBlackLine();
+    return;
+  }
+
+  const float h = gGyro.heading();
+
+  if (h < DetectFinishClassicMaxDeg) {
+    driveUntilBlackLine(0.0f + heading_offset_deg);
+    runAfterFinalBlackLine();
+    return;
+  }
+
+  /* 左走査・heading >= -56° */
+  turnToHeading(DetectWideTurnFirstDeg + heading_offset_deg);
+  gMotors.runFor(LeftPower, RightPower, DetectMidForwardMs);
+  dly_tsk(StepMs * 1000U);
+
+  /* 黒線向きの最終旋回は offset を加えない（+180° 時に 180° 逆になるため） */
+  turnToHeading(DetectWideTurnSecondDeg);
+  driveForwardUntilBlackLine();
+  runAfterFinalBlackLine();
+}
+/* ---------------------------------------------------------------------
+ * 目標ヨー角まで短い側にピボット旋回 (検知判定なし)
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::turnToHeading(float target_heading, float tolerance_deg)
+{
+  turnToHeading(target_heading, tolerance_deg, TurnPower, TurnPower);
+}
+
+void Nansho1Scene::turnToHeading(float target_heading, float tolerance_deg,
+                                 int left_power, int right_power)
+{
+  uint32_t elapsed_ms = 0U;
+
+  while (elapsed_ms < TurnMaxMs) {
+    if (gGyro.reached(target_heading, tolerance_deg)) {
+      break;
+    }
+    const float diff = gGyro.diffTo(target_heading);
+    if (diff > 0.0f) {
+      gMotors.run(left_power, -right_power);
+    } else if (diff < 0.0f) {
+      gMotors.run(-left_power, right_power);
+    } else {
+      gMotors.stop();
+    }
+
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
+  }
+  gGyro.reset();
+  gMotors.stop();
+}
+
+/* ---------------------------------------------------------------------
+ * 開始時: ライントレース (スカイブルー → 黒) → 90° 旋回。
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::runInitialForwardTrace()
+{
+  gGyro.reset();
+
+  gLineTracer.setBaseSpeed(InitialTracePower, InitialTracePower);
+  gLineTracer.setPid(0.30f, 0.01f, 0.8f, 100.0f);
+  gLineTracer.setEdgeFollow(true);
+
+  bool skyblue_seen = false;
+  while (1) {
+    gLineTracer.step();
+
+    if (!skyblue_seen) {
+      if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
+        skyblue_seen = true;
+      }
+    } else if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
+      break;
+    }
+
+    dly_tsk(StepMs * 1000U);
+  }
+  gMotors.stop();
+
+  turnToHeading(InitialBlackTurnDeg);
+}
+
+/* ---------------------------------------------------------------------
+ * 最終黒線読み後: 左 90° 旋回 → 青線までライントレース。
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::runAfterFinalBlackLine()
+{
+  turnToHeading(gGyro.heading() - FinalBlueTraceTurnDeg, TurnToleranceDeg,
+                FinalBlueTraceTurnLeftPower, FinalBlueTraceTurnRightPower);
+  dly_tsk(StepMs * 1000U);
+
+  gLineTracer.setBaseSpeed(FinalBlueTracePower, FinalBlueTracePower);
+  gLineTracer.setPid(0.30f, 0.0005f, 0.45f, 100.0f);
+  gLineTracer.setEdgeFollow(false);
+
+  while (1) {
+    gLineTracer.step();
+
+    if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
+      break;
+    }
+
+    dly_tsk(StepMs * 1000U);
+  }
+  gMotors.stop();
 }
 
 /* ---------------------------------------------------------------------
@@ -302,63 +377,73 @@ void Nansho1Scene::returnToLineAfterPush()
  * --------------------------------------------------------------------- */
 void Nansho1Scene::run()
 {
+  /* ⓪ 開始時: ライントレース → 90° 旋回。 */
+  runInitialForwardTrace();
 
+  /* 開始時: ジャイロを初期化する。 */
   gGyro.reset();
-  dly_tsk(StepMs * 1000U);
-  gMotors.runFor((-1*LeftPower), (-1*RightPower), 3850U);
-  dly_tsk(StepMs * 1000U);
-  /* -90°へ旋回するだけ。ここで前進すると手前の線を通り越して
-   * 円の向こう側の線を踏んでしまうため、前進は次のライン検出ループに任せる。 */
-  turnToHeading(-90.0f);
-  dly_tsk(StepMs * 1000U);
 
+  
+  /* ① ライントレースで円の終端まで移動 (固定時間・減速あり)。 */
+  {
+    gLineTracer.setPid(0.6f, 0.0005f, 0.8f, 100.0f);
+    gLineTracer.setEdgeFollow(false);
 
-  /* 1. 黒線を踏むまで前進 */
-  while (1) {
-    if (gColorRGB.isGrayLine()) {
-      gMotors.stop();
-      break;
+    uint32_t elapsed_ms = 0U;
+    while (elapsed_ms < BackToEndMs) {
+      int trace_power = BackTracePower;
+      if (elapsed_ms < BackTraceDecelMs) {
+        trace_power = BackTracePower -
+                      (int)((float)elapsed_ms / (float)BackTraceDecelMs *
+                            (float)(BackTracePower - BackTraceEndPower));
+      } else {
+        trace_power = BackTraceEndPower;
+      }
+
+      gLineTracer.setBaseSpeed((float)trace_power, (float)trace_power);
+      gLineTracer.step();
+      dly_tsk(StepMs * 1000U);
+      elapsed_ms += StepMs;
     }
-    gMotors.run(LeftPower, RightPower);
-    dly_tsk(StepMs * 1000U);
+    gMotors.stop();
   }
+  dly_tsk(StepMs * 1000U);
 
-  /* 2. ヨー角リセット */
+  gGyro.reset();
+  /* ② 円の方向へ旋回 (右 90°)。 */
+  turnToHeading(90.0f);
+  dly_tsk(StepMs * 1000U);
+
+  /* 旋回後の向きを 0° 基準にする。
+   * これで wigwag の「右 90°」が、円に正対した向きを基準に振れる。 */
   gGyro.reset();
 
-  /* 3. ジグザグスキャン: 超音波検知 か 黒線エッジ検知 のいずれかで終了 */
-  float detected_heading = 0.0f;
-  const bool detected_by_sonic = wigwagScan(&detected_heading);
+  /* 指定時間だけ前進してから走査を始める。 */
+  gMotors.runFor(LeftPower, RightPower, ForwardBeforeScanMs);
+  dly_tsk(StepMs * 1000U);
 
-  if (detected_by_sonic) {
-    /* 4a. 超音波で検知 → 検知方向へ向き直って前進 */
-    printf("Detected during wigwag (sonic), heading=%d (deci-deg)\n",
-           (int)(detected_heading * 10.0f));
-    approachHeading(detected_heading);
-    /* 押し出し後: 180° 向き直って黒線を踏むまで直進 */
-    returnToLineAfterPush();
+  /* ③ 右 90° 走査 (0°→+90°→0° を ScanCycles サイクル)。 */
+  if (wigwagScan(+WigWagAmpDeg, ScanCycles, nullptr)
+      == ScanResult::SonicDetected) {
+    driveUntilGrayLine();
+    finishAfterDetect(ScanSide::Right);
     return;
   }
 
-  /* 4b. 黒線エッジで終了 (= ジグザグで物体が見つからず別の黒線まで来た)
-   *     その場で 360° スキャン → 検知方向へ向き直って前進 */
-  printf("WigWag terminated by black line. Start 360 scan.\n");
-  gMotors.stop();
-  dly_tsk(300 * 1000);
-  gGyro.reset();
+  /* ④ 規定回数を検知なしで終了 → 円の反対を読み取る動き。 */
+  readOppositeSide();
 
-  float target_heading = 0.0f;
-  const bool found = scan360(&target_heading);
-  if (!found) {
-    printf("Scan360: nothing detected. Idle.\n");
+  /* ⑤ 左 90° 走査 (0°→-90°→0° を ScanCycles サイクル)。 */
+  if (wigwagScan(-WigWagAmpDeg, ScanCycles, nullptr)
+      == ScanResult::SonicDetected) {
+    driveUntilGrayLine();
+    finishAfterDetect(ScanSide::Left);
     return;
   }
 
-  printf("Scan360: detected at heading=%d (deci-deg)\n",
-         (int)(target_heading * 10.0f));
-  approachHeading(target_heading);
-  /* 押し出し後: 180° 向き直って黒線を踏むまで直進 */
-  returnToLineAfterPush();
+  /* ⑥ 左走査も検知なしで終了 → 黒線を読む動きへ。 */
+  driveUntilBlackLine();
+  runAfterFinalBlackLine();
 }
 
 extern "C" void Nansho1Task(intptr_t exinf)

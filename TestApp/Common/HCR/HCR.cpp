@@ -5,6 +5,7 @@
 #include "../Straight/Straight.h"
 #include "../Gyro/Gyro.h"
 #include "HCR.h"
+#include "ColorLAB.h"
 #include "kernel_cfg.h"
 
 #include <spike/hub/speaker.h>
@@ -20,6 +21,7 @@ extern "C" {
 extern Straight gMotors;
 extern ColorHSV gColorHSV;
 extern ColorRGB gColorRGB;
+extern ColorLAB gColorLAB;
 extern LineTracer gLineTracer;
 extern Gyro gGyro;
 
@@ -119,7 +121,7 @@ void HCR::turn_90(const char* direction, float inner_radius_mm)
 
     gMotors.run(cur_left, cur_right);
 
-    if (abs_heading >= target_deg && gColorHSV.isBlack(true)) {
+    if (abs_heading >= target_deg && gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
       gMotors.stop();
       dly_tsk(500 * 1000);
       // hub_speaker_set_volume(50);
@@ -137,15 +139,13 @@ void HCR::turn_90(const char* direction, float inner_radius_mm)
 void HCR::catch_blue_line()
 {
   sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(1500 * 1000);
+  dly_tsk(1600 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setBaseSpeed(35.0f, 35.0f);
+  gLineTracer.setBaseSpeed(40.0f, 40.0f);
   gLineTracer.setPid(0.04f,0.0004f,0.3f, 100.0f);
   gLineTracer.setScale(2.5f);
   while (true) {
-    if (!gColorHSV.isBlack(true) || gColorRGB.isBlue()) {
-      hub_speaker_set_volume(50);
-      hub_speaker_play_tone(1000, 300);
+    if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
       stp_cyc(LINE_TRACER_TASK_CYC);
       gMotors.stop();
       dly_tsk(5000 * 1000);
@@ -158,7 +158,7 @@ void HCR::catch_blue_line()
 void HCR::catch_black_line()
 {
   while (true) {
-    if (gColorHSV.isBlack(true)) {
+    if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
       gMotors.stop();
       dly_tsk(500 * 1000);
       break;
@@ -177,14 +177,17 @@ void HCR::run_hrc(void)
   // gMotors.setTargetHeading(90.0f);
   // gMotors.run(50.0f, 50.0f);
   gLineTracer.setBaseSpeed(80.0f, 80.0f);
-  gLineTracer.setPid(0.082f,0.0006f,0.55f, 100.0f);
-  gLineTracer.setScale(8.6f);
+  gLineTracer.setPid(0.07f,0.0006f,0.5f, 100.0f);
+  gLineTracer.setScale(10.0f);
+  // gLineTracer.setBaseSpeed(85.0f, 85.0f);
+  // gLineTracer.setPid(0.06f,0.0006f,0.6f, 100.0f);
+  // gLineTracer.setScale(16.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(4300 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
   gGyro.reset();
   sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(3500 * 1000);
+  dly_tsk(4000 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
   gMotors.setTargetHeading(-155.0f);
   SpeedUp(80.0f, 80.0f, 1.5f, 100.0f, true);
