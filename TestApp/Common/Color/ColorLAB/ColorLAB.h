@@ -82,7 +82,7 @@ static constexpr LabColorProfile LabRange_make(float L_lo, float L_hi,
 static constexpr LabColorProfile lab_map_edit[] = {
   /*  L_lo    L_hi   a_lo   a_hi   b_lo   b_hi  margin */
   LAB_RANGE(-999,   40.0f, -2.0f,  2.0f, -2.0f,  2.0f,  2.0f),  // Black
-  LAB_RANGE( 34.0f,  63.0f, -6.0f,  -5.0f, -17.0f, -10.0f,  3.0f),  // Skyblue
+  LAB_RANGE( 34.0f,  85.0f, -7.0f,  -5.0f, -17.0f, -9.5f,  3.0f),  // Skyblue
   LAB_RANGE( 40.0f,  65.0f, -0.6f,  1.0f,  -2.5f, -3.5f,  3.0f),  // BlackLine
   LAB_RANGE( 5.0f,  40.0f, 15.5f,  42.0f,  3.0f, 14.0f,  3.0f),  // RED
   LAB_RANGE( 66.0f,  75.0f,4.0f,  1.0f,  28.0f, 30.0f,  3.0f),  // YELLOW
