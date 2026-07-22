@@ -111,6 +111,8 @@ public:
   void setEnabled(bool enabled) { enabled_ = enabled; }
   bool isEnabled() const { return enabled_; }
 
+  void setScale(float scale);
+
 private:
   static int   clampMotorPower(int power);
   static float clampFloat(float value, float min_value, float max_value);
@@ -124,10 +126,14 @@ private:
 
   float integral_   = 0.0f;
   float prev_error_ = 0.0f;
+  float smoothed_ref_ = 0.0f;
+  float prev_diff_filtered_ = 0.0f;
+  bool  initialized_ = false;
   float kp_         = DefaultKp;
   float ki_         = DefaultKi;
   float kd_         = DefaultKd;
   float out_max_    = DefaultOutMax;
+  float steering_scale_ = STEERING_SCALE;
 
   float left_base_speed_  = LeftBaseSpeed;
   float right_base_speed_ = RightBaseSpeed;

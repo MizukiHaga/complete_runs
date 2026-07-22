@@ -5,6 +5,7 @@
 #include "../Straight/Straight.h"
 #include "../Gyro/Gyro.h"
 #include "HCR.h"
+#include "ColorLAB.h"
 #include "kernel_cfg.h"
 
 #include <spike/hub/speaker.h>
@@ -20,6 +21,7 @@ extern "C" {
 extern Straight gMotors;
 extern ColorHSV gColorHSV;
 extern ColorRGB gColorRGB;
+extern ColorLAB gColorLAB;
 extern LineTracer gLineTracer;
 extern Gyro gGyro;
 
@@ -119,7 +121,7 @@ void HCR::turn_90(const char* direction, float inner_radius_mm)
 
     gMotors.run(cur_left, cur_right);
 
-    if (abs_heading >= target_deg && gColorHSV.isBlack(true)) {
+    if (abs_heading >= target_deg && gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
       gMotors.stop();
       dly_tsk(500 * 1000);
       // hub_speaker_set_volume(50);
@@ -136,20 +138,39 @@ void HCR::turn_90(const char* direction, float inner_radius_mm)
 
 void HCR::catch_blue_line()
 {
+  gLineTracer.setBaseSpeed(80.0f, 80.0f);
+  gLineTracer.setPid(0.07f,0.0006f,0.5f, 100.0f);
+  gLineTracer.setScale(10.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(1500 * 1000);
+  dly_tsk(800 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setBaseSpeed(35.0f, 35.0f);
-  gLineTracer.setPid(0.04f,0.0004f,0.3f, 100.0f);
-  gLineTracer.setScale(2.5f);
+
+  gLineTracer.setBaseSpeed(80.0f, 80.0f);
+  gLineTracer.setPid(0.05f,0.0004f,0.3f, 100.0f);
+  gLineTracer.setScale(4.5f);
+  // gLineTracer.setBaseSpeed(85.0f, 85.0f);
+  // gLineTracer.setPid(0.04f,0.0004f,0.3f, 100.0f);
+  // gLineTracer.setScale(1.0f);
+  sta_cyc(LINE_TRACER_TASK_CYC);
+  dly_tsk(800 * 1000);
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  gLineTracer.setBaseSpeed(40.0f, 40.0f);
+  gLineTracer.setPid(0.045f,0.0004f,0.4f, 100.0f);
+  gLineTracer.setScale(5.0f);
   while (true) {
-    if (!gColorHSV.isBlack(true) || gColorRGB.isBlue()) {
-      hub_speaker_set_volume(50);
-      hub_speaker_play_tone(1000, 300);
-      stp_cyc(LINE_TRACER_TASK_CYC);
-      gMotors.stop();
-      dly_tsk(5000 * 1000);
-      break;
+    if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
+      gLineTracer.setBaseSpeed(30.0f, 30.0f);
+      gLineTracer.setPid(0.06f,0.0004f,0.4f, 100.0f);
+      gLineTracer.setScale(5.0f);
+      while (true) {
+        if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
+          gMotors.stop();
+          dly_tsk(5000 * 1000);
+          break;
+        }
+        gLineTracer.step();
+        dly_tsk(1 * 1000);
+      }
     }
     gLineTracer.step();
     dly_tsk(5 * 1000);
@@ -158,7 +179,7 @@ void HCR::catch_blue_line()
 void HCR::catch_black_line()
 {
   while (true) {
-    if (gColorHSV.isBlack(true)) {
+    if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
       gMotors.stop();
       dly_tsk(500 * 1000);
       break;
@@ -171,14 +192,13 @@ void HCR::catch_black_line()
 
 void HCR::run_hrc(void)
 {
-  // gGyro.reset();
-  // hub_speaker_set_volume(50);
-  // hub_speaker_play_tone(1000, 300);
-  // gMotors.setTargetHeading(90.0f);
-  // gMotors.run(50.0f, 50.0f);
   gLineTracer.setBaseSpeed(80.0f, 80.0f);
-  gLineTracer.setPid(0.082f,0.0006f,0.55f, 100.0f);
-  gLineTracer.setScale(8.6f);
+  gLineTracer.setPid(0.07f,0.0006f,0.5f, 100.0f);
+  gLineTracer.setScale(10.0f);
+  // 
+  // gLineTracer.setBaseSpeed(85.0f, 85.0f);
+  // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
+  // gLineTracer.setScale(15.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(4300 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
@@ -186,9 +206,9 @@ void HCR::run_hrc(void)
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(3500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
-  gMotors.setTargetHeading(-153.0f);
+  gMotors.setTargetHeading(-152.0f);
   SpeedUp(80.0f, 80.0f, 0.5f, 100.0f, true);
-  gMotors.setTargetHeading(-155.0f);
+  gMotors.setTargetHeading(-152.0f);
   gMotors.run(100.0f, 100.0f);
   dly_tsk(1000 * 1000);
   catch_black_line();

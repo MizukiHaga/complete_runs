@@ -8,11 +8,13 @@ extern "C" {
 /* タスク優先度 */
 #define MAIN_PRIORITY              5 /* メインタスク */
 #define STRAIGHT_BALANCE_PRIORITY  6 /* Straight PID 補正タスク (Nansho1 より高優先度で確実に回す) */
+#define STRAIGHT_PRIORITY          STRAIGHT_BALANCE_PRIORITY /* app.cfg の既存参照用 */
 #define TRACER_PRIORITY            6 /* ライントレースタスク */
 #define NANSHO1_PRIORITY           7 /* Nansho1タスク */
+#define HCR_PRIORITY               8 /* HCR タスク */
 
 /* タスク周期の定義 */
-#define LINE_TRACER_PERIOD       (100 * 1000) /* ライントレースタスク:100msec周期 */
+#define LINE_TRACER_PERIOD       (5 * 1000) /* ライントレースタスク:100msec周期 */
 #define STRAIGHT_BALANCE_PERIOD  ( 10 * 1000) /* Straight PID 補正タスク:10msec周期 */
 
 
@@ -29,7 +31,7 @@ extern "C" {
 #ifndef TOPPERS_MACRO_ONLY
 
 extern void main_task(intptr_t exinf);
-extern void tracer_task(intptr_t exinf);
+extern void line_tracer_cyclic_handler(intptr_t exinf);
 extern void Nansho1Task(intptr_t exinf);
 extern void StraightBalanceTask(intptr_t exinf);
 

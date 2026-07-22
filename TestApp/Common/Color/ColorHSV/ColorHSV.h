@@ -32,6 +32,7 @@ typedef enum {
   COLOR_DETECT_SKYBLUE,
   COLOR_DETECT_GRAYLINE,
   COLOR_DETECT_OTHER,
+  COLOR_DETECT_BLACKLINE = COLOR_DETECT_OTHER + 1,
 } color_detect_t;
 
 /* LogTest で測った H,S,V。color_map_detect と並び・個数を揃える。 */
@@ -66,6 +67,9 @@ public:
   void configure(pbio_port_id_t color_sensor_port);
 
   bool is(color_detect_t color, bool surface);
+  bool isBlack(bool surface);
+  void resetBlackEdge();
+  bool blackEdgeHit(bool surface);
 
 private:
   static int findMapIndex(color_detect_t color);
@@ -76,6 +80,8 @@ private:
   int32_t readReflection();
 
   pup_device_t *device_ = nullptr;
+  bool black_edge_armed_ = false;
+  bool black_edge_was_black_ = false;
 };
 
 #ifndef COLOR_BLACK_REFLECTION_MAX
