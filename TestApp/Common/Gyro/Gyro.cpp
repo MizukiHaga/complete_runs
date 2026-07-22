@@ -13,9 +13,6 @@ extern "C" {
 #include <spike/hub/imu.h>
 }
 
-/* === 内部定数 === */
-/* is_ready ポーリングの間隔 [ms]。短すぎるとビジーループ気味、
- * 長すぎると初期化完了から実走行までのレイテンシが目立つので 10ms に。 */
 static constexpr uint32_t kReadyPollMs = 10U;
 
 void Gyro::init()
@@ -51,10 +48,14 @@ bool Gyro::reached(float target_heading, float tol_deg) const
   return fabsf(diffTo(target_heading)) <= tol_deg;
 }
 
-/* static */
 float Gyro::wrapDeg180(float diff)
 {
-  while (diff > 180.0f)  diff -= 360.0f;
-  while (diff < -180.0f) diff += 360.0f;
+  /* +180 と -180 を同じ最短側に寄せ、±180 境界での取りこぼしを減らす */
+  while (diff >= 180.0f) {
+    diff -= 360.0f;
+  }
+  while (diff < -180.0f) {
+    diff += 360.0f;
+  }
   return diff;
 }

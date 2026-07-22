@@ -38,6 +38,20 @@ int32_t ColorHSV::readReflection()
   return pup_color_sensor_reflection(device_);
 }
 
+int32_t ColorHSV::reflection()
+{
+  return readReflection();
+}
+
+bool ColorHSV::isBetweenBlackAndWhite()
+{
+  if (device_ == nullptr) {
+    return false;
+  }
+  const int32_t value = readReflection();
+  return value > BlackReflectionMax && value < WhiteReflectionMin;
+}
+
 int ColorHSV::findMapIndex(color_detect_t color)
 {
   for (int i = 0; i < color_map_size; i++) {

@@ -49,7 +49,6 @@ static constexpr float LabRange_expandHi(float hi, float margin)
   return hi >= LabBoundDisabledHi - 1.0f ? hi : hi + margin;
 }
 
-
 static constexpr float LabRange_min2(float x, float y)
 {
   return x < y ? x : y;
@@ -81,13 +80,14 @@ static constexpr LabColorProfile LabRange_make(float L_lo, float L_hi,
 /* LogTest の L,a,b 最小・最大 (順不同可)。lab_map_detect と並び・個数を揃える。 */
 static constexpr LabColorProfile lab_map_edit[] = {
   /*  L_lo    L_hi   a_lo   a_hi   b_lo   b_hi  margin */
-  LAB_RANGE(-999,   40.0f, -2.0f,  2.0f, -2.0f,  2.0f,  2.0f),  // Black
-  LAB_RANGE( 34.0f,  63.0f, -6.0f,  -5.0f, -17.0f, -10.0f,  3.0f),  // Skyblue
-  LAB_RANGE( 40.0f,  65.0f, -0.6f,  1.0f,  -2.5f, -3.5f,  3.0f),  // BlackLine
+  LAB_RANGE(-999,   40.0f, -2.0f,  2.0f, -2.0f,  2.0f,  2.0f),  // Black (unused: reflection)
+  LAB_RANGE( 30.0f,  75.0f, -2.0f,  -6.0f, -17.0f, -9.0f,  3.0f),  // Skyblue
+  LAB_RANGE( 18.0f,  65.0f, -1.0f,  0.0f, -3.0f, -1.0f,  3.0f),  // BlackLine
   LAB_RANGE( 5.0f,  40.0f, 15.5f,  42.0f,  3.0f, 14.0f,  3.0f),  // RED
-  LAB_RANGE( 66.0f,  75.0f,4.0f,  1.0f,  28.0f, 30.0f,  3.0f),  // YELLOW
-  LAB_RANGE( 11.0f,  45.0f, -2.0f,  -5.0f,  -10.0f, -33.0f,  3.0f),  // BLUE
+  LAB_RANGE( 66.0f,  75.0f, 4.0f,  1.0f,  28.0f, 30.0f,  3.0f),  // YELLOW
+  LAB_RANGE( 11.0f,  45.0f, -2.0f,  -5.0f, -10.0f, -33.0f,  3.0f),  // BLUE
 };
+
 static constexpr color_detect_t lab_map_detect[] = {
   COLOR_DETECT_BLACK,
   COLOR_DETECT_SKYBLUE,
@@ -96,12 +96,13 @@ static constexpr color_detect_t lab_map_detect[] = {
   COLOR_DETECT_YELLOW,
   COLOR_DETECT_BLUE,
 };
+
 static constexpr int lab_map_size =
     sizeof(lab_map_edit) / sizeof(lab_map_edit[0]);
 
 class ColorLAB {
 public:
-  static constexpr int32_t BlackReflectionMax = 10;
+  static constexpr int32_t BlackReflectionMax = 20;
   static constexpr int32_t WhiteReflectionMin = 80;
 
   void configure(pbio_port_id_t color_sensor_port);

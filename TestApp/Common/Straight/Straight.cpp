@@ -68,8 +68,23 @@ void Straight::setTargetHeading(float heading_deg)
   integral_              = 0.0f;
 }
 
+void Straight::setBalancePid(float kp, float ki, float i_max)
+{
+  kp_       = kp;
+  ki_       = ki;
+  i_max_    = i_max;
+  integral_ = 0.0f;
+}
+
 void Straight::setPowerRaw(int left_power, int right_power)
 {
+  /* stop() との競合: 停止中に周期補正が古い指令を書き戻さない */
+  if (!correction_enabled_) {
+    pup_motor_set_power(left_, 0);
+    pup_motor_set_power(right_, 0);
+    return;
+  }
+
   pup_motor_set_power(left_, clampMotorPower(left_power));
   pup_motor_set_power(right_, clampMotorPower(right_power));
 
@@ -90,6 +105,12 @@ void Straight::setPowerRaw(int left_power, int right_power)
 void Straight::applyWithCorrection(int left_power, int right_power)
 {
   if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+
+  if (!correction_enabled_) {
+    pup_motor_set_power(left_, 0);
+    pup_motor_set_power(right_, 0);
     return;
   }
 
@@ -128,8 +149,11 @@ void Straight::applyWithCorrection(int left_power, int right_power)
         target_heading_ = gGyro.heading();
       }
       integral_ = 0.0f;
-      setPowerRaw(left_power, right_power);
-      return;
+      /* ピボット等 → 直進へ切替時は raw のみ。1:1 直進なら PI へ続行。 */
+      if (!straight_cmd) {
+        setPowerRaw(left_power, right_power);
+        return;
+      }
     }
   }
 
@@ -155,11 +179,19 @@ void Straight::applyWithCorrection(int left_power, int right_power)
            (int)integral_, (int)trim, out_left, out_right);
   }
 
+  /* stop() が計算中に入った場合、古い補正結果を捨てる */
+  if (!correction_enabled_) {
+    pup_motor_set_power(left_, 0);
+    pup_motor_set_power(right_, 0);
+    return;
+  }
+
   pup_motor_set_power(left_, out_left);
   pup_motor_set_power(right_, out_right);
 
   last_cmd_left_  = left_power;
   last_cmd_right_ = right_power;
+  cmd_initialized_ = true;
 }
 
 void Straight::tickCorrection()
@@ -188,6 +220,7 @@ void Straight::configure(pbio_port_id_t left_motor_port,
   pup_motor_setup(left_, PUP_DIRECTION_COUNTERCLOCKWISE, true);
   pup_motor_setup(right_, PUP_DIRECTION_CLOCKWISE, true);
 
+  correction_enabled_ = true;
   resetCorrection();
 }
 
@@ -196,6 +229,7 @@ void Straight::run(int left_power, int right_power)
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
+  correction_enabled_ = true;
   applyWithCorrection(left_power, right_power);
 }
 
@@ -204,9 +238,16 @@ void Straight::stop()
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
+  /* 先に周期補正を止め、計算途中の apply が指令を復活させない */
+  correction_enabled_ = false;
+  last_cmd_left_         = 0;
+  last_cmd_right_        = 0;
+  cmd_initialized_       = false;
+  manual_target_heading_ = false;
+  integral_              = 0.0f;
+  target_heading_        = 0.0f;
   pup_motor_set_power(left_, 0);
   pup_motor_set_power(right_, 0);
-  resetCorrection();
 }
 
 void Straight::runFor(int left_power, int right_power, uint32_t duration_ms)

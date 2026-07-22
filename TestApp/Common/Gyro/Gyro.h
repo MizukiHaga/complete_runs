@@ -22,18 +22,13 @@
 
 class Gyro {
 public:
-  /* IMU を初期化し、キャリブレーション完了 (is_ready) まで待つ。
-   * 内部で 10ms 周期の dly_tsk を回すので、必ずタスクコンテキストから呼ぶこと。 */
   void init();
-
-  /* IMU の準備が完了しているか (is_ready)。
-   * init() 後は true になっているはずだが、外部判定用に公開しておく。 */
   bool isReady() const;
 
   /* 現在ヨー角を 0° にリセットする。 */
   void reset();
 
-  /* 現在のヨー角 [deg]。pybricks IMU の連続値 (アンラップ済み) が返る。 */
+  /* 現在ヨー角 [deg]。pybricks IMU の連続値 (アンラップ済み) が返る。 */
   float heading() const;
 
   /* target_heading との差分 [deg]。短い側 ([-180, 180]) に折り畳んで返す。
