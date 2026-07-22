@@ -195,6 +195,7 @@ void HCR::run_hrc(void)
   gLineTracer.setBaseSpeed(80.0f, 80.0f);
   gLineTracer.setPid(0.07f,0.0006f,0.5f, 100.0f);
   gLineTracer.setScale(10.0f);
+  // 
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
