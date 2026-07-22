@@ -56,9 +56,9 @@ void main_task(intptr_t unused)
 
   //sta_cyc(ANGLE_TASK_CYC);
   //sta_cyc(MORTER_TASK_CYC);
-  sta_cyc(DISTANCE_TASK_CYC);
+  // sta_cyc(DISTANCE_TASK_CYC);
   //sta_cyc(BATTERY_TASK_CYC);
   //sta_cyc(SONIC_LIGHT_TASK_CYC);
-  //sta_cyc(COLOR_SENSOR_TASK_CYC);
+  sta_cyc(COLOR_SENSOR_TASK_CYC);
   //sta_cyc(COLOR_RGB_SENSOR_TASK_CYC);
 }

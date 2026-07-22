@@ -40,7 +40,7 @@ static constexpr pup_color_hsv_t color_map_edit[] = {
   {  56, 53, 100 }, // Yellow
   { 155, 62, 46 },  // Green
   { 212, 93, 72 },  // Blue
-  { 213, 67, 27 },  // Skyblue
+  { 215, 20, 90 },  // Skyblue
   {   0, 10, 40 },  // Gray
 };
 static constexpr color_detect_t color_map_detect[] = {
@@ -60,7 +60,7 @@ public:
   static constexpr int32_t WhiteReflectionMin = 80;
   /* 基準 HSV からの許容誤差 (実機で調整) */
   static constexpr uint16_t ToleranceH = 15U;
-  static constexpr uint8_t  ToleranceS = 20U;
+  static constexpr uint8_t  ToleranceS = 5U;
   static constexpr uint8_t  ToleranceV = 20U;
 
   void configure(pbio_port_id_t color_sensor_port);
