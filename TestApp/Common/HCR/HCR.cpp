@@ -186,9 +186,11 @@ void HCR::run_hrc(void)
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(3500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
+  gMotors.setTargetHeading(-153.0f);
+  SpeedUp(80.0f, 80.0f, 0.5f, 100.0f, true);
   gMotors.setTargetHeading(-155.0f);
-  SpeedUp(80.0f, 80.0f, 1.5f, 100.0f, true);
-
+  gMotors.run(100.0f, 100.0f);
+  dly_tsk(1000 * 1000);
   catch_black_line();
   catch_blue_line();
 }
