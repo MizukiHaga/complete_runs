@@ -59,6 +59,9 @@ public:
   int32_t reflection();
   bool isBetweenBlackAndWhite();
   bool is(color_detect_t color, bool surface);
+  bool isBlack(bool surface);
+  void resetBlackEdge();
+  bool blackEdgeHit(bool surface);
 
 private:
   static int findMapIndex(color_detect_t color);
@@ -69,6 +72,8 @@ private:
   int32_t readReflection();
 
   pup_device_t *device_ = nullptr;
+  bool black_edge_armed_ = false;
+  bool black_edge_was_black_ = false;
 };
 
 #ifndef COLOR_BLACK_REFLECTION_MAX
