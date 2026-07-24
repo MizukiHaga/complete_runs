@@ -83,7 +83,6 @@ void HCR::turn_90(const char* direction, float inner_radius_mm)
   const pup_motor_t *inner_motor = turn_right ? right_motor : left_motor;
 
   gMotors.run(left_power, right_power);
-  gColorHSV.resetBlackEdge();
 
   /* IMU の heading を直接参照して停止判定する。 */
   hub_imu_reset_heading();

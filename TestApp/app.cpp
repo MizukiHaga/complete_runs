@@ -14,7 +14,7 @@
 #include "Gyro.h"
 #include "Sonic.h"
 #include "Straight.h"
-#include "Common/HCR/HCR.h"
+#include "HCR.h"
 
 extern "C" {
 #include <spike/pup/forcesensor.h>
@@ -73,8 +73,8 @@ void main_task(intptr_t unused)
 
   printf("Battery: %u mV\n", (unsigned)hub_battery_get_voltage());
 
+
 #if ETROBO_SCENE == 0
-  /* 本番: HCR → Nansho1 → Nansho2 */
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
   gHCR.run_hrc();
   act_tsk(NANSHO1_TASK);

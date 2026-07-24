@@ -22,6 +22,7 @@ void Nansho2Scene::runInitialLineTrace()
   gLineTracer.setBaseSpeed(TracePower, TracePower);
   gLineTracer.setPid(InitialTraceKp, InitialTraceKi,
                      InitialTraceKd, InitialTraceOutMax);
+  gLineTracer.setScale(InitialTraceScale);
   gLineTracer.setEdgeFollow(InitialTraceEdgeFollow);
 
   bool skyblue_seen = false;
@@ -133,6 +134,7 @@ void Nansho2Scene::runAfterColorLineTraceUntilHeading()
   gLineTracer.setBaseSpeed(AfterColorTraceLeftPower, AfterColorTraceRightPower);
   gLineTracer.setPid(AfterColorTraceKp, AfterColorTraceKi,
                      AfterColorTraceKd, AfterColorTraceOutMax);
+  gLineTracer.setScale(AfterColorTraceScale);
   gLineTracer.setEdgeFollow(AfterColorEdgeFollow);
 
   uint32_t elapsed_ms = 0U;
@@ -213,6 +215,7 @@ void Nansho2Scene::setupPostBlackLineTrace()
   gLineTracer.setBaseSpeed(PostBlackTraceLeftPower, PostBlackTraceRightPower);
   gLineTracer.setPid(PostBlackTraceKp, PostBlackTraceKi,
                      PostBlackTraceKd, PostBlackTraceOutMax);
+  gLineTracer.setScale(PostBlackTraceScale);
   gLineTracer.setEdgeFollow(PostBlackTraceEdgeFollow);
 }
 
@@ -335,6 +338,7 @@ void Nansho2Scene::runAfterFinalStopTurnRightAndSlowTraceToWhite()
   gLineTracer.setBaseSpeed(FinalSlowTracePower, FinalSlowTracePower);
   gLineTracer.setPid(FinalSlowTraceKp, FinalSlowTraceKi, FinalSlowTraceKd,
                      FinalSlowTraceOutMax);
+  gLineTracer.setScale(FinalSlowTraceScale);
   gLineTracer.setEdgeFollow(FinalSlowTraceEdgeFollow);
 
   uint32_t elapsed_ms = 0U;

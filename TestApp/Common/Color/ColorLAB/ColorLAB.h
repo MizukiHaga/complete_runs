@@ -18,7 +18,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "ColorHSV.h"
+#include "ColorDetect.h"
 #include "ColorLabMath.h"
 
 extern "C" {

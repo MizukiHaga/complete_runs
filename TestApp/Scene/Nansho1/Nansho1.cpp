@@ -79,6 +79,9 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading,
       left_delay_ms += StepMs;
       if (left_delay_ms >= LeftScanDetectContinueMs) {
         gMotors.stop();
+        if (out_heading != nullptr) {
+          *out_heading = gGyro.heading();
+        }
         return ScanResult::SonicDetected;
       }
       continue;
@@ -99,6 +102,9 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading,
 
   gMotors.stop();
   if (left_sonic_pending) {
+    if (out_heading != nullptr) {
+      *out_heading = gGyro.heading();
+    }
     return ScanResult::SonicDetected;
   }
   return ScanResult::Completed;
@@ -201,22 +207,26 @@ bool Nansho1Scene::runWigwagScanPhases()
   const ScanSide first_side = ETROBO_COURSE_L ? ScanSide::Right : ScanSide::Left;
   const ScanSide second_side = ETROBO_COURSE_L ? ScanSide::Left : ScanSide::Right;
 
-  if (wigwagScan(first_amp, ScanCycles, nullptr, first_side) ==
+  float detect_heading = gGyro.heading();
+  if (wigwagScan(first_amp, ScanCycles, &detect_heading, first_side) ==
       ScanResult::SonicDetected) {
-    /* 検知後: 90°を向いて停止 → 0°に向き直す → 黒まで直進 */
-    faceDetectHeadingThenReturnToZero();
-    driveForwardUntilBlackLine();
-    runAfterFinalBlackLine();
+    /* 検知した向きへ → 灰色まで前進 → 終了動作 */
+    turnToHeading(detect_heading, TurnToleranceDeg, TurnPower, TurnPower, false);
+    gMotors.setTargetHeading(detect_heading);
+    driveUntilGrayLine();
+    finishAfterDetect(first_side);
     return true;
   }
 
   readOppositeSide();
 
-  if (wigwagScan(second_amp, ScanCycles, nullptr, second_side) ==
+  detect_heading = gGyro.heading();
+  if (wigwagScan(second_amp, ScanCycles, &detect_heading, second_side) ==
       ScanResult::SonicDetected) {
-    faceDetectHeadingThenReturnToZero();
-    driveForwardUntilBlackLine();
-    runAfterFinalBlackLine();
+    turnToHeading(detect_heading, TurnToleranceDeg, TurnPower, TurnPower, false);
+    gMotors.setTargetHeading(detect_heading);
+    driveUntilGrayLine();
+    finishAfterDetect(second_side);
     return true;
   }
 
@@ -227,7 +237,9 @@ bool Nansho1Scene::runWigwagScanPhases()
  * 円の反対を読み取る動き:
  *   1. まっすぐ指定時間直進
  *   2. 90° 旋回 → ジャイロリセット → 指定時間直進
- *   3. 90° 旋回 → ジャイロリセット → 灰色 (グレーライン) を踏むまで直進
+ *   3. 90° 旋回 → ジャイロリセット → 灰色まで直進
+ *   ※動作シーケンスは変えず、灰色直進のヨー保持と終了時 reset のみで
+ *     2回目 wigwag の正面ずれを防ぐ。
  * --------------------------------------------------------------------- */
 Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
 {
@@ -246,7 +258,12 @@ Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
   turnToHeading(OppositeTurnDeg, OppositeTurnToleranceDeg,
                 OppositeTurnPower, OppositeTurnPower, true);
   dly_tsk(StepMs * 1000U);
+  /* 2回目旋回直後の 0° を灰色直進でも維持する（旋回追加なし） */
+  gMotors.setTargetHeading(0.0f);
   driveUntilGrayLine(0U, OppositeForwardPower, OppositeForwardPower);
+
+  /* モータ動作は増やさず、基準角だけ揃えて 2回目 wigwag へ */
+  gGyro.reset();
 
   return ScanResult::Completed;
 }
@@ -284,6 +301,9 @@ void Nansho1Scene::driveUntilGrayLine(uint32_t gray_ignore_ms,
   uint32_t elapsed_ms = 0U;
 
   while (1) {
+    /* 呼び出し側の setTargetHeading を維持する（動作追加なし） */
+    gMotors.tickCorrection();
+
     if (elapsed_ms >= gray_ignore_ms &&
         gColorRGB.is(COLOR_DETECT_GRAYLINE)) {
       gMotors.stop();
@@ -315,9 +335,9 @@ void Nansho1Scene::driveForwardUntilBlackLine()
 /* ---------------------------------------------------------------------
  * 検知後の終了動作 (走査方向で分岐):
  *   共通: 灰色直進後 → 待機 → バック
- *   Right: 180° → 黒線まで直進
- *   Left:  heading < -56° → (0°+offset) 向き黒線
- *          heading >= -56° → (-90°+offset) → 直進 → (90°+offset) → 黒線まで直進
+ *   Right: バック後に reset → 0° 基準の ±180° を向く → 黒線まで直進
+ *   Left:  heading が浅い側 → 相対 +90° → 黒線まで直進
+ *          heading が広い側 → (-90°+offset) → 直進 → (90°) → 黒線まで直進
  * --------------------------------------------------------------------- */
 void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
 {
@@ -327,7 +347,10 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
   dly_tsk(StepMs * 1000U);
 
   if (side == ScanSide::Right) {
-    turnToHeading(DetectAfterSonicTurnDeg);
+    /* バック直後の向きを 0° にし、その基準で ±180° を向く */
+    gGyro.reset();
+    dly_tsk(StepMs * 1000U);
+    turnToHeading(DetectFinishRightTurnDeg);
     driveForwardUntilBlackLine();
     runAfterFinalBlackLine();
     return;
@@ -337,7 +360,9 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
 
   if ((float)DetectFinishAngleSign * h <
       (float)DetectFinishAngleSign * DetectFinishClassicMaxDeg) {
-    driveUntilBlackLine(0.0f + heading_offset_deg);
+    /* 左走査・浅い検知角: +90° (Rコースは -90°) */
+    turnToHeading(gGyro.heading() + DetectFinishLeftTurnDeg);
+    driveForwardUntilBlackLine();
     runAfterFinalBlackLine();
     return;
   }
@@ -418,18 +443,6 @@ void Nansho1Scene::turnToHeading(float target_heading, float tolerance_deg,
 }
 
 /* ---------------------------------------------------------------------
- * 超音波検知後: DetectAfterSonicTurnDeg を向いて停止 → 元の正面へ向き直す。
- * 各旋回の完了ごとに reset する。
- * --------------------------------------------------------------------- */
-void Nansho1Scene::faceDetectHeadingThenReturnToZero()
-{
-  turnToHeading(DetectAfterSonicTurnDeg);
-  dly_tsk(StepMs * 1000U);
-  /* reset 後の 0° が旧 DetectAfterSonic 向き → 符号反転で元の正面へ */
-  turnToHeading(-DetectAfterSonicTurnDeg);
-}
-
-/* ---------------------------------------------------------------------
  * 開始時: ライントレース (スカイブルー → 黒) → 90° 旋回。
  * --------------------------------------------------------------------- */
 void Nansho1Scene::runInitialForwardTrace()
@@ -438,7 +451,9 @@ void Nansho1Scene::runInitialForwardTrace()
 
   gLineTracer.setEnabled(true);
   gLineTracer.setBaseSpeed(InitialTracePower, InitialTracePower);
-  gLineTracer.setPid(0.30f, 0.01f, 0.8f, 100.0f);
+  gLineTracer.setPid(InitialTraceKp, InitialTraceKi,
+                     InitialTraceKd, InitialTraceOutMax);
+  gLineTracer.setScale(InitialTraceScale);
   gLineTracer.setEdgeFollow(ETROBO_COURSE_L != 0);
 
   bool skyblue_seen = false;
@@ -495,7 +510,9 @@ void Nansho1Scene::runAfterFinalBlackLine()
 
   gLineTracer.setEnabled(true);
   gLineTracer.setBaseSpeed(FinalBlueTracePower, FinalBlueTracePower);
-  gLineTracer.setPid(0.30f, 0.0005f, 0.45f, 100.0f);
+  gLineTracer.setPid(FinalBlueTraceKp, FinalBlueTraceKi,
+                     FinalBlueTraceKd, FinalBlueTraceOutMax);
+  gLineTracer.setScale(FinalBlueTraceScale);
   gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
 
   while (1) {
@@ -525,7 +542,8 @@ void Nansho1Scene::run()
   /* ① 旋回後: 低速 LT → 本線 LT で円の終端まで移動 (固定時間・減速あり)。 */
   {
     gLineTracer.setEnabled(true);
-    gLineTracer.setPid(0.6f, 0.0005f, 0.8f, 100.0f);
+    gLineTracer.setPid(BackTraceKp, BackTraceKi, BackTraceKd, BackTraceOutMax);
+    gLineTracer.setScale(BackTraceScale);
     gLineTracer.setEdgeFollow(false);
 
     /* 旋回直後は低速で線に乗せる。 */

@@ -85,6 +85,7 @@ private:
   static constexpr float    InitialTraceKi     = 0.01f;   /* LT PID: I */
   static constexpr float    InitialTraceKd     = 0.8f;    /* LT PID: D */
   static constexpr float    InitialTraceOutMax = 100.0f;  /* LT PID 出力上限 */
+  static constexpr float    InitialTraceScale  = 1.0f;    /* HCR 後も自前 PID を維持 */
   static constexpr bool     InitialTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* InitialTraceEdgeFollow: L=右エッジ, R=左エッジ */
 
@@ -118,6 +119,7 @@ private:
   static constexpr float    AfterColorTraceKi         = 0.01f;  /* LT PID: I */
   static constexpr float    AfterColorTraceKd         = 0.7f;   /* LT PID: D */
   static constexpr float    AfterColorTraceOutMax     = 100.0f; /* LT PID 出力上限 */
+  static constexpr float    AfterColorTraceScale      = 1.0f;
   static constexpr bool     AfterColorEdgeFollow      = (ETROBO_COURSE_L == 0);
   /* AfterColorEdgeFollow: L=右エッジ, R=左エッジ */
   static constexpr float    AfterColorTraceStopHeadingDeg =
@@ -165,6 +167,7 @@ private:
   static constexpr float    PostBlackTraceKi         = 0.01f;   /* LT PID: I */
   static constexpr float    PostBlackTraceKd         = 0.8f;   /* LT PID: D */
   static constexpr float    PostBlackTraceOutMax     = 100.0f; /* LT PID 出力上限 */
+  static constexpr float    PostBlackTraceScale      = 1.0f;
   static constexpr bool     PostBlackTraceEdgeFollow = (ETROBO_COURSE_L != 0);
   /* PostBlackTraceEdgeFollow: L=右エッジ, R=左エッジ */
 
@@ -224,6 +227,7 @@ private:
   static constexpr float    FinalSlowTraceKi                = 0.01f;
   static constexpr float    FinalSlowTraceKd                = 0.8f;
   static constexpr float    FinalSlowTraceOutMax            = 100.0f;
+  static constexpr float    FinalSlowTraceScale             = 1.0f;
   static constexpr bool     FinalSlowTraceEdgeFollow = (ETROBO_COURSE_L != 0);
   /* FinalSlowTraceEdgeFollow: L=左エッジ, R=右エッジ */
   static constexpr uint32_t FinalSlowTraceWhiteIgnoreMs     = 200U;

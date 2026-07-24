@@ -20,10 +20,10 @@ public:
    *  ① 旋回後に低速 LT → 本線 LT で円の終端まで移動 (固定時間 BackToEndMs)
    *  ② 円の方向へ旋回 (右 90°)、旋回後の向きを 0° にリセット、
    *     指定時間 (ForwardBeforeScanMs) 前進
-   *  ③ 右 90° 走査: 検知 → 絶対 +90° 向き → 黒線まで直進 → ⑦
+   *  ③ 右 90° 走査: 検知 → 検知方向へ灰色まで前進 → finishAfterDetect → ⑦
    *  ④ 検知なしで規定回数完了 → 円の反対を読み取る動き
    *       (readOppositeSide: 直進 → 右旋回 → 直進 → 右旋回 → 灰色まで直進)
-   *  ⑤ 左 90° 走査: 検知 → 絶対 +90° 向き → 黒線まで直進 → ⑦
+   *  ⑤ 左 90° 走査: 検知 → 検知方向へ灰色まで前進 → finishAfterDetect → ⑦
    *  ⑥ 検知なしで規定回数完了 → 黒線を読む動き → ⑦
    *  ⑦ 黒線読み後: 指定方向に 90° 旋回 → 青線までライントレース
    * ============================================================ */
@@ -102,9 +102,6 @@ private:
                      int left_power, int right_power,
                      bool reset_after = true);
 
-  /* 超音波検知後: DetectAfterSonicTurnDeg を向いて停止 → 0° に向き直す。 */
-  void faceDetectHeadingThenReturnToZero();
-
   /* その場で 360° ピボット旋回しながら超音波を読み続ける (即時停止式)。 */
   bool scan360(float *out_heading);
 
@@ -120,6 +117,11 @@ private:
 
   /* === ⓪ 開始時 (ライントレース) パラメータ */
   static constexpr float    InitialTracePower   = 33.0f;
+  static constexpr float    InitialTraceKp      = 0.30f;
+  static constexpr float    InitialTraceKi      = 0.01f;
+  static constexpr float    InitialTraceKd      = 0.8f;
+  static constexpr float    InitialTraceOutMax  = 100.0f;
+  static constexpr float    InitialTraceScale   = 1.0f;  /* HCR 後も自前 PID を維持 */
   static constexpr float    InitialBlackTurnDeg = 180.0f;
 
   /* === ⑦ 最終黒線読み後 (青線ライントレース) パラメータ */
@@ -139,6 +141,11 @@ private:
   static constexpr int      FinalBlueTraceTurnRightPower =
       FinalBlackTurnLeft ? FinalBlueTraceTurnRightPowerMag : -FinalBlueTraceTurnRightPowerMag;
   static constexpr float    FinalBlueTracePower             = 80.0f;
+  static constexpr float    FinalBlueTraceKp                = 0.30f;
+  static constexpr float    FinalBlueTraceKi                = 0.0005f;
+  static constexpr float    FinalBlueTraceKd                = 0.45f;
+  static constexpr float    FinalBlueTraceOutMax            = 100.0f;
+  static constexpr float    FinalBlueTraceScale             = 1.0f;
 
   /* === ① バック・ライントレース (円の終端まで) パラメータ ========= */
   /* 旋回直後の低速 LT (本線 LT の前に線へ乗せる)。 */
@@ -148,6 +155,11 @@ private:
   static constexpr uint32_t BackToEndMs        = 2100U;
   /* バック・ライントレースの左右パワー (負値で後退)。 */
   static constexpr int      BackTracePower     = 80;
+  static constexpr float    BackTraceKp        = 0.6f;
+  static constexpr float    BackTraceKi        = 0.0005f;
+  static constexpr float    BackTraceKd        = 0.8f;
+  static constexpr float    BackTraceOutMax    = 100.0f;
+  static constexpr float    BackTraceScale     = 1.0f;
   /* バック LT 中の減速: DecelMs かけて Power → EndPower へ線形に下げる。 */
   static constexpr int      BackTraceEndPower  = 30;
   static constexpr uint32_t BackTraceDecelMs   = 3200U;
@@ -219,10 +231,15 @@ private:
   /* 検知後共通: 灰色直進後のバック時間 [ms] / パワー。 */
   static constexpr uint32_t DetectFinishBackMs    = 700U;
   static constexpr int      DetectFinishBackPower = 50;
-  /* 超音波検知後: まずこの絶対角を向いて停止し、続けて 0° に向き直す [deg]。 */
+  /* 右走査検知後: バック直後 reset した 0° 基準の絶対角 [deg]。 */
+  static constexpr float    DetectFinishRightTurnDeg =
+      ETROBO_COURSE_L ? 180.0f : -180.0f;
+  static constexpr float    DetectFinishLeftTurnDeg =
+      ETROBO_COURSE_L ? 90.0f : -90.0f;    /* 左走査で検知 */
+  /* 超音波検知後の目標角 [deg] (旧経路用・互換)。 */
   static constexpr float    DetectAfterSonicTurnDeg =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
-  /* 左走査検知後の角度分岐 (app.h で L/R 切り替え)。 */
+  /* 左走査検知後の角度分岐 (旧ルート用)。 */
   static constexpr int      DetectFinishAngleSign =
       ETROBO_COURSE_L ? 1 : -1;
   static constexpr float    DetectFinishClassicMaxDeg =

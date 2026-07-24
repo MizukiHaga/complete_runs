@@ -10,35 +10,6 @@ void ColorHSV::configure(pbio_port_id_t color_sensor_port)
   device_ = pup_color_sensor_get_device(color_sensor_port);
 }
 
-bool ColorHSV::isBlack(bool surface)
-{
-  return is(COLOR_DETECT_BLACK, surface);
-}
-
-void ColorHSV::resetBlackEdge()
-{
-  black_edge_armed_ = false;
-  black_edge_was_black_ = false;
-}
-
-bool ColorHSV::blackEdgeHit(bool surface)
-{
-  const bool is_black = isBlack(surface);
-
-  if (is_black) {
-    if (black_edge_armed_) {
-      return true;
-    }
-    black_edge_was_black_ = true;
-    return false;
-  }
-
-  if (black_edge_was_black_) {
-    black_edge_armed_ = true;
-  }
-  return false;
-}
-
 void ColorHSV::readHsv(bool surface, uint16_t *h, uint8_t *s, uint8_t *v)
 {
   if (device_ == nullptr) {
