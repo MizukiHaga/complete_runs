@@ -14,6 +14,7 @@
  *    gGyro.reset();
  *    gMotors.configure(PBIO_PORT_ID_B, PBIO_PORT_ID_A);
  *    gMotors.setTargetHeading(0.0f);   // 任意: 目標角を明示指定
+ *    gMotors.setBalancePid(0.35f, 0.01f);
  *    gMotors.run(50, 50);
  *    gMotors.stop();
  *    gMotors.runFor(50, 50, 2000);
@@ -39,7 +40,7 @@ public:
   /* === ヨー角 PI 直進補正 (既定値) ==========================
    * error = 現在角 − 目標角 [deg] (±180 に折り畳み)
    * trim  = Kp * error + Ki * integral → 左右に ±trim/2 を分配 */
-  static constexpr float    DefaultBalanceKp   = 1.8f;
+  static constexpr float    DefaultBalanceKp   = 0.35f;
   static constexpr float    DefaultBalanceKi   = 0.01f;
   static constexpr float    BalanceIntegralMax = 50.0f;
   /* 1 周期あたりの左右パワー差分上限 (|half| の上限) */
@@ -52,6 +53,10 @@ public:
    * 未指定時は 1:1 直進開始時の gGyro.heading() が目標になる。
    * stop() / resetCorrection() で自動目標に戻る。 */
   void setTargetHeading(float heading_deg);
+
+  /* ヨー角 PI ゲインを実行時に変更する。設定時に積分項をリセット。
+   * i_max: 積分項クランプ上限 [deg] (省略時 BalanceIntegralMax)。 */
+  void setBalancePid(float kp, float ki, float i_max = BalanceIntegralMax);
 
   void run(int left_power, int right_power);
   void stop();

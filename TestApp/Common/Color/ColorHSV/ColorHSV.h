@@ -7,6 +7,7 @@
  *    3. gColorHSV.is(COLOR_DETECT_SKYBLUE, true) で判定
  *
  *  判定: 読み取り値が基準値 ± 許容誤差 (ToleranceH/S/V) 以内なら true
+ *  黒/白の中間: reflection() が 11〜79、または isBetweenBlackAndWhite()
  */
 
 #ifndef TESTAPP_COLOR_HSV_H_
@@ -20,20 +21,7 @@ extern "C" {
 #include <spike/pup/colorsensor.h>
 }
 
-typedef enum {
-  COLOR_DETECT_NONE = 0,
-  COLOR_DETECT_BLACK,
-  COLOR_DETECT_WHITE,
-  COLOR_DETECT_GRAY,
-  COLOR_DETECT_RED,
-  COLOR_DETECT_YELLOW,
-  COLOR_DETECT_GREEN,
-  COLOR_DETECT_BLUE,
-  COLOR_DETECT_SKYBLUE,
-  COLOR_DETECT_GRAYLINE,
-  COLOR_DETECT_OTHER,
-  COLOR_DETECT_BLACKLINE = COLOR_DETECT_OTHER + 1,
-} color_detect_t;
+#include "ColorDetect.h"
 
 /* LogTest で測った H,S,V。color_map_detect と並び・個数を揃える。 */
 static constexpr pup_color_hsv_t color_map_edit[] = {
@@ -43,6 +31,7 @@ static constexpr pup_color_hsv_t color_map_edit[] = {
   { 212, 93, 72 },  // Blue
   { 215, 20, 90 },  // Skyblue
   {   0, 10, 40 },  // Gray
+  {   210,  11,  90 },  // BlackLine
 };
 static constexpr color_detect_t color_map_detect[] = {
   COLOR_DETECT_RED,
@@ -51,6 +40,7 @@ static constexpr color_detect_t color_map_detect[] = {
   COLOR_DETECT_BLUE,
   COLOR_DETECT_SKYBLUE,
   COLOR_DETECT_GRAY,
+  COLOR_DETECT_BLACKLINE,
 };
 static constexpr int color_map_size =
     sizeof(color_map_edit) / sizeof(color_map_edit[0]);
@@ -60,16 +50,15 @@ public:
   static constexpr int32_t BlackReflectionMax = 10;
   static constexpr int32_t WhiteReflectionMin = 80;
   /* 基準 HSV からの許容誤差 (実機で調整) */
-  static constexpr uint16_t ToleranceH = 15U;
+  static constexpr uint16_t ToleranceH =  20U;
   static constexpr uint8_t  ToleranceS = 5U;
-  static constexpr uint8_t  ToleranceV = 20U;
+  static constexpr uint8_t  ToleranceV = 100U;
 
   void configure(pbio_port_id_t color_sensor_port);
 
+  int32_t reflection();
+  bool isBetweenBlackAndWhite();
   bool is(color_detect_t color, bool surface);
-  bool isBlack(bool surface);
-  void resetBlackEdge();
-  bool blackEdgeHit(bool surface);
 
 private:
   static int findMapIndex(color_detect_t color);
@@ -80,8 +69,6 @@ private:
   int32_t readReflection();
 
   pup_device_t *device_ = nullptr;
-  bool black_edge_armed_ = false;
-  bool black_edge_was_black_ = false;
 };
 
 #ifndef COLOR_BLACK_REFLECTION_MAX

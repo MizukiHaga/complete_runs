@@ -139,6 +139,15 @@ bool ColorLAB::is(color_detect_t color, bool surface)
       color == COLOR_DETECT_OTHER) {
     return false;
   }
+  if (color == COLOR_DETECT_WHITE) {
+    (void)surface;
+    return reflection() >= WhiteReflectionMin;
+  }
+  if (color == COLOR_DETECT_BLACK) {
+    (void)surface;
+    const int32_t value = reflection();
+    return value >= 0 && value <= BlackReflectionMax;
+  }
 
   float L, a, b;
   readLab(surface, &L, &a, &b);
@@ -146,13 +155,6 @@ bool ColorLAB::is(color_detect_t color, bool surface)
   const LabColorProfile *profile = findProfile(color);
   if (profile == nullptr) {
     return false;
-  }
-
-  if (color == COLOR_DETECT_SKYBLUE) {
-    const LabColorProfile *black = findProfile(COLOR_DETECT_BLACK);
-    if (black != nullptr && matchesProfile(L, a, b, *black)) {
-      return false;
-    }
   }
 
   return matchesProfile(L, a, b, *profile);

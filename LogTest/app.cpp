@@ -72,6 +72,7 @@
 #include "ColorHsv/ColorHsv.h"
 #include "ColorSensor/ColorSensor.h"
 #include "ColorRgbSensor/ColorRgbSensor.h"
+#include "ReflectionSensor/ReflectionSensor.h"
 #include <pbio/port.h>
 #include <stdio.h>
 #include <serial/newlib.h>
@@ -113,6 +114,12 @@ void main_task(intptr_t unused)
   //ColorHsvLight_Init(COLOR_HSV_COLOR_PORT, COLOR_HSV_FORCE_PORT);
   //sta_cyc(COLOR_HSV_LIGHT_TASK_CYC);
 
+  /* 反射光ログ → BLE。100ms 周期で REF,<0〜100程度> を送信。
+   * 同一ポート(E)の LAB/RGB ログと同時起動しないこと。 */
+  ReflectionSensor_Configure(color_sensor_port);
+  ReflectionSensor_SetOutput(bt_out);
+  //sta_cyc(REFLECTION_SENSOR_TASK_CYC);
+
   Angle_Init(bt_out);
   Morter_Configure(morter_left_motor_port, morter_right_motor_port);
   DistanceSensor_Init(bt_out, DISTANCE_SENSOR_PORT);
@@ -122,8 +129,6 @@ void main_task(intptr_t unused)
   //sta_cyc(ANGLE_TASK_CYC);
   //sta_cyc(MORTER_TASK_CYC);
   //sta_cyc(DISTANCE_TASK_CYC);
-  // sta_cyc(BATTERY_TASK_CYC);
+  //sta_cyc(BATTERY_TASK_CYC);
   //sta_cyc(SONIC_LIGHT_TASK_CYC);
-  sta_cyc(COLOR_SENSOR_TASK_CYC);
-  //sta_cyc(COLOR_RGB_SENSOR_TASK_CYC);
 }

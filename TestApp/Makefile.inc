@@ -11,7 +11,8 @@ APPL_CXXOBJS += \
 	ColorLAB.o \
 	ColorRGB.o \
 	Sonic.o \
-	Gyro.o
+	Gyro.o \
+	Arm.o
 
 APPL_DIRS += \
 	$(mkfile_path)Common/LineTracer \
@@ -21,17 +22,20 @@ APPL_DIRS += \
 	$(mkfile_path)Common/Color/ColorLAB \
 	$(mkfile_path)Common/Color/ColorRGB \
 	$(mkfile_path)Common/Sonic \
-	$(mkfile_path)Common/Gyro
+	$(mkfile_path)Common/Gyro \
+	$(mkfile_path)Common/Arm
 
 INCLUDES += \
 	-I$(mkfile_path)Common/LineTracer \
 	-I$(mkfile_path)Common/Straight \
 	-I$(mkfile_path)Common/HCR \
+	-I$(mkfile_path)Common/Color \
 	-I$(mkfile_path)Common/Color/ColorHSV \
 	-I$(mkfile_path)Common/Color/ColorLAB \
 	-I$(mkfile_path)Common/Color/ColorRGB \
 	-I$(mkfile_path)Common/Sonic \
-	-I$(mkfile_path)Common/Gyro
+	-I$(mkfile_path)Common/Gyro \
+	-I$(mkfile_path)Common/Arm
 
 APPL_LIBS += -lm
 
@@ -41,4 +45,6 @@ APPL_DIRS    += $(mkfile_path)Scene/Nansho1
 INCLUDES     += -I$(mkfile_path)Scene/Nansho1
 
 # === Scene: Member B =====================================
-# (ここにメンバー B が追記)
+APPL_CXXOBJS += Nansho2.o
+APPL_DIRS    += $(mkfile_path)Scene/Nansho2
+INCLUDES     += -I$(mkfile_path)Scene/Nansho2

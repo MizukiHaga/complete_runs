@@ -7,18 +7,18 @@
  *  使い方:
  *    Sonic gSonic;
  *    gSonic.configure(PBIO_PORT_ID_F);     // app.cpp の起動時に 1 度だけ
- *    if (gSonic.isCloserThan(300)) { ... } // 走行中の判定など
+ *    if (gSonic.isCloserThan(250)) { ... } // 距離で障害物検知
  */
 
 #ifndef TESTAPP_SONIC_H_
 #define TESTAPP_SONIC_H_
 
-extern "C" {
 #include <pbio/port.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 /* PUP の C API は C リンクで提供されているので extern "C" で囲む */
+extern "C" {
 #include <spike/pup/ultrasonicsensor.h>
 }
 
@@ -35,19 +35,22 @@ public:
   /* configure 済みで PUP デバイスを取得できているか。 */
   bool isConfigured() const { return device_ != nullptr; }
 
-  /* 距離 [mm] を返す。未検出 / 未初期化 / エラー時は DistanceInvalid。 */
+  /* 距離 [mm] を返す。未検出 / 未初期化 / エラー時は DistanceInvalid。
+   * ※ DISTL モード。presence と併用するとモード切替が起きる。 */
   int32_t readDistanceMm();
 
-  /* 何かが見えているか (距離が読めるか)。距離値そのものは見ない。 */
+  /* pup_ultrasonic_sensor_presence (LISTN):
+   * 他の超音波センサが出す信号を受信したら true。
+   * 距離による障害物判定ではない。 */
+  bool isPresent();
+
+  /* 走査などの検知判定用。距離が読めたら true（閾値なしの簡易判定）。 */
   bool isDetected();
 
-  /* threshold_mm 以下に何かがあるか。未検出のときは false。
-   * 例) isCloserThan(300) なら 300mm 以内に何かあれば true。 */
+  /* threshold_mm 以下に何かがあるか (距離 API)。未検出のときは false。 */
   bool isCloserThan(int32_t threshold_mm);
 
 private:
-  /* 取得した PUP デバイスのハンドル。configure() で初期化、
-   * 以降の関数はこれを使って距離を読み出す。nullptr のままだと未初期化扱い。 */
   pup_device_t *device_ = nullptr;
 };
 

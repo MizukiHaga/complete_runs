@@ -16,7 +16,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "ColorHSV.h"
+#include "ColorDetect.h"
 
 extern "C" {
 #include <spike/pup/colorsensor.h>
@@ -24,20 +24,10 @@ extern "C" {
 
 /* LogTest で測った R,G,B。rgb_map_detect と並び・個数を揃える。 */
 static constexpr pup_color_rgb_t rgb_map_edit[] = {
-  { 900, 120, 120 },  // Red
-  { 850, 750, 120 },  // Yellow
-  { 120, 700, 200 },  // Green
-  { 120, 250, 800 },  // Blue
-  { 200, 600, 850 },  // Skyblue
-  { 120, 120, 120 },  // Gray
-  { 600, 630, 650 },  // GrayLine
+  { 450, 470, 500 },  // Gray
+  { 640, 690, 720 },  // GrayLine
 };
 static constexpr color_detect_t rgb_map_detect[] = {
-  COLOR_DETECT_RED,
-  COLOR_DETECT_YELLOW,
-  COLOR_DETECT_GREEN,
-  COLOR_DETECT_BLUE,
-  COLOR_DETECT_SKYBLUE,
   COLOR_DETECT_GRAY,
   COLOR_DETECT_GRAYLINE,
 };
@@ -61,7 +51,6 @@ public:
   int32_t brightness();
 
   bool is(color_detect_t color);
-  bool isGrayLine();
 
 private:
   static int findMapIndex(color_detect_t color);
