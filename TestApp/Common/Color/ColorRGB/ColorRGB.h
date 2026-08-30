@@ -24,9 +24,15 @@ extern "C" {
 
 /* LogTest で測った R,G,B。rgb_map_detect と並び・個数を揃える。 */
 static constexpr pup_color_rgb_t rgb_map_edit[] = {
-  { 450, 470, 500 },  // Gray
-  { 640, 690, 720 },  // GrayLine
+  { 412, 500, 516 },  // Gray
+  { 645, 742, 764 },  // GrayLine
 };
+
+// 學校
+// static constexpr pup_color_rgb_t rgb_map_edit[] = {
+//   { 450, 470, 500 },  // Gray
+//   { 640, 690, 720 },  // GrayLine
+// };
 static constexpr color_detect_t rgb_map_detect[] = {
   COLOR_DETECT_GRAY,
   COLOR_DETECT_GRAYLINE,

@@ -20,7 +20,7 @@ extern "C" {
  *   3: HCR のみ
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 1
+#define ETROBO_SCENE 0
 #endif
 
 /* タスク優先度 */
