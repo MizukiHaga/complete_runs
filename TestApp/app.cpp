@@ -77,17 +77,20 @@ void main_task(intptr_t unused)
 #if ETROBO_SCENE == 0
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
   gHCR.run_hrc('L');
-  // gHCR.ShortCutRun();
   act_tsk(NANSHO1_TASK);
-#elif ETROBO_SCENE == 1
+#elif ETROBO_SCENE == 1 || ETROBO_SCENE == 5
   act_tsk(NANSHO1_TASK);
 #elif ETROBO_SCENE == 2
   act_tsk(NANSHO2_TASK);
 #elif ETROBO_SCENE == 3
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
   gHCR.run_hrc();
+#elif ETROBO_SCENE == 4
+  act_tsk(NANSHO3_TASK);
+#elif ETROBO_SCENE == 6
+  act_tsk(TEST_TASK);
 #else
-#error "ETROBO_SCENE must be 0, 1, 2 or 3"
+#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5 or 6"
 #endif
   ext_tsk();
 }

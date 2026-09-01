@@ -50,3 +50,13 @@ INCLUDES     += -I$(mkfile_path)Scene/Nansho1
 APPL_CXXOBJS += Nansho2.o
 APPL_DIRS    += $(mkfile_path)Scene/Nansho2
 INCLUDES     += -I$(mkfile_path)Scene/Nansho2
+
+# === Scene: Member C =====================================
+APPL_CXXOBJS += Nansho3.o
+APPL_DIRS    += $(mkfile_path)Scene/Nansho3
+INCLUDES     += -I$(mkfile_path)Scene/Nansho3
+
+# === Scene: Test (首振り走査のみ) ========================
+APPL_CXXOBJS += Test.o
+APPL_DIRS    += $(mkfile_path)Scene/Test
+INCLUDES     += -I$(mkfile_path)Scene/Test

@@ -76,6 +76,14 @@ void Straight::setBalancePid(float kp, float ki, float i_max)
   integral_ = 0.0f;
 }
 
+void Straight::setHeadingCorrection(bool enabled)
+{
+  heading_correction_ = enabled;
+  if (!enabled) {
+    integral_ = 0.0f;
+  }
+}
+
 void Straight::setPowerRaw(int left_power, int right_power)
 {
   /* stop() との競合: 停止中に周期補正が古い指令を書き戻さない */
@@ -97,9 +105,10 @@ void Straight::setPowerRaw(int left_power, int right_power)
  *
  * 目標角 = setTargetHeading() で指定、または run() 開始時の gGyro.heading()
  * error  = wrap(現在角 − 目標角) [deg]
- *          (>0 なら左に曲がった → 右旋回方向へ補正)
+ *          本機は右 = +。error>0（右にずれた）→ 左へ戻す
+ *          ＝ 左輪を弱く / 右輪を強く (L −, R +)
  * trim   = Kp * error + Ki * integral
- * left   = pl − trim/2,  right = pr + trim/2
+ * left   = pl − trim配分,  right = pr + trim配分
  *
  * 1:1 直進コマンドのみ補正。弧 (左右パワー差)・ピボット・片輪は open-loop。 */
 void Straight::applyWithCorrection(int left_power, int right_power)
@@ -127,7 +136,9 @@ void Straight::applyWithCorrection(int left_power, int right_power)
   const bool straight_cmd =
       same_sign && left_power != 0 && right_power != 0 && apl == apr;
 
-  if (!correction_enabled_ || !straight_cmd || !gGyro.isReady()) {
+  /* isReady は「静止校正済み」判定であり、heading 取得可否ではない。
+   * ここで弾くと PI が常に無効になり、Kp を変えても挙動が変わらない。 */
+  if (!correction_enabled_ || !heading_correction_ || !straight_cmd) {
     integral_ = 0.0f;
     setPowerRaw(left_power, right_power);
     return;
@@ -164,19 +175,29 @@ void Straight::applyWithCorrection(int left_power, int right_power)
   integral_ = clampFloat(integral_, -i_max_, i_max_);
 
   const float trim = kp_ * error + ki_ * integral_;
-  int         half = (int)roundf(trim / 2.0f);
-  half             = clampInt(half, -MaxHeadingTrim, MaxHeadingTrim);
+  /* 整数化で消えないよう、|trim| がごく小さくても少なくとも ±1 を出す */
+  int diff = (int)roundf(trim);
+  if (diff == 0 && fabsf(trim) > 0.0f) {
+    diff = (trim > 0.0f) ? 1 : -1;
+  }
+  diff = clampInt(diff, -MaxHeadingTrim, MaxHeadingTrim);
+  const int dL = diff / 2;
+  const int dR = diff - dL;  /* |diff|==1 のとき片側に ±1 が残る */
 
   const int sgnL = (left_power  >= 0) ? 1 : -1;
   const int sgnR = (right_power >= 0) ? 1 : -1;
 
-  const int out_left  = clampMotorPower(left_power  - sgnL * half);
-  const int out_right = clampMotorPower(right_power + sgnR * half);
+  /* 右ずれ (error>0) → 左旋回: 左を弱く / 右を強く */
+  const int out_left  = clampMotorPower(left_power  - sgnL * dL);
+  const int out_right = clampMotorPower(right_power + sgnR * dR);
 
   if (correction_debug_) {
-    printf("Heading tgt=%d cur=%d err=%d int=%d trim=%d -> L=%d R=%d\n",
-           (int)target_heading_, (int)gGyro.heading(), (int)error,
-           (int)integral_, (int)trim, out_left, out_right);
+    if (++correction_debug_div_ >= 10U) {
+      correction_debug_div_ = 0;
+      printf("Heading tgt=%d cur=%d err=%d trim=%d diff=%d kp=%d -> L=%d R=%d\n",
+             (int)target_heading_, (int)gGyro.heading(), (int)error,
+             (int)trim, diff, (int)(kp_ * 100.0f), out_left, out_right);
+    }
   }
 
   /* stop() が計算中に入った場合、古い補正結果を捨てる */
@@ -199,7 +220,7 @@ void Straight::tickCorrection()
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
-  if (!correction_enabled_) {
+  if (!correction_enabled_ || !heading_correction_) {
     return;
   }
   if (!cmd_initialized_) {
@@ -289,4 +310,35 @@ void Straight::runFor(int left_power, int right_power, uint32_t duration_ms)
   }
 
   stop();
+}
+
+void Straight::turnToHeading(float target_heading, float tolerance_deg,
+                             int left_power, int right_power, uint32_t max_ms)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+
+  uint32_t elapsed_ms = 0U;
+  while (elapsed_ms < max_ms) {
+    if (gGyro.reached(target_heading, tolerance_deg)) {
+      break;
+    }
+
+    const float diff = gGyro.diffTo(target_heading);
+    /* ピボットは 1:1 直進ではないので run() 内で補正はかからない */
+    if (diff > 0.0f) {
+      run(left_power, -right_power);
+    } else if (diff < 0.0f) {
+      run(-left_power, right_power);
+    } else {
+      break;
+    }
+
+    dly_tsk(TurnStepMs * 1000U);
+    elapsed_ms += TurnStepMs;
+  }
+
+  stop();
+  dly_tsk(TurnStepMs * 1000U);
 }

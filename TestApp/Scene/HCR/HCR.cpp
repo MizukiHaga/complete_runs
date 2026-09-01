@@ -8,8 +8,6 @@
 #include "ColorLAB.h"
 #include "kernel_cfg.h"
 
-#include <spike/hub/speaker.h>
-
 extern "C" {
 #include <spike/pup/motor.h>
 #include <spike/hub/imu.h>
@@ -63,12 +61,10 @@ void HCR::turn_90(const char* direction, float inner_radius_mm)
 void HCR::catch_blue_line()
 {
   gLineTracer.setEnabled(true);
+  gLineTracer.setEnabled(true);
   gLineTracer.setBaseSpeed(90.0f, 90.0f);
   gLineTracer.setPid(0.06f,0.0004f,0.3f, 100.0f);
   gLineTracer.setScale(10.0f);
-  // gLineTracer.setBaseSpeed(85.0f, 85.0f);
-  // gLineTracer.setPid(0.04f,0.0004f,0.3f, 100.0f);
-  // gLineTracer.setScale(1.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   while (true) {
     if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
@@ -79,8 +75,11 @@ void HCR::catch_blue_line()
         if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
           gLineTracer.setEnabled(false);
           gMotors.stop();
-          dly_tsk(5000 * 1000);
-          break;
+          dly_tsk(10 * 1000);
+          /* 黒到達で HCR 終了。周期 LT を止めて Nansho1 へ渡す */
+          stp_cyc(LINE_TRACER_TASK_CYC);
+          gLineTracer.setEnabled(false);
+          return;
         }
         gLineTracer.step();
         dly_tsk(1 * 1000);
@@ -205,6 +204,11 @@ void HCR::run_hrc(char corse)
   dly_tsk(5000 * 1000);
   catch_black_line(corse);
   catch_blue_line();
+
+  /* Nansho1 へ渡す前に周期 LT を確実に停止する */
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  gLineTracer.setEnabled(false);
+  gMotors.stop();
 }
 
 void HCR::SlowDown(float left_speed, float right_speed, float duration_sec, float target_speed)

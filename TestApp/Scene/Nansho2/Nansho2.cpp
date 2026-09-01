@@ -1,10 +1,12 @@
 #include "Nansho2.h"
 
+#include "app.h"
+#include "kernel_cfg.h"
+
 #include <stdio.h>
 
-#include <spike/hub/speaker.h>
-
 #include "Arm.h"
+#include "ColorLAB.h"
 #include "Common/LineTracer/LineTracer.h"
 #include "Common/Straight/Straight.h"
 #include "Gyro.h"
@@ -35,6 +37,7 @@ void Nansho2Scene::runInitialLineTrace()
         gGyro.reset();
       }
     } else if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
+      beepOnBlackDetected();
       break;
     }
   }
@@ -68,14 +71,19 @@ void Nansho2Scene::raiseArm()
 
 void Nansho2Scene::lowerArm()
 {
-  gArm.lower(ArmLowerPower, ArmLowerMaxMs);
+  gArm.lower(ArmLowerPower, ArmLowerMaxMs, ArmLowerOvershootDeg);
 }
 
 void Nansho2Scene::beepOnRouteBranchDetected()
 {
-  hub_speaker_set_volume(ColorDetectBeepVolume);
-  hub_speaker_play_tone(ColorDetectBeepHz,
-                        static_cast<int32_t>(ColorDetectBeepMs));
+}
+
+void Nansho2Scene::beepOnBlackDetected()
+{
+}
+
+void Nansho2Scene::beepOnBlueDetected()
+{
 }
 
 
@@ -85,15 +93,15 @@ bool Nansho2Scene::scanRouteBranchOnce()
     return true;
   }
 
-  if (gColorLAB.is(COLOR_DETECT_RED, true)) {
+  if (gColorLAB.is(COLOR_DETECT_PETRED, true)) {
     route_branch_ = RouteBranch::Red;
     return true;
   }
-  if (gColorLAB.is(COLOR_DETECT_YELLOW, true)) {
+  if (gColorLAB.is(COLOR_DETECT_PETYELLOW, true)) {
     route_branch_ = RouteBranch::Yellow;
     return true;
   }
-  if (gColorLAB.is(COLOR_DETECT_BLUE, true)) {
+  if (gColorLAB.is(COLOR_DETECT_PETBLUE, true)) {
     route_branch_ = RouteBranch::Blue;
     return true;
   }
@@ -104,6 +112,8 @@ void Nansho2Scene::driveForwardAndDetectRouteBranch()
 {
   route_branch_ = RouteBranch::None;
   gLineTracer.setEnabled(false);
+  gMotors.setBalancePid(ColorForwardBalanceKp, ColorForwardBalanceKi,
+                        ColorForwardBalanceIntegralMax);
   gMotors.setTargetHeading(0.0f);
   gMotors.run(ColorForwardLeftPower, ColorForwardRightPower);
 
@@ -119,8 +129,7 @@ void Nansho2Scene::driveForwardAndDetectRouteBranch()
       return;
     }
 
-    /* 周期補正が止まらないよう、直進指令を維持 */
-    gMotors.run(ColorForwardLeftPower, ColorForwardRightPower);
+    gMotors.tickCorrection();
     dly_tsk(StepMs * 1000U);
     elapsed_ms += StepMs;
   }
@@ -159,7 +168,20 @@ void Nansho2Scene::runAfterBlackLeftTurnAndBranch()
                 AfterBlackLeftTurnLeftPower, AfterBlackLeftTurnRightPower);
   dly_tsk(StepMs * 1000U);
 
-  runLineTraceUntilColor(COLOR_DETECT_BLUE);
+  /* 旋回直後は低速で線に乗せる */
+  gLineTracer.setEnabled(true);
+  gLineTracer.setBaseSpeed(PostBlackSlowTracePower, PostBlackSlowTracePower);
+  gLineTracer.setPid(PostBlackSlowTraceKp, PostBlackSlowTraceKi,
+                     PostBlackSlowTraceKd, PostBlackSlowTraceOutMax);
+  gLineTracer.setScale(PostBlackSlowTraceScale);
+  gLineTracer.setEdgeFollow(PostBlackTraceEdgeFollow);
+  for (uint32_t elapsed_ms = 0U; elapsed_ms < PostBlackSlowTraceMs;
+       elapsed_ms += StepMs) {
+    gLineTracer.step();
+    dly_tsk(StepMs * 1000U);
+  }
+
+  runLineTraceUntilColor(COLOR_DETECT_SKYBLUE);
   gGyro.reset();
   runAfterBlueByRouteBranch();
 }
@@ -179,34 +201,57 @@ void Nansho2Scene::runLineTraceUntilHeadingThenStraight()
                 AfterPivotTurnLeftPower, AfterPivotTurnRightPower);
   dly_tsk(StepMs * 1000U);
 
-  driveStraightUntilBlackLine(AfterStraightHeadingDeg, AfterStraightToBlackIgnoreMs);
+  driveStraightUntilBlackLine(AfterStraightHeadingDeg);
   runAfterBlackLeftTurnAndBranch();
 }
 
-void Nansho2Scene::driveStraightUntilBlackLine(float target_heading,
-                                               uint32_t black_ignore_ms)
+void Nansho2Scene::driveStraightUntilBlackLine(float target_heading)
 {
+  /* ヨー補正は STRAIGHT_BALANCE / tickCorrection。
+   * LT 周期は干渉するので止め、ここからの tickCorrection だけにする。 */
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gLineTracer.setEnabled(false);
+  gMotors.stop();
+  dly_tsk(StepMs * 1000U);
+
   gMotors.setBalancePid(AfterStraightBalanceKp, AfterStraightBalanceKi,
                         AfterStraightBalanceIntegralMax);
   gMotors.setTargetHeading(target_heading);
   gMotors.run(AfterStraightToBlackLeftPower, AfterStraightToBlackRightPower);
 
-  uint32_t elapsed_ms = 0U;
-  while (elapsed_ms < LtMaxMs) {
+  /* 指定時間クルーズ → 台形減速（ヨー補正は維持） */
+  for (uint32_t elapsed_ms = 0U; elapsed_ms < AfterStraightToBlackCruiseMs;
+       elapsed_ms += StepMs) {
     gMotors.tickCorrection();
-
-    if (elapsed_ms >= black_ignore_ms &&
-        gColorLAB.reflection() <= AfterStraightToBlackReflectionLineMax) {
-      gMotors.stop();
-      break;
-    }
-
     dly_tsk(StepMs * 1000U);
-    elapsed_ms += StepMs;
+  }
+
+  if (AfterStraightToBlackDecelMs > 0U) {
+    const int cruise_l = AfterStraightToBlackLeftPower;
+    const int cruise_r = AfterStraightToBlackRightPower;
+    const uint32_t decel_ms = AfterStraightToBlackDecelMs;
+    for (uint32_t t = 0U; t < decel_ms;) {
+      uint32_t slice = AfterStraightToBlackDecelStepMs;
+      if (t + slice > decel_ms) {
+        slice = decel_ms - t;
+      }
+      const uint32_t numer = decel_ms - t;
+      const int left =
+          (int)((int64_t)cruise_l * (int64_t)numer / (int64_t)decel_ms);
+      const int right =
+          (int)((int64_t)cruise_r * (int64_t)numer / (int64_t)decel_ms);
+      gMotors.run(left, right);
+      for (uint32_t s = 0U; s < slice; s += StepMs) {
+        gMotors.tickCorrection();
+        dly_tsk(StepMs * 1000U);
+      }
+      t += slice;
+    }
   }
 
   gMotors.stop();
+  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
 }
 
 void Nansho2Scene::setupPostBlackLineTrace()
@@ -227,7 +272,15 @@ void Nansho2Scene::runLineTraceUntilColor(color_detect_t color)
   while (elapsed_ms < LtMaxMs) {
     gLineTracer.step();
 
-    if (gColorLAB.is(color, true)) {
+    const bool hit = gColorLAB.is(color, true);
+    if (hit) {
+      if (color == COLOR_DETECT_BLACKLINE) {
+        beepOnBlackDetected();
+      } else if (color == COLOR_DETECT_PETBLUE ||
+                 color == COLOR_DETECT_SKYBLUE ||
+                 color == COLOR_DETECT_BLUE) {
+        beepOnBlueDetected();
+      }
       break;
     }
 
@@ -277,9 +330,17 @@ void Nansho2Scene::turnToHeading(float target_heading, float tolerance_deg,
 void Nansho2Scene::runTimedStraightAfterTurn(float heading, int left_power,
                                              int right_power, uint32_t ms)
 {
+  /* runFor の長い sleep は周期補正に依存するため、明示的に tick する */
+  stp_cyc(LINE_TRACER_TASK_CYC);
   gLineTracer.setEnabled(false);
   gMotors.setTargetHeading(heading);
-  gMotors.runFor(left_power, right_power, ms);
+  gMotors.run(left_power, right_power);
+
+  for (uint32_t elapsed_ms = 0U; elapsed_ms < ms; elapsed_ms += StepMs) {
+    gMotors.tickCorrection();
+    dly_tsk(StepMs * 1000U);
+  }
+
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 }
@@ -287,6 +348,7 @@ void Nansho2Scene::runTimedStraightAfterTurn(float heading, int left_power,
 void Nansho2Scene::driveStraightUntilReflectionBlackLine(float target_heading,
                                                          uint32_t ignore_ms)
 {
+  stp_cyc(LINE_TRACER_TASK_CYC);
   gLineTracer.setEnabled(false);
   gMotors.setTargetHeading(target_heading);
   gMotors.run(AfterFinalBackBlueApproachLeftPower,
@@ -294,10 +356,16 @@ void Nansho2Scene::driveStraightUntilReflectionBlackLine(float target_heading,
 
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < LtMaxMs) {
+    gMotors.tickCorrection();
+
     if (elapsed_ms >= ignore_ms &&
         (gColorLAB.reflection() <= AfterFinalBackReflectionLineMax ||
          gColorLAB.is(COLOR_DETECT_BLUE, true))) {
-      gMotors.stop();
+      if (gColorLAB.reflection() <= AfterFinalBackReflectionLineMax) {
+        beepOnBlackDetected();
+      } else {
+        beepOnBlueDetected();
+      }
       break;
     }
 
@@ -314,8 +382,7 @@ void Nansho2Scene::runAfterFinalBackTurnToBlue()
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 
-  const float turn_target =
-      Gyro::wrapDeg180(gGyro.heading() + AfterFinalBackTurnOffsetDeg);
+  const float turn_target = AfterFinalBackTurnDeg;
   turnToHeading(turn_target, AfterFinalBackTurnToleranceDeg,
                 AfterFinalBackTurnLeftPower, AfterFinalBackTurnRightPower);
   dly_tsk(StepMs * 1000U);
@@ -363,7 +430,9 @@ void Nansho2Scene::runYellowRouteAfterBlue()
   const float turn_target = runShortForwardTurnRight();
   runTimedStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
                             RouteFinalApproachRightPower, YellowFinalApproachMs);
-  runRouteFinalBack(turn_target, YellowFinalBackPower, YellowFinalBackMs);
+  /* 検知後旋回→直進の完了向きを 0° にし、後退後旋回を絶対角で扱う */
+  gGyro.reset();
+  runRouteFinalBack(0.0f, YellowFinalBackPower, YellowFinalBackMs);
 }
 
 float Nansho2Scene::runShortForwardTurnRight()
@@ -410,7 +479,8 @@ void Nansho2Scene::runBlueRouteAfterBlue()
   const float turn_target = runBlackBlueForwardTurnRight();
   runTimedStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
                             RouteFinalApproachRightPower, BlueFinalApproachMs);
-  runRouteFinalBack(turn_target, BlueFinalBackPower, BlueFinalBackMs);
+  gGyro.reset();
+  runRouteFinalBack(0.0f, BlueFinalBackPower, BlueFinalBackMs);
 }
 
 void Nansho2Scene::runRedRouteAfterBlue()
@@ -418,7 +488,8 @@ void Nansho2Scene::runRedRouteAfterBlue()
   const float turn_target = runBlackBlueForwardTurnRight(2);
   runTimedStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
                             RouteFinalApproachRightPower, RedFinalApproachMs);
-  runRouteFinalBack(turn_target, RedFinalBackPower, RedFinalBackMs);
+  gGyro.reset();
+  runRouteFinalBack(0.0f, RedFinalBackPower, RedFinalBackMs);
 }
 
 void Nansho2Scene::runAfterBlueByRouteBranch()
@@ -440,6 +511,13 @@ void Nansho2Scene::runAfterBlueByRouteBranch()
 
 void Nansho2Scene::run()
 {
+  /* ヨー角補正は STRAIGHT_BALANCE。LT 周期は HCR 残留対策で止めておく。
+   * Nansho2 の LT はタスク内 step() のみ（LINE_TRACER_TASK_CYC は使わない）。 */
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  gLineTracer.setEnabled(false);
+  gMotors.stop();
+
   runInitialLineTrace();
   //runShortBackAfterGray();
   raiseArm();
@@ -454,5 +532,13 @@ extern "C" void Nansho2Task(intptr_t exinf)
 {
   (void)exinf;
   gNansho2.run();
+
+#if ETROBO_SCENE == 0 || ETROBO_SCENE == 6
+  gMotors.stop();
+  gLineTracer.setEnabled(false);
+  dly_tsk(50 * 1000U);
+  act_tsk(NANSHO3_TASK);
+#endif
+
   ext_tsk();
 }

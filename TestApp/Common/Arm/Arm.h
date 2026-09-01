@@ -35,8 +35,10 @@ public:
   void raise(int power = DefaultRaisePower,
              int32_t target_deg = DefaultRaiseDeg,
              uint32_t max_ms = DefaultRaiseMaxMs);
+  /* overshoot_deg: 0 位置を過ぎてさらに下げる量 [deg]（確実に接地させる用） */
   void lower(int power = DefaultLowerPower,
-             uint32_t max_ms = DefaultRaiseMaxMs);
+             uint32_t max_ms = DefaultRaiseMaxMs,
+             int32_t overshoot_deg = 0);
   void stop();
 
 private:
