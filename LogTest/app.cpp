@@ -106,11 +106,13 @@ void main_task(intptr_t unused)
    * 同一ポート(E)では HSV/RGB 単体ログと同時起動しない。 */
   ColorSensor_Configure(color_sensor_port);
   ColorSensor_SetOutput(bt_out);
-  sta_cyc(COLOR_SENSOR_TASK_CYC);
+  // sta_cyc(COLOR_SENSOR_TASK_CYC);/* LAB計測*/
 
   ColorRgbSensor_Configure(color_sensor_port);
   ColorRgbSensor_SetOutput(bt_out);
-  //sta_cyc(COLOR_RGB_SENSOR_TASK_CYC);
+  // sta_cyc(COLOR_RGB_SENSOR_TASK_CYC);/*RGB計測*/
+
+  
   //ColorHsvLight_Init(COLOR_HSV_COLOR_PORT, COLOR_HSV_FORCE_PORT);
   //sta_cyc(COLOR_HSV_LIGHT_TASK_CYC);
 
@@ -118,7 +120,7 @@ void main_task(intptr_t unused)
    * 同一ポート(E)の LAB/RGB ログと同時起動しないこと。 */
   ReflectionSensor_Configure(color_sensor_port);
   ReflectionSensor_SetOutput(bt_out);
-  //sta_cyc(REFLECTION_SENSOR_TASK_CYC);
+  sta_cyc(REFLECTION_SENSOR_TASK_CYC);
 
   Angle_Init(bt_out);
   Morter_Configure(morter_left_motor_port, morter_right_motor_port);
