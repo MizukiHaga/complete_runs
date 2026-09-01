@@ -76,7 +76,8 @@ void main_task(intptr_t unused)
 
 #if ETROBO_SCENE == 0
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
-  gHCR.run_hrc('L');
+  // gHCR.run_hrc('L');
+  gHCR.AllLineTrace('L');
   // gHCR.ShortCutRun();
   act_tsk(NANSHO1_TASK);
 #elif ETROBO_SCENE == 1
@@ -85,7 +86,7 @@ void main_task(intptr_t unused)
   act_tsk(NANSHO2_TASK);
 #elif ETROBO_SCENE == 3
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
-  gHCR.run_hrc();
+  gHCR.run_hrc('L');
 #else
 #error "ETROBO_SCENE must be 0, 1, 2 or 3"
 #endif

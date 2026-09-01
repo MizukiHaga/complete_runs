@@ -13,6 +13,7 @@ public:  void configure_hrc(pbio_port_id_t left_motor_port,
   void run_hrc(char corse);
   void ShortCutRun(char corse);
   void LineTrace(char corse);
+  void AllLineTrace(char corse);
   
   private:
   void catch_black_line(char corse);

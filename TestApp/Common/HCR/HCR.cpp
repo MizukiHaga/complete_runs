@@ -105,9 +105,9 @@ void HCR::catch_black_line(char corse)
     }
     // gLineTracer.step();
     if(corse == 'L'){
-      gMotors.setTargetHeading(160.0f);
+      gMotors.setTargetHeading(140.0f);
     }else if(corse == 'R'){
-      gMotors.setTargetHeading(-160.0f);
+      gMotors.setTargetHeading(-140.0f);
     }
     gMotors.run(80.0f, 80.0f);
     dly_tsk(5 * 1000);
@@ -118,8 +118,8 @@ void HCR::LineTrace(char corse)
 {
   // catch_color_line();
   gLineTracer.setBaseSpeed(100.0f, 100.0f);
-  gLineTracer.setPid(0.07f,0.0006f,0.5f, 100.0f);
-  gLineTracer.setScale(16.0f);
+  gLineTracer.setPid(0.068f,0.0006f,0.52f, 100.0f);
+  gLineTracer.setScale(18.0f);
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
@@ -136,8 +136,8 @@ void HCR::LineTrace(char corse)
   dly_tsk(500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
   gLineTracer.setEnabled(true);
-  gLineTracer.setScale(18.0f);
-  gLineTracer.setPid(0.078f,0.0006f,0.5f, 100.0f);
+  gLineTracer.setScale(15.0f);
+  gLineTracer.setPid(0.065f,0.0006f,0.52f, 100.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(1000 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
@@ -155,6 +155,31 @@ void HCR::LineTrace(char corse)
   // gLineTracer.setEnabled(true);
 
 
+}
+
+void HCR::AllLineTrace(char corse)
+{
+  LineTrace(corse);
+  while (true) {
+    if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
+      gLineTracer.setBaseSpeed(50.0f, 50.0f);
+      gLineTracer.setPid(0.062f,0.0006f,0.5f, 100.0f);
+      gLineTracer.setScale(15.0f);
+      while (true) {
+        if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
+          gLineTracer.setEnabled(false);
+          gMotors.stop();
+          dly_tsk(5000 * 1000);
+          break;
+        }
+        gLineTracer.step();
+        dly_tsk(1 * 1000);
+      }
+    }
+    // gLineTracer.step();
+    gLineTracer.step();
+    dly_tsk(5 * 1000);
+  }
 }
 
 void HCR::run_hrc(char corse)
@@ -184,6 +209,8 @@ void HCR::run_hrc(char corse)
   }
   gMotors.run(100.0f, 100.0f);
   dly_tsk(400 * 1000);
+  gMotors.stop();
+  dly_tsk(5000 * 1000);
   if(corse == 'L'){
     gMotors.run(100.0f, 85.0f);
     dly_tsk(830 * 1000);
@@ -199,10 +226,10 @@ void HCR::run_hrc(char corse)
     dly_tsk(310 * 1000);
     gMotors.setTargetHeading(180.0f);
     gMotors.run(100.0f, 70.0f);
-    dly_tsk(500 * 1000);
+    dly_tsk(600 * 1000);
   }
-  gMotors.stop();
-  dly_tsk(5000 * 1000);
+  // gMotors.stop();
+  // dly_tsk(5000 * 1000);
   catch_black_line(corse);
   catch_blue_line();
 }
