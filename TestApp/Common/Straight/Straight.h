@@ -78,9 +78,11 @@ public:
   /* 指定時間 [ms] 走行して減速停止（後退など時間制御向け）。 */
   void runForMs(int left_power, int right_power, uint32_t duration_ms);
 
-  /* 目標ヨー角までその場旋回する（直進補正は使わない）。
-   * diff>0 → CW (L+, R−) / diff<0 → CCW (L−, R+)
-   * tolerance_deg 以内で終了。max_ms で安全打ち切り。 */
+  /* 開始時の最短角だけを、経過角でその場旋回する（直進補正は使わない）。
+   * 開始時: delta = wrap(target - heading) を固定し、その方向へ |delta| 回る。
+   * 毎周期 heading を再ラップ比較しない（±180 / 360k で即終了しない）。
+   * delta>0 → CW (L+, R−) / delta<0 → CCW (L−, R+)
+   * 残り角が tolerance_deg 以内で終了。max_ms で安全打ち切り。 */
   void turnToHeading(float target_heading,
                      float tolerance_deg = 4.0f,
                      int left_power = 40,

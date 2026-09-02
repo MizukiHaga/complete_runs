@@ -529,20 +529,30 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
     return;
   }
 
+  /* 開始時点の最短角 delta を固定し、その方向へ |delta| 回る。
+   * 毎周期 wrap(target - heading) すると、アンラップ済み heading と
+   * ±180 目標が 360° ずれて差 0 になり、モータが動かない。 */
+  float prev = gGyro.heading();
+  const float delta    = Gyro::wrapDeg180(target_heading - prev);
+  const float turn_dir = (delta > 0.0f) ? 1.0f : -1.0f;
+  const float need     = fabsf(delta);
+  float       traveled = 0.0f;
+
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < max_ms) {
-    if (gGyro.reached(target_heading, tolerance_deg)) {
+    const float h = gGyro.heading();
+    traveled += turn_dir * Gyro::wrapDeg180(h - prev);
+    prev = h;
+
+    if ((need - traveled) <= tolerance_deg) {
       break;
     }
 
-    const float diff = gGyro.diffTo(target_heading);
     /* ピボットは 1:1 直進ではないので run() 内で補正はかからない */
-    if (diff > 0.0f) {
+    if (turn_dir > 0.0f) {
       run(left_power, -right_power);
-    } else if (diff < 0.0f) {
-      run(-left_power, right_power);
     } else {
-      break;
+      run(-left_power, right_power);
     }
 
     dly_tsk(TurnStepMs * 1000U);

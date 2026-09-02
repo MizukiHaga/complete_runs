@@ -58,7 +58,9 @@ public:
   static float wrapDeg180(float diff);
 
 private:
-  static constexpr float kSystimToSec = 0.001f; /* get_tim() の単位は [ms] */
+  /* ASP3 の SYSTIM / get_tim() はマイクロ秒（dly_tsk と同じ）。
+   * 0.001 だと dt が 1000 倍になり、旋回中の予測が数十°跳び即終了する。 */
+  static constexpr float kSystimToSec = 1.0e-6f;
   static constexpr float kMaxKalmanDtSec = 0.2f;
 
   float readYawRateDegPerSec() const;

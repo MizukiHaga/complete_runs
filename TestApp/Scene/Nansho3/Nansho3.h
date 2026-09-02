@@ -130,12 +130,10 @@ private:
 
   /* === initialRun: バック → 相対-90°旋回 → 直進 → ジャイロreset === */
   static constexpr int      InitialBackPower     = 40;
-  /* バック回転角 [deg]（左右モータ各） */
-  static constexpr int32_t InitialBackDeg        = 930;
+  static constexpr uint32_t InitialBackMs        = 930U;
   static constexpr float    InitialTurnOffsetDeg = -90.0f;
   static constexpr int      InitialStraightPower = 50;
-  /* 直進回転角 [deg]（左右モータ各） */
-  static constexpr int32_t InitialStraightDeg    = 1900;
+  static constexpr uint32_t InitialStraightMs    = 1900U;
 
   /* 直進ヨー角 PI 補正（Straight::setBalancePid に渡す） */
   static constexpr float StraightBalanceKp   = 0.85f;
@@ -145,7 +143,7 @@ private:
   /* === 旋回（turnToHeading） === */
   static constexpr float    CoreTurnToleranceDeg = 6.0f;
   static constexpr uint32_t CoreTurnMaxMs        = 3000U;
-  static constexpr int      CoreTurnPower        = 40;
+  static constexpr int      CoreTurnPower        = 45;
 };
 
 #ifdef __cplusplus

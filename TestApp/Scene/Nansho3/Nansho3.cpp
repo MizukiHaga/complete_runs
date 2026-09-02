@@ -161,11 +161,12 @@ void Nansho3Scene::turnByAction(MoveAction action)
 
   const float offset =
       (action == MoveAction::L90) ? -90.0f : 90.0f;
-  const float logical_target =
-      Gyro::wrapDeg180(facing_deg_ + offset);
-  gMotors.turnToHeading(headingWithBias(logical_target), CoreTurnToleranceDeg,
+  /* 格子の絶対角ではなく、今のジャイロから相対 ±90° 回る。
+   * wrap した 0/±90/±180 を目標にすると、heading が 360k のとき差が 0 になる。 */
+  gMotors.turnToHeading(gGyro.heading() + offset, CoreTurnToleranceDeg,
                         CoreTurnPower, CoreTurnPower, CoreTurnMaxMs);
-  facing_deg_ = facingDegFromIndex(facingIndex(logical_target));
+  facing_deg_ =
+      facingDegFromIndex(facingIndex(facing_deg_ + offset));
   just_turned_ = true;
 }
 
@@ -524,13 +525,12 @@ void Nansho3Scene::initialRun()
 
   /* 1) バック */
   gMotors.setTargetHeading(base_heading);
-  gMotors.runFor(-InitialBackPower, -InitialBackPower, InitialBackDeg);
+  gMotors.runForMs(-InitialBackPower, -InitialBackPower, InitialBackMs);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 
-  /* 2) 相対 -90° 旋回 */
-  const float turn_target =
-      Gyro::wrapDeg180(base_heading + InitialTurnOffsetDeg);
+  /* 2) 相対 -90° 旋回（現在角 + offset。wrap した絶対角は使わない） */
+  const float turn_target = gGyro.heading() + InitialTurnOffsetDeg;
   gMotors.turnToHeading(turn_target, CoreTurnToleranceDeg, CoreTurnPower,
                         CoreTurnPower, CoreTurnMaxMs);
   dly_tsk(StepMs * 1000U);
@@ -539,8 +539,8 @@ void Nansho3Scene::initialRun()
   gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
                         StraightBalanceIMax);
   gMotors.setTargetHeading(turn_target);
-  gMotors.runFor(InitialStraightPower, InitialStraightPower,
-                 InitialStraightDeg);
+  gMotors.runForMs(InitialStraightPower, InitialStraightPower,
+                   InitialStraightMs);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 

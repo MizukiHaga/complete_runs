@@ -27,7 +27,7 @@ extern "C" {
  *  10: Test のみ（直進のみ・0°・ヨー補正・台形減速・カルマンログ）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 1
+#define ETROBO_SCENE 2
 #endif
 
 /* タスク優先度 */
