@@ -88,7 +88,7 @@ void HCR::catch_blue_line()
     dly_tsk(5 * 1000);
   }
 }
-void HCR::catch_black_line(char corse)
+void HCR::catch_black_line()
 {
   gLineTracer.setEnabled(true);
   while (true) {
@@ -101,31 +101,23 @@ void HCR::catch_black_line(char corse)
       stp_cyc(LINE_TRACER_TASK_CYC);
       break;
     }
-    // gLineTracer.step();
-    if(corse == 'L'){
-      gMotors.setTargetHeading(160.0f);
-    }else if(corse == 'R'){
-      gMotors.setTargetHeading(-160.0f);
-    }
+    gMotors.setTargetHeading(ETROBO_COURSE_L ? 140.0f : -140.0f);
     gMotors.run(80.0f, 80.0f);
     dly_tsk(5 * 1000);
   }
 }
 
-void HCR::LineTrace(char corse)
+void HCR::LineTrace()
 {
   // catch_color_line();
   gLineTracer.setBaseSpeed(100.0f, 100.0f);
-  gLineTracer.setPid(0.07f,0.0006f,0.5f, 100.0f);
-  gLineTracer.setScale(16.0f);
+  gLineTracer.setPid(0.068f,0.0006f,0.52f, 100.0f);
+  gLineTracer.setScale(18.0f);
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
-  if(corse == 'L'){
-    gLineTracer.setEdgeFollow(true);
-  }else if(corse == 'R'){
-    gLineTracer.setEdgeFollow(false);
-  }
+  /* L=右エッジ, R=左エッジ（Nansho2 と同じ） */
+  gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(3500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
@@ -134,8 +126,8 @@ void HCR::LineTrace(char corse)
   dly_tsk(500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
   gLineTracer.setEnabled(true);
-  gLineTracer.setScale(18.0f);
-  gLineTracer.setPid(0.078f,0.0006f,0.5f, 100.0f);
+  gLineTracer.setScale(15.0f);
+  gLineTracer.setPid(0.065f,0.0006f,0.52f, 100.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(1000 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
@@ -155,34 +147,61 @@ void HCR::LineTrace(char corse)
 
 }
 
-void HCR::run_hrc(char corse)
+void HCR::AllLineTrace()
 {
-  LineTrace(corse);
+  LineTrace();
+  while (true) {
+    if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
+      gLineTracer.setBaseSpeed(50.0f, 50.0f);
+      gLineTracer.setPid(0.062f,0.0006f,0.5f, 100.0f);
+      gLineTracer.setScale(15.0f);
+      while (true) {
+        if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
+          gLineTracer.setEnabled(false);
+          gMotors.stop();
+          dly_tsk(5000 * 1000);
+          break;
+        }
+        gLineTracer.step();
+        dly_tsk(1 * 1000);
+      }
+    }
+    // gLineTracer.step();
+    gLineTracer.step();
+    dly_tsk(5 * 1000);
+  }
+}
+
+void HCR::run_hrc()
+{
+  LineTrace();
   while (gGyro.heading() > -90.0f) {
     gLineTracer.step();
     dly_tsk(5 * 1000);
   }
   gLineTracer.setEnabled(false);
-  if(corse == 'L'){
+  if (ETROBO_COURSE_L) {
     gMotors.run(90.0f, 100.0f);
-  }else if(corse == 'R'){
+  } else {
     gMotors.run(100.0f, 90.0f);
   }
   dly_tsk(320 * 1000);
-  if(corse == 'L'){
+  if (ETROBO_COURSE_L) {
     while (gGyro.heading() > -175.0f) {
       gMotors.run(77.0f, 100.0f);
       dly_tsk(5 * 1000);
     }
-  }else if(corse == 'R'){
+  } else {
     while (gGyro.heading() > 175.0f) {
-      gMotors.run( 100.0f, 77.0f);
+      gMotors.run(100.0f, 77.0f);
       dly_tsk(5 * 1000);
     }
   }
   gMotors.run(100.0f, 100.0f);
   dly_tsk(400 * 1000);
-  if(corse == 'L'){
+  gMotors.stop();
+  dly_tsk(5000 * 1000);
+  if (ETROBO_COURSE_L) {
     gMotors.run(100.0f, 85.0f);
     dly_tsk(830 * 1000);
     gMotors.run(100.0f, 100.0f);
@@ -190,18 +209,16 @@ void HCR::run_hrc(char corse)
     gMotors.setTargetHeading(-180.0f);
     gMotors.run(70.0f, 100.0f);
     dly_tsk(500 * 1000);
-  }else if(corse == 'R'){
+  } else {
     gMotors.run(85.0f, 100.0f);
     dly_tsk(830 * 1000);
     gMotors.run(100.0f, 100.0f);
     dly_tsk(310 * 1000);
     gMotors.setTargetHeading(180.0f);
     gMotors.run(100.0f, 70.0f);
-    dly_tsk(500 * 1000);
+    dly_tsk(600 * 1000);
   }
-  gMotors.stop();
-  dly_tsk(5000 * 1000);
-  catch_black_line(corse);
+  catch_black_line();
   catch_blue_line();
 
   /* Nansho1 へ渡す前に周期 LT を確実に停止する */
@@ -286,12 +303,10 @@ void HCR::SpeedUp(float left_speed, float right_speed, float duration_sec, float
   return;
 }
 
-void HCR::ShortCutRun(char corse){
-  if(corse == 'L'){
-    gLineTracer.setEdgeFollow(true);
-  }else if(corse == 'R'){
-    gLineTracer.setEdgeFollow(false);
-  }
+void HCR::ShortCutRun()
+{
+  /* L=右エッジ, R=左エッジ（Nansho2 と同じ） */
+  gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
   gLineTracer.setBaseSpeed(80.0f, 80.0f);
   gLineTracer.setPid(0.05f,0.0004f,0.3f, 100.0f);
   gLineTracer.setScale(4.5f);
@@ -300,19 +315,15 @@ void HCR::ShortCutRun(char corse){
   stp_cyc(LINE_TRACER_TASK_CYC);
   gMotors.run(-80.0f, -80.0f);
   dly_tsk(500 * 1000);
-  if(corse == 'L'){
-    gMotors.run(0.0f,-70.0f);
-  }else if(corse == 'R'){
+  if (ETROBO_COURSE_L) {
+    gMotors.run(0.0f, -70.0f);
+  } else {
     gMotors.run(-70.0f, 0.0f);
   }
   dly_tsk(550 * 1000);
   gMotors.stop();
   dly_tsk(500 * 1000);
-  if(corse == 'L'){
-    gMotors.setTargetHeading(70.0f);
-  }else if(corse == 'R'){
-    gMotors.setTargetHeading(-70.0f);
-  }
+  gMotors.setTargetHeading(ETROBO_COURSE_L ? 70.0f : -70.0f);
   gMotors.run(80.0f, 80.0f);
   dly_tsk(1800 * 1000);
   while (true) {
@@ -325,27 +336,19 @@ void HCR::ShortCutRun(char corse){
       dly_tsk(1500 * 1000);
       break;
     }
-    if(corse == 'L'){
+    if (ETROBO_COURSE_L) {
       gMotors.run(80, 77);
-    }else if(corse == 'R'){
+    } else {
       gMotors.run(77, 80);
     }
     dly_tsk(5 * 1000);
   }
   stp_cyc(LINE_TRACER_TASK_CYC);
-  if(corse == 'L'){
-    gMotors.setTargetHeading(162.0f);
-  }else if(corse == 'R'){
-    gMotors.setTargetHeading(-162.0f);
-  }
+  gMotors.setTargetHeading(ETROBO_COURSE_L ? 162.0f : -162.0f);
   SpeedUp(80.0f, 80.0f, 0.5f, 100.0f, true);
-  if  (corse == 'L'){
-    gMotors.setTargetHeading(153.0f);
-  }else if(corse == 'R'){
-    gMotors.setTargetHeading(-153.0f);
-  }
+  gMotors.setTargetHeading(ETROBO_COURSE_L ? 153.0f : -153.0f);
   gMotors.run(100.0f, 100.0f);
   dly_tsk(1200 * 1000);
-  catch_black_line(corse);
+  catch_black_line();
   catch_blue_line();
 }
