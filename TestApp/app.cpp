@@ -7,6 +7,8 @@
 #include "LineTracer.h"
 #include "Nansho1.h"
 #include "Nansho2.h"
+#include "Nansho3.h"
+#include "Test.h"
 #include "Arm.h"
 #include "ColorHSV.h"
 #include "ColorLAB.h"
@@ -38,6 +40,10 @@ Nansho1Scene gNansho1;
 
 /* === Scene: Member B === */
 Nansho2Scene gNansho2;
+Nansho3Scene gNansho3;
+
+/* === Scene: Test === */
+TestScene gTest;
 
 /* センサーポートの定義 */
 static const pbio_port_id_t color_sensor_port = PBIO_PORT_ID_E,
@@ -89,8 +95,10 @@ void main_task(intptr_t unused)
   act_tsk(NANSHO3_TASK);
 #elif ETROBO_SCENE == 6
   act_tsk(TEST_TASK);
+#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 9 || ETROBO_SCENE == 10
+  act_tsk(TEST_TASK);
 #else
-#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5 or 6"
+#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 or 10"
 #endif
   ext_tsk();
 }

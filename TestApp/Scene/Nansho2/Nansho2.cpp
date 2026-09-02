@@ -49,7 +49,7 @@ void Nansho2Scene::runShortBackAfterGray()
 {
   gLineTracer.setEnabled(false);
   gMotors.setTargetHeading(0.0f);
-  gMotors.runFor(-BackAfterGrayPower, -BackAfterGrayPower, BackAfterGrayMs);
+  gMotors.runForMs(-BackAfterGrayPower, -BackAfterGrayPower, BackAfterGrayMs);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 }
@@ -58,8 +58,8 @@ void Nansho2Scene::runShortBackBeforeLowerArm()
 {
   gLineTracer.setEnabled(false);
   gMotors.setTargetHeading(0.0f);
-  gMotors.runFor(-BackBeforeLowerPower, -BackBeforeLowerPower,
-                 BackBeforeLowerMs);
+  gMotors.runForMs(-BackBeforeLowerPower, -BackBeforeLowerPower,
+                   BackBeforeLowerMs);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 }
@@ -191,10 +191,10 @@ void Nansho2Scene::runLineTraceUntilHeadingThenStraight()
   runAfterColorLineTraceUntilHeading();
   dly_tsk(StepMs * 1000U);
 
-  runTimedStraightAfterTurn(AfterColorTraceStopHeadingDeg,
-                            AfterColorStraightLeftPower,
-                            AfterColorStraightRightPower,
-                            AfterColorStraightMs);
+  runStraightAfterTurn(AfterColorTraceStopHeadingDeg,
+                       AfterColorStraightLeftPower,
+                       AfterColorStraightRightPower,
+                       AfterColorStraightMs);
   dly_tsk(StepMs * 1000U);
 
   turnToHeading(AfterPivotTurnDeg, AfterPivotTurnToleranceDeg,
@@ -207,51 +207,50 @@ void Nansho2Scene::runLineTraceUntilHeadingThenStraight()
 
 void Nansho2Scene::driveStraightUntilBlackLine(float target_heading)
 {
-  /* ヨー補正は STRAIGHT_BALANCE / tickCorrection。
-   * LT 周期は干渉するので止め、ここからの tickCorrection だけにする。 */
   stp_cyc(LINE_TRACER_TASK_CYC);
-  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gLineTracer.setEnabled(false);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 
+  gMotors.setHeadingCorrection(true);
   gMotors.setBalancePid(AfterStraightBalanceKp, AfterStraightBalanceKi,
                         AfterStraightBalanceIntegralMax);
   gMotors.setTargetHeading(target_heading);
-  gMotors.run(AfterStraightToBlackLeftPower, AfterStraightToBlackRightPower);
+
+  const int cruise_l = AfterStraightToBlackLeftPower;
+  const int cruise_r = AfterStraightToBlackRightPower;
+  const uint32_t cruise_ms = AfterStraightToBlackCruiseMs;
+  const uint32_t decel_ms  = AfterStraightToBlackDecelMs;
+  const uint32_t total_ms  = cruise_ms + decel_ms;
+
+  gMotors.run(cruise_l, cruise_r);
 
   /* 指定時間クルーズ → 台形減速（ヨー補正は維持） */
-  for (uint32_t elapsed_ms = 0U; elapsed_ms < AfterStraightToBlackCruiseMs;
-       elapsed_ms += StepMs) {
+  for (uint32_t elapsed_ms = 0U; elapsed_ms < total_ms; elapsed_ms += StepMs) {
+    int left  = cruise_l;
+    int right = cruise_r;
+
+    if (elapsed_ms >= cruise_ms) {
+      const uint32_t traveled_decel = elapsed_ms - cruise_ms;
+      if (traveled_decel >= decel_ms) {
+        break;
+      }
+
+      const uint32_t numer = decel_ms - traveled_decel;
+      left = (int)((int64_t)cruise_l * (int64_t)numer / (int64_t)decel_ms);
+      right =
+          (int)((int64_t)cruise_r * (int64_t)numer / (int64_t)decel_ms);
+      if (left == 0 && right == 0) {
+        break;
+      }
+    }
+
+    gMotors.run(left, right);
     gMotors.tickCorrection();
     dly_tsk(StepMs * 1000U);
   }
 
-  if (AfterStraightToBlackDecelMs > 0U) {
-    const int cruise_l = AfterStraightToBlackLeftPower;
-    const int cruise_r = AfterStraightToBlackRightPower;
-    const uint32_t decel_ms = AfterStraightToBlackDecelMs;
-    for (uint32_t t = 0U; t < decel_ms;) {
-      uint32_t slice = AfterStraightToBlackDecelStepMs;
-      if (t + slice > decel_ms) {
-        slice = decel_ms - t;
-      }
-      const uint32_t numer = decel_ms - t;
-      const int left =
-          (int)((int64_t)cruise_l * (int64_t)numer / (int64_t)decel_ms);
-      const int right =
-          (int)((int64_t)cruise_r * (int64_t)numer / (int64_t)decel_ms);
-      gMotors.run(left, right);
-      for (uint32_t s = 0U; s < slice; s += StepMs) {
-        gMotors.tickCorrection();
-        dly_tsk(StepMs * 1000U);
-      }
-      t += slice;
-    }
-  }
-
   gMotors.stop();
-  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
 }
 
 void Nansho2Scene::setupPostBlackLineTrace()
@@ -327,12 +326,14 @@ void Nansho2Scene::turnToHeading(float target_heading, float tolerance_deg,
   dly_tsk(StepMs * 1000U);
 }
 
-void Nansho2Scene::runTimedStraightAfterTurn(float heading, int left_power,
-                                             int right_power, uint32_t ms)
+void Nansho2Scene::runStraightAfterTurn(float heading, int left_power,
+                                        int right_power, uint32_t ms)
 {
-  /* runFor の長い sleep は周期補正に依存するため、明示的に tick する */
   stp_cyc(LINE_TRACER_TASK_CYC);
   gLineTracer.setEnabled(false);
+  gMotors.stop();
+  dly_tsk(StepMs * 1000U);
+  gMotors.setHeadingCorrection(true);
   gMotors.setTargetHeading(heading);
   gMotors.run(left_power, right_power);
 
@@ -428,8 +429,8 @@ void Nansho2Scene::runAfterFinalStopTurnRightAndSlowTraceToWhite()
 void Nansho2Scene::runYellowRouteAfterBlue()
 {
   const float turn_target = runShortForwardTurnRight();
-  runTimedStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
-                            RouteFinalApproachRightPower, YellowFinalApproachMs);
+  runStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
+                       RouteFinalApproachRightPower, RouteFinalApproachMs);
   /* 検知後旋回→直進の完了向きを 0° にし、後退後旋回を絶対角で扱う */
   gGyro.reset();
   runRouteFinalBack(0.0f, YellowFinalBackPower, YellowFinalBackMs);
@@ -438,8 +439,8 @@ void Nansho2Scene::runYellowRouteAfterBlue()
 float Nansho2Scene::runShortForwardTurnRight()
 {
   gLineTracer.setEnabled(false);
-  gMotors.runFor(BlueAfterSecondBlueForwardPower, BlueAfterSecondBlueForwardPower,
-                 BlueAfterSecondBlueForwardMs);
+  gMotors.runForMs(BlueAfterSecondBlueForwardPower, BlueAfterSecondBlueForwardPower,
+                   BlueAfterSecondBlueForwardMs);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 
@@ -469,7 +470,7 @@ void Nansho2Scene::runRouteFinalBack(float heading, int power, uint32_t ms)
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
   gMotors.setTargetHeading(heading);
-  gMotors.runFor(-power, -power, ms);
+  gMotors.runForMs(-power, -power, ms);
   gMotors.stop();
   runAfterFinalBackTurnToBlue();
 }
@@ -477,8 +478,8 @@ void Nansho2Scene::runRouteFinalBack(float heading, int power, uint32_t ms)
 void Nansho2Scene::runBlueRouteAfterBlue()
 {
   const float turn_target = runBlackBlueForwardTurnRight();
-  runTimedStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
-                            RouteFinalApproachRightPower, BlueFinalApproachMs);
+  runStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
+                       RouteFinalApproachRightPower, RouteFinalApproachMs);
   gGyro.reset();
   runRouteFinalBack(0.0f, BlueFinalBackPower, BlueFinalBackMs);
 }
@@ -486,8 +487,8 @@ void Nansho2Scene::runBlueRouteAfterBlue()
 void Nansho2Scene::runRedRouteAfterBlue()
 {
   const float turn_target = runBlackBlueForwardTurnRight(2);
-  runTimedStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
-                            RouteFinalApproachRightPower, RedFinalApproachMs);
+  runStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
+                       RouteFinalApproachRightPower, RouteFinalApproachMs);
   gGyro.reset();
   runRouteFinalBack(0.0f, RedFinalBackPower, RedFinalBackMs);
 }
@@ -511,10 +512,8 @@ void Nansho2Scene::runAfterBlueByRouteBranch()
 
 void Nansho2Scene::run()
 {
-  /* ヨー角補正は STRAIGHT_BALANCE。LT 周期は HCR 残留対策で止めておく。
-   * Nansho2 の LT はタスク内 step() のみ（LINE_TRACER_TASK_CYC は使わない）。 */
   stp_cyc(LINE_TRACER_TASK_CYC);
-  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gLineTracer.setEnabled(false);
   gMotors.stop();
 

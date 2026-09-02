@@ -37,22 +37,21 @@ void HCR::configure_hrc(pbio_port_id_t left_motor_port,
   // gLineTracer.configure(left_motor_port, right_motor_port, color_sensor_port);
 }
 
-void HCR::turn_90(const char* direction, float inner_radius_mm)
+void HCR::turn_90(const char* direction, int32_t inner_arc_deg)
 {
   if (!configured_) {
     return;
   }
 
   gMotors.setTargetHeading(0.0f);
-  gMotors.run(80.0f, 80.0f);
-  dly_tsk(500 * 1000);
+  gMotors.runFor(80, 80, 360);
 
   if (strcmp(direction, "left") == 0) {
-    gMotors.runFor(-80.0f, -80.0f, inner_radius_mm);
-    gMotors.runFor(-80.0f, 80.0f, inner_radius_mm);
+    gMotors.runFor(-80, -80, inner_arc_deg);
+    gMotors.runFor(-80, 80, inner_arc_deg);
   } else if (strcmp(direction, "right") == 0) {
-    gMotors.runFor(-80.0f, -80.0f, inner_radius_mm);
-    gMotors.runFor(80.0f, -80.0f, inner_radius_mm);
+    gMotors.runFor(-80, -80, inner_arc_deg);
+    gMotors.runFor(80, -80, inner_arc_deg);
   }
 
   gMotors.stop();

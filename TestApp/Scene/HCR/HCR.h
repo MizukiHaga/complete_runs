@@ -1,13 +1,14 @@
 #ifndef GUARD_HCR_H_
 #define GUARD_HCR_H_
 #include <pbio/port.h>
+#include <stdint.h>
 
 
 class HCR {
 public:  void configure_hrc(pbio_port_id_t left_motor_port,
                  pbio_port_id_t right_motor_port,
                  pbio_port_id_t color_sensor_port);
-  void turn_90(const char* direction, float inner_radius_mm);
+  void turn_90(const char* direction, int32_t inner_arc_deg);
   void SlowDown(float left_speed, float right_speed, float duration_sec, float target_speed);
   void SpeedUp(float left_speed, float right_speed, float duration_sec, float target_speed, bool is_straight);
   void run_hrc(char corse);

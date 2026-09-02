@@ -524,7 +524,7 @@ void Nansho3Scene::initialRun()
 
   /* 1) バック */
   gMotors.setTargetHeading(base_heading);
-  gMotors.runFor(-InitialBackPower, -InitialBackPower, InitialBackMs);
+  gMotors.runFor(-InitialBackPower, -InitialBackPower, InitialBackDeg);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 
@@ -540,7 +540,7 @@ void Nansho3Scene::initialRun()
                         StraightBalanceIMax);
   gMotors.setTargetHeading(turn_target);
   gMotors.runFor(InitialStraightPower, InitialStraightPower,
-                 InitialStraightMs);
+                 InitialStraightDeg);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
 

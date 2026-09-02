@@ -12,6 +12,7 @@ APPL_CXXOBJS +=\
 	ColorSensor.o\
 	ColorRgbSensor.o\
 	ReflectionSensor.o\
+	MagneticSensor.o\
 
 APPL_LIBS += -lm
 
@@ -22,6 +23,7 @@ APPL_DIRS += $(mkfile_path)Viewcmd/Battery
 APPL_DIRS += $(mkfile_path)Viewcmd/ColorSensor
 APPL_DIRS += $(mkfile_path)Viewcmd/ColorRgbSensor
 APPL_DIRS += $(mkfile_path)Viewcmd/ReflectionSensor
+APPL_DIRS += $(mkfile_path)Viewcmd/MagneticSensor
 APPL_DIRS += $(mkfile_path)ViewLight/Sonic
 APPL_DIRS += $(mkfile_path)ViewLight/ColorHsv
 
@@ -34,6 +36,7 @@ INCLUDES += \
 	-I$(mkfile_path)Viewcmd/ColorSensor\
 	-I$(mkfile_path)Viewcmd/ColorRgbSensor\
 	-I$(mkfile_path)Viewcmd/ReflectionSensor\
+	-I$(mkfile_path)Viewcmd/MagneticSensor\
 	-I$(mkfile_path)ViewLight\
 	-I$(mkfile_path)ViewLight/Sonic\
 	-I$(mkfile_path)ViewLight/ColorHsv\

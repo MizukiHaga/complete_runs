@@ -22,7 +22,7 @@ public:
    *     指定時間 (ForwardBeforeScanMs) 前進
    *  ③ 1回目走査 (LR共通で Right): 検知 → 灰色まで → finishAfterDetect(Right=180°) → ⑦
    *  ④ 検知なしで規定回数完了 → 円の反対を読み取る動き
-   *       (readOppositeSide: reset → 直進 → 旋回 → reset → 直進 → 旋回 → reset → 灰色まで直進 → reset)
+   *       (readOppositeSide: reset → 直進(時間) → 旋回 → reset → 直進(時間) → 旋回 → reset → 灰色まで直進 → reset)
    *  ⑤ 2回目走査 (Left): 検知 → 灰色まで → finishAfterDetect(Left・0°基準) → ⑦
    *  ⑥ 検知なしで規定回数完了 → 黒線を読む動き → ⑦
    *  ⑦ 黒線読み後: 指定方向に 90° 旋回 → 低速LT → 青線までライントレース
@@ -71,10 +71,12 @@ private:
   void driveUntilBlackLine(float target_heading = 0.0f);
 
   /* 灰色ラインを踏むまで直進して停止。
-   * gray_ignore_ms: 開始直後この時間 [ms] は灰色判定を無視 (0 で無効)。 */
+   * gray_ignore_ms: 開始直後この時間 [ms] は灰色判定を無視 (0 で無効)。
+   * max_ms: 打ち切り [ms] (0 で無制限)。 */
   void driveUntilGrayLine(uint32_t gray_ignore_ms = DetectGrayIgnoreMs,
                           int left_power = LeftPower,
-                          int right_power = RightPower);
+                          int right_power = RightPower,
+                          uint32_t max_ms = 0U);
 
   /* 検知後の終了動作 (走査方向で分岐)。灰色直進後に待機・バックしてから分岐。
    *   heading_offset_deg: 2 回目走査の正面 (反対読み reset 後 0°)。Left の角度分岐に使用。
@@ -171,7 +173,7 @@ private:
   static constexpr int      BackSlowTracePower = 35;
   static constexpr uint32_t BackSlowTraceMs    = 770U;
   /* バック・ライントレースする時間 [ms]。 */
-  static constexpr uint32_t BackToEndMs        = 780U;
+  static constexpr uint32_t BackToEndMs        = 700U;
   /* バック・ライントレースの左右パワー (負値で後退)。 */
   static constexpr int      BackTracePower     = 80;
   static constexpr float    BackTraceKp        = 0.6f;
@@ -222,10 +224,8 @@ private:
 
   /* === 円の反対を読み取る動き (readOppositeSide) パラメータ === */
   static constexpr int      OppositeForwardPower       = 50;
-  /* 1 回目の直進時間 [ms]。 */
-  static constexpr uint32_t OppositeForwardFirstMs   = 1000U;
-  /* 右旋回後の 2 回目の直進時間 [ms]。 */
-  static constexpr uint32_t OppositeForwardSecondMs  = 1200U;
+  static constexpr uint32_t OppositeForwardFirstMs     = 1000U; /* 1 回目直進 [ms] */
+  static constexpr uint32_t OppositeForwardSecondMs    = 1200U; /* 2 回目直進 [ms] */
   static constexpr int      OppositeTurnPower          = 45;
   /* 反対読み: 各セグメント開始時に reset し、旋回はその 0° 基準の相対角。
    * 1 回目旋回=±90°、2 回目旋回=±90° (1 回目 reset 後)。 */
@@ -245,7 +245,7 @@ private:
   static constexpr float    PreWigwagBalanceKi          = 0.01f;
   static constexpr float    PreWigwagBalanceIntegralMax = 50.0f;
   /* 直進ヨー角 PI 補正。false で open-loop（検証用。戻すときは true）。 */
-  static constexpr bool     UseHeadingCorrection        = false;
+  static constexpr bool     UseHeadingCorrection        = true;
 
   /* === 検知後の終了動作 (finishAfterDetect) パラメータ ========= */
   /* 超音波検知後の灰色直進: 開始直後この時間 [ms] は灰色判定を無視する。 */

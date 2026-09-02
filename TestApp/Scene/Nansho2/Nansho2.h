@@ -21,12 +21,12 @@ public:
   /* ⓪ LT (スカイブルー → 黒) → 後退 → アーム上げ → 0° 補正低速直進
    *     → 色検知で停止・ブザー・少し後退・アーム下げ（分岐フラグのみ設定）
    *       ブロック色は PETRED / PETYELLOW / PETBLUE で判定
- *  ① 赤/黄/青いずれも同じ: LT(±77°到達) → 77°で時間直進 → その場旋回(±90°)
- *     → ±90°で時間直進→台形減速 → 左向き旋回 → 低速LT → LT → SKYBLUEまで → ジャイロreset
+ *  ① 赤/黄/青いずれも同じ: LT(±77°到達) → 77°で時間制御直進 → その場旋回(±90°)
+ *     → ±90°で時間制御直進（黒線手前） → 左向き旋回 → 低速LT → LT → SKYBLUEまで → ジャイロreset
    *  ② 青(SKYBLUE)検知後（分岐フラグでルート選択。センサ値は保持しない）
- *     黄: 少し直進 → 右旋回 → 時間直進 → ジャイロreset → 後退 → 絶対±180° → 直進（黒または青検知まで）
- *     青: 黒LT → 青LT → 少し直進 → 右旋回 → 時間直進 → ジャイロreset → 後退 → 絶対±180° → 直進（黒または青検知まで）
- *     赤: 黒LT → 青LT → 黒LT → 青LT → 少し直進 → 右旋回 → 時間直進 → ジャイロreset → 後退 → 絶対±180° → 直進（黒または青検知まで）
+ *     黄: 少し直進 → 右旋回 → 時間制御直進 → ジャイロreset → 後退 → 絶対±180° → 直進（黒または青検知まで）
+ *     青: 黒LT → 青LT → 少し直進 → 右旋回 → 時間制御直進 → ジャイロreset → 後退 → 絶対±180° → 直進（黒または青検知まで）
+ *     赤: 黒LT → 青LT → 黒LT → 青LT → 少し直進 → 右旋回 → 時間制御直進 → ジャイロreset → 後退 → 絶対±180° → 直進（黒または青検知まで）
  *     → 共通終端: 絶対角旋回(L=-90°) → 低速LT → 白で停止 */
   void run();
 
@@ -56,8 +56,8 @@ private:
 
   float runBlackBlueForwardTurnRight(int black_blue_pairs = 1);
   float runShortForwardTurnRight();
-  void runTimedStraightAfterTurn(float heading, int left_power, int right_power,
-                                 uint32_t ms);
+  void runStraightAfterTurn(float heading, int left_power, int right_power,
+                            uint32_t ms);
   void runRouteFinalBack(float heading, int power, uint32_t ms);
   void runAfterFinalBackTurnToBlue();
   void runAfterFinalStopTurnRightAndSlowTraceToWhite();
@@ -132,11 +132,10 @@ private:
   static constexpr float    AfterColorTraceStopToleranceDeg = 2.0f;
   /* AfterColorTraceStopToleranceDeg: LT 終了の角度許容 ±[deg] */
 
-  /* === ① 77°到達後の時間直進 === */
+  /* === ① 77°到達後の直進 === */
   static constexpr int      AfterColorStraightLeftPower  = 100;  /* 直進左パワー */
   static constexpr int      AfterColorStraightRightPower = 100;  /* 直進右パワー */
-  static constexpr uint32_t AfterColorStraightMs         = 300U;
-  /* AfterColorStraightMs: 77°到達後の直進時間 [ms] */
+  static constexpr uint32_t AfterColorStraightMs         = 300U; /* 直進時間 [ms] */
 
   /* === ① その場旋回（±90°） === */
   static constexpr float    AfterPivotTurnDeg =
@@ -145,7 +144,7 @@ private:
   static constexpr int      AfterPivotTurnLeftPower       = 0;   /* 旋回 左パワー */
   static constexpr int      AfterPivotTurnRightPower      = 36;   /* 旋回 右パワー */
 
-  /* === ① ±90° 目標で時間直進 → 台形減速 === */
+  /* === ① ±90° 目標で時間制御直進 → 台形減速（黒線手前） === */
   static constexpr float    AfterStraightHeadingDeg = AfterPivotTurnDeg;
   /* 直進の目標ヨー角 [deg] */
   static constexpr int      AfterStraightToBlackLeftPower  = 100;    /* 直進左パワー */
@@ -153,10 +152,8 @@ private:
   static constexpr float    AfterStraightBalanceKp         = 1.5f; /* 直進補正: P */
   static constexpr float    AfterStraightBalanceKi         = 0.3f; /* 直進補正: I */
   static constexpr float    AfterStraightBalanceIntegralMax = 50.0f;
-  /* クルーズ時間 [ms]（この後に台形減速へ移行） */
-  static constexpr uint32_t AfterStraightToBlackCruiseMs    =1225U;
-  /* 台形減速 [ms]（パワーを線形に 0 まで落とす） */
-  static constexpr uint32_t AfterStraightToBlackDecelMs     = 500U;
+  static constexpr uint32_t AfterStraightToBlackCruiseMs   = 1225U; /* クルーズ時間 [ms] */
+  static constexpr uint32_t AfterStraightToBlackDecelMs    = 500U;  /* 台形減速時間 [ms] */
   static constexpr uint32_t AfterStraightToBlackDecelStepMs = 40U;
 
   /* === ① 黒到達後の左向き旋回 === */
@@ -186,14 +183,14 @@ private:
   static constexpr bool     PostBlackTraceEdgeFollow = (ETROBO_COURSE_L != 0);
   /* PostBlackTraceEdgeFollow: L=左エッジ, R=右エッジ */
 
-  /* === ② 黄/青/赤共通（右旋回後の時間直進） === */
+  /* === ② 黄/青/赤共通（右旋回後の直進） === */
   static constexpr int      RouteFinalApproachLeftPower  = 50;    /* 右旋回後直進 左パワー */
   static constexpr int      RouteFinalApproachRightPower = 50;    /* 右旋回後直進 右パワー */
+  static constexpr uint32_t RouteFinalApproachMs         = 450U;  /* 右旋回後の直進時間 [ms] */
   /* === ② 黄ルート（青①検知後） === */
-  static constexpr uint32_t YellowFinalApproachMs        = 450U; /* 右旋回後の直進時間 [ms] */
   static constexpr int      YellowFinalBackPower        = 50;   /* 黄到達後の後退パワー */
   static constexpr uint32_t YellowFinalBackMs           = 800U;
- /* 黄到達後の後退時間 [ms] */
+  /* 黄到達後の後退時間 [ms] */
 
   /* === ② 青/黄/赤共通（少し直進 → 右旋回） === */
   static constexpr int      BlueAfterSecondBlueForwardPower = 50;
@@ -208,12 +205,10 @@ private:
   static constexpr int      BlueTurnRightPower              = 40;   /* 旋回 右パワー */
 
   /* === ② 青ルート（右旋回後） === */
-  static constexpr uint32_t BlueFinalApproachMs           = 450U; /* 右旋回後の直進時間 [ms] */
   static constexpr int      BlueFinalBackPower                = 50;   /* 青③到達後の後退パワー */
   static constexpr uint32_t BlueFinalBackMs                   = 800U; /* 青③到達後の後退時間 [ms] */
 
   /* === ② 赤ルート（右旋回後） === */
-  static constexpr uint32_t RedFinalApproachMs            = 450U; /* 右旋回後の直進時間 [ms] */
   static constexpr int      RedFinalBackPower                 = 50;   /* 赤到達後の後退パワー */
   static constexpr uint32_t RedFinalBackMs                    = 800U; /* 赤到達後の後退時間 [ms] */
 

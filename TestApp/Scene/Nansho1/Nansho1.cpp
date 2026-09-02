@@ -283,8 +283,9 @@ bool Nansho1Scene::runWigwagScanPhases()
 Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
 {
   gGyro.reset();
-  gMotors.runFor(OppositeForwardPower, OppositeForwardPower,
-                 OppositeForwardFirstMs);
+  gMotors.setTargetHeading(0.0f);
+  gMotors.runForMs(OppositeForwardPower, OppositeForwardPower,
+                   OppositeForwardFirstMs);
   dly_tsk(StepMs * 1000U);
 
   turnToHeading(OppositeFirstTurnDeg, OppositeTurnToleranceDeg,
@@ -293,8 +294,8 @@ Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
   gGyro.reset();
 
   gMotors.setTargetHeading(0.0f);
-  gMotors.runFor(OppositeForwardPower, OppositeForwardPower,
-                 OppositeForwardSecondMs);
+  gMotors.runForMs(OppositeForwardPower, OppositeForwardPower,
+                   OppositeForwardSecondMs);
   dly_tsk(StepMs * 1000U);
 
   turnToHeading(OppositeSecondTurnDeg, OppositeTurnToleranceDeg,
@@ -303,7 +304,8 @@ Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
   gGyro.reset();
 
   gMotors.setTargetHeading(0.0f);
-  driveUntilGrayLine(0U, OppositeForwardPower, OppositeForwardPower);
+  driveUntilGrayLine(0U, OppositeForwardPower, OppositeForwardPower,
+                     ScanMaxMs);
   gGyro.reset();
 
   return ScanResult::Completed;
@@ -337,7 +339,8 @@ void Nansho1Scene::driveUntilBlackLine(float target_heading)
  * 開始直後 gray_ignore_ms の間は灰色を見ない (0 なら最初から判定)。
  * --------------------------------------------------------------------- */
 void Nansho1Scene::driveUntilGrayLine(uint32_t gray_ignore_ms,
-                                      int left_power, int right_power)
+                                      int left_power, int right_power,
+                                      uint32_t max_ms)
 {
   uint32_t elapsed_ms = 0U;
 
@@ -348,6 +351,10 @@ void Nansho1Scene::driveUntilGrayLine(uint32_t gray_ignore_ms,
 
     if (elapsed_ms >= gray_ignore_ms &&
         gColorRGB.is(COLOR_DETECT_GRAYLINE)) {
+      gMotors.stop();
+      break;
+    }
+    if (max_ms > 0U && elapsed_ms >= max_ms) {
       gMotors.stop();
       break;
     }
@@ -385,8 +392,8 @@ void Nansho1Scene::driveForwardUntilBlackLine()
 void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
 {
   dly_tsk(DetectFinishBackDelayMs * 1000U);
-  gMotors.runFor(-DetectFinishBackPower, -DetectFinishBackPower,
-                 DetectFinishBackMs);
+  gMotors.runForMs(-DetectFinishBackPower, -DetectFinishBackPower,
+                   DetectFinishBackMs);
   dly_tsk(StepMs * 1000U);
 
   if (side == ScanSide::Right) {
@@ -411,7 +418,7 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
     /* 広い検知角: 反対側 ±90° → 直進 → 反対側 0° → 黒線まで直進 */
     turnToHeading(DetectWideTurnFirstDeg);
     dly_tsk(StepMs * 1000U);
-    gMotors.runFor(LeftPower, RightPower, DetectMidForwardMs);
+    gMotors.runForMs(LeftPower, RightPower, DetectMidForwardMs);
     dly_tsk(StepMs * 1000U);
 
     turnToHeading(DetectWideTurnSecondDeg);

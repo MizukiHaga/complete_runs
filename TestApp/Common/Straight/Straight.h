@@ -17,7 +17,7 @@
  *    gMotors.setBalancePid(0.35f, 0.01f);
  *    gMotors.run(50, 50);
  *    gMotors.stop();
- *    gMotors.runFor(50, 50, 2000);
+ *    gMotors.runFor(50, 50, 720);  // 左右モータ各 720° 回転で停止
  */
 
 #ifndef TESTAPP_STRAIGHT_H_
@@ -39,8 +39,8 @@ public:
 
   /* === ヨー角 PI 直進補正 (既定値) ==========================
    * error = 現在角 − 目標角 [deg] (±180 に折り畳み)
-   * 右 = + なので error>0 は右ずれ → 左旋回 (L弱 / R強)
-   * trim  = Kp * error + Ki * integral → 左右に分配 */
+   * 右 = + なので error>0 は右ずれ → 左旋回 (L−trim / R+trim)
+   * 後退時も同じ式（負パワーで L−＝後退強、R+＝後退弱） */
   static constexpr float    DefaultBalanceKp   = 0.35f;
   static constexpr float    DefaultBalanceKi   = 0.01f;
   static constexpr float    BalanceIntegralMax = 50.0f;
@@ -67,9 +67,16 @@ public:
    * stop() とは別（stop 中の出力抑止は correction_enabled_ 側）。 */
   void setHeadingCorrection(bool enabled);
 
+  static constexpr uint32_t EncoderStepMs      = 5U;
+  /* エンコーダ未到達時の安全打ち切り [ms]（距離制御には使わない） */
+  static constexpr uint32_t EncoderRunMaxMs    = 5000U;
+
   void run(int left_power, int right_power);
   void stop();
-  void runFor(int left_power, int right_power, uint32_t duration_ms);
+  /* 左右モータのエンコーダ [deg] で直進／ピボットを終了する。 */
+  void runFor(int left_power, int right_power, int32_t target_deg);
+  /* 指定時間 [ms] 走行して減速停止（後退など時間制御向け）。 */
+  void runForMs(int left_power, int right_power, uint32_t duration_ms);
 
   /* 目標ヨー角までその場旋回する（直進補正は使わない）。
    * diff>0 → CW (L+, R−) / diff<0 → CCW (L−, R+)
@@ -90,6 +97,18 @@ public:
 
   void tickCorrection();
 
+  void resetEncoderCount();
+  int32_t straightEncoderDeg(int left_power, int right_power) const;
+  bool straightEncoderReached(int left_power, int right_power,
+                              int32_t target_deg) const;
+  /* ヨー補正つきエンコーダ直進の開始（brake→reset、周期補正停止）。 */
+  void beginBalancedEncoderRun();
+  /* ヨー補正つきエンコーダ直進の終了（brake→停止状態同期）。 */
+  void endBalancedEncoderRun();
+  /* ヨー補正つきでエンコーダ到達まで走行する。 */
+  void runBalancedEncoderFor(int left_power, int right_power,
+                             int32_t target_deg, uint32_t step_ms);
+
 private:
   static constexpr uint32_t TurnStepMs = 10U;
 
@@ -97,10 +116,15 @@ private:
   static int clampInt(int value, int min_value, int max_value);
   static float clampFloat(float value, float min_value, float max_value);
   static bool samePowerRatio(int left, int right, int prev_left, int prev_right);
+  static bool isSameStraightPower(int left_power, int right_power);
+  static int32_t absEncoderDeg(int32_t count);
+  static bool wheelEncoderReached(int32_t count, int power, int32_t target_deg);
 
   void setPowerRaw(int left_power, int right_power);
   void applyWithCorrection(int left_power, int right_power);
   void resetCorrection();
+  void syncStoppedState();
+  bool encoderReached(int left_power, int right_power, int32_t target_deg);
 
   pup_motor_t *left_ = nullptr;
   pup_motor_t *right_ = nullptr;

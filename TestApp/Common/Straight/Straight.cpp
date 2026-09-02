@@ -5,6 +5,7 @@
 #include "app.h"
 #include "Gyro.h"
 #include "Straight.h"
+#include "kernel_cfg.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -49,6 +50,48 @@ bool Straight::samePowerRatio(int left, int right, int prev_left, int prev_right
 {
   return (int64_t)left * (int64_t)prev_right ==
          (int64_t)right * (int64_t)prev_left;
+}
+
+bool Straight::isSameStraightPower(int left_power, int right_power)
+{
+  const int apl = (left_power >= 0) ? left_power : -left_power;
+  const int apr = (right_power >= 0) ? right_power : -right_power;
+  const bool same_sign = (left_power > 0) == (right_power > 0);
+  return same_sign && left_power != 0 && right_power != 0 && apl == apr;
+}
+
+int32_t Straight::absEncoderDeg(int32_t count)
+{
+  return (count < 0) ? -count : count;
+}
+
+bool Straight::wheelEncoderReached(int32_t count, int power, int32_t target_deg)
+{
+  const int32_t target = absEncoderDeg(target_deg);
+  if (target <= 0) {
+    return true;
+  }
+  if (power == 0) {
+    return true;
+  }
+  if (power > 0 && count >= target) {
+    return true;
+  }
+  if (power < 0 && count <= -target) {
+    return true;
+  }
+  /* モータ向き設定により符号が逆のときは絶対値で判定 */
+  return absEncoderDeg(count) >= target;
+}
+
+void Straight::syncStoppedState()
+{
+  correction_enabled_    = false;
+  last_cmd_left_         = 0;
+  last_cmd_right_        = 0;
+  cmd_initialized_       = false;
+  manual_target_heading_ = false;
+  integral_              = 0.0f;
 }
 
 void Straight::resetCorrection()
@@ -109,6 +152,7 @@ void Straight::setPowerRaw(int left_power, int right_power)
  *          ＝ 左輪を弱く / 右輪を強く (L −, R +)
  * trim   = Kp * error + Ki * integral
  * left   = pl − trim配分,  right = pr + trim配分
+ *        （後退も同じ式。負パワーなら L−で絶対値増＝後退強、R+で絶対値減）
  *
  * 1:1 直進コマンドのみ補正。弧 (左右パワー差)・ピボット・片輪は open-loop。 */
 void Straight::applyWithCorrection(int left_power, int right_power)
@@ -184,12 +228,9 @@ void Straight::applyWithCorrection(int left_power, int right_power)
   const int dL = diff / 2;
   const int dR = diff - dL;  /* |diff|==1 のとき片側に ±1 が残る */
 
-  const int sgnL = (left_power  >= 0) ? 1 : -1;
-  const int sgnR = (right_power >= 0) ? 1 : -1;
-
-  /* 右ずれ (error>0) → 左旋回: 左を弱く / 右を強く */
-  const int out_left  = clampMotorPower(left_power  - sgnL * dL);
-  const int out_right = clampMotorPower(right_power + sgnR * dR);
+  /* error>0（右ずれ）→ 左旋回: 前進は L弱/R強、後退は L強/R弱（同じ式で負パワーが効く） */
+  const int out_left  = clampMotorPower(left_power - dL);
+  const int out_right = clampMotorPower(right_power + dR);
 
   if (correction_debug_) {
     if (++correction_debug_div_ >= 10U) {
@@ -232,6 +273,113 @@ void Straight::tickCorrection()
   applyWithCorrection(last_cmd_left_, last_cmd_right_);
 }
 
+void Straight::resetEncoderCount()
+{
+  if (left_ != nullptr) {
+    pup_motor_brake(left_);
+  }
+  if (right_ != nullptr) {
+    pup_motor_brake(right_);
+  }
+  if (left_ != nullptr) {
+    pup_motor_reset_count(left_);
+  }
+  if (right_ != nullptr) {
+    pup_motor_reset_count(right_);
+  }
+}
+
+int32_t Straight::straightEncoderDeg(int left_power, int right_power) const
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return 0;
+  }
+  const int32_t lc = pup_motor_get_count(left_);
+  const int32_t rc = pup_motor_get_count(right_);
+
+  if (isSameStraightPower(left_power, right_power)) {
+    return (absEncoderDeg(lc) + absEncoderDeg(rc)) / 2;
+  }
+
+  return (absEncoderDeg(lc) + absEncoderDeg(rc)) / 2;
+}
+
+bool Straight::straightEncoderReached(int left_power, int right_power,
+                                      int32_t target_deg) const
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return false;
+  }
+  if (target_deg <= 0) {
+    return true;
+  }
+  const int32_t lc = pup_motor_get_count(left_);
+  const int32_t rc = pup_motor_get_count(right_);
+
+  if (isSameStraightPower(left_power, right_power)) {
+    return (absEncoderDeg(lc) + absEncoderDeg(rc)) / 2 >= absEncoderDeg(target_deg);
+  }
+
+  return wheelEncoderReached(lc, left_power, target_deg) &&
+         wheelEncoderReached(rc, right_power, target_deg);
+}
+
+void Straight::beginBalancedEncoderRun()
+{
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  correction_enabled_ = true;
+  if (left_ != nullptr) {
+    pup_motor_brake(left_);
+  }
+  if (right_ != nullptr) {
+    pup_motor_brake(right_);
+  }
+  if (left_ != nullptr) {
+    pup_motor_reset_count(left_);
+  }
+  if (right_ != nullptr) {
+    pup_motor_reset_count(right_);
+  }
+}
+
+void Straight::endBalancedEncoderRun()
+{
+  if (left_ != nullptr) {
+    pup_motor_brake(left_);
+  }
+  if (right_ != nullptr) {
+    pup_motor_brake(right_);
+  }
+  syncStoppedState();
+}
+
+void Straight::runBalancedEncoderFor(int left_power, int right_power,
+                                     int32_t target_deg, uint32_t step_ms)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+  if (target_deg <= 0) {
+    return;
+  }
+  if (step_ms == 0U) {
+    step_ms = 1U;
+  }
+
+  const int l_pwr = clampMotorPower(left_power);
+  const int r_pwr = clampMotorPower(right_power);
+
+  beginBalancedEncoderRun();
+  applyWithCorrection(l_pwr, r_pwr);
+
+  while (!straightEncoderReached(l_pwr, r_pwr, target_deg)) {
+    applyWithCorrection(l_pwr, r_pwr);
+    dly_tsk((RELTIM)(step_ms * 1000U));
+  }
+
+  endBalancedEncoderRun();
+}
+
 void Straight::configure(pbio_port_id_t left_motor_port,
                          pbio_port_id_t right_motor_port)
 {
@@ -271,8 +419,70 @@ void Straight::stop()
   pup_motor_set_power(right_, 0);
 }
 
-void Straight::runFor(int left_power, int right_power, uint32_t duration_ms)
+bool Straight::encoderReached(int left_power, int right_power, int32_t target_deg)
 {
+  if (left_ == nullptr || right_ == nullptr) {
+    return false;
+  }
+  const int32_t lc = pup_motor_get_count(left_);
+  const int32_t rc = pup_motor_get_count(right_);
+
+  if (isSameStraightPower(left_power, right_power)) {
+    const int32_t l_abs = absEncoderDeg(lc);
+    const int32_t r_abs = absEncoderDeg(rc);
+    /* 1:1 直進: 左右の回転量平均で距離判定（エンコーダのみ） */
+    return (l_abs + r_abs) / 2 >= absEncoderDeg(target_deg);
+  }
+
+  return wheelEncoderReached(lc, left_power, target_deg) &&
+         wheelEncoderReached(rc, right_power, target_deg);
+}
+
+void Straight::runFor(int left_power, int right_power, int32_t target_deg)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+  if (target_deg <= 0 || (left_power == 0 && right_power == 0)) {
+    stop();
+    return;
+  }
+
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+
+  const bool prev_heading_correction = heading_correction_;
+  heading_correction_ = false;
+
+  const int l_pwr = clampMotorPower(left_power);
+  const int r_pwr = clampMotorPower(right_power);
+
+  pup_motor_brake(left_);
+  pup_motor_brake(right_);
+  pup_motor_reset_count(left_);
+  pup_motor_reset_count(right_);
+  pup_motor_set_power(left_, l_pwr);
+  pup_motor_set_power(right_, r_pwr);
+
+  uint32_t safety_ms = 0U;
+  while (safety_ms < EncoderRunMaxMs) {
+    if (encoderReached(l_pwr, r_pwr, target_deg)) {
+      break;
+    }
+    dly_tsk(EncoderStepMs * 1000U);
+    safety_ms += EncoderStepMs;
+  }
+
+  pup_motor_brake(left_);
+  pup_motor_brake(right_);
+  syncStoppedState();
+  heading_correction_ = prev_heading_correction;
+}
+
+void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
   if (duration_ms == 0U) {
     stop();
     return;
