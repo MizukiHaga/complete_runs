@@ -16,6 +16,7 @@ extern "C" {
 #define COLOR_SENSOR_PRIORITY 12 /* カラーセンサ LAB ログ (Viewcmd) */
 #define COLOR_RGB_SENSOR_PRIORITY 13 /* カラーセンサ RGB ログ (Viewcmd) */
 #define REFLECTION_SENSOR_PRIORITY 14 /* カラーセンサ反射光ログ (Viewcmd) */
+#define MAGNETIC_SENSOR_PRIORITY 15 /* ハブ IMU 方位ログ (Viewcmd) */
 
 /* タスク周期の定義 */
 #define ANGLE_PERIOD       (100 * 1000) /* 100 ms */
@@ -27,6 +28,7 @@ extern "C" {
 #define COLOR_SENSOR_PERIOD (100 * 1000) /* 100 ms */
 #define COLOR_RGB_SENSOR_PERIOD (100 * 1000) /* 100 ms */
 #define REFLECTION_SENSOR_PERIOD (100 * 1000) /* 100 ms */
+#define MAGNETIC_SENSOR_PERIOD (100 * 1000) /* 100 ms */
 
 
 #ifndef STACK_SIZE
@@ -45,6 +47,7 @@ extern void color_hsv_light_task(intptr_t exinf);
 extern void color_sensor_task(intptr_t exinf);
 extern void color_rgb_sensor_task(intptr_t exinf);
 extern void reflection_sensor_task(intptr_t exinf);
+extern void magnetic_sensor_task(intptr_t exinf);
 
 #endif /* TOPPERS_MACRO_ONLY */
 

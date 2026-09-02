@@ -71,13 +71,15 @@ void Arm::raise(int power, int32_t target_deg, uint32_t max_ms)
   pup_motor_hold(motor_);
 }
 
-void Arm::lower(int power, uint32_t max_ms)
+void Arm::lower(int power, uint32_t max_ms, int32_t overshoot_deg)
 {
   if (motor_ == nullptr) {
     return;
   }
 
   const int signed_power = clampPower(power);
+  const int32_t overshoot =
+      overshoot_deg >= 0 ? overshoot_deg : -overshoot_deg;
 
   pup_motor_set_power(motor_, signed_power);
 
@@ -85,10 +87,11 @@ void Arm::lower(int power, uint32_t max_ms)
   while (elapsed_ms < max_ms) {
     const int32_t count = pup_motor_get_count(motor_);
 
-    if (signed_power > 0 && count >= 0) {
+    /* 上げ時 reset の 0 を過ぎて overshoot 分だけ余分に下げる */
+    if (signed_power > 0 && count >= overshoot) {
       break;
     }
-    if (signed_power < 0 && count <= 0) {
+    if (signed_power < 0 && count <= -overshoot) {
       break;
     }
 

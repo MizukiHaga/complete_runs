@@ -6,7 +6,6 @@ SRCLANG = c++
 APPL_CXXOBJS += \
 	LineTracer.o \
 	Straight.o \
-	HCR.o \
 	ColorHSV.o \
 	ColorLAB.o \
 	ColorRGB.o \
@@ -17,7 +16,6 @@ APPL_CXXOBJS += \
 APPL_DIRS += \
 	$(mkfile_path)Common/LineTracer \
 	$(mkfile_path)Common/Straight \
-	$(mkfile_path)Common/HCR \
 	$(mkfile_path)Common/Color/ColorHSV \
 	$(mkfile_path)Common/Color/ColorLAB \
 	$(mkfile_path)Common/Color/ColorRGB \
@@ -28,7 +26,6 @@ APPL_DIRS += \
 INCLUDES += \
 	-I$(mkfile_path)Common/LineTracer \
 	-I$(mkfile_path)Common/Straight \
-	-I$(mkfile_path)Common/HCR \
 	-I$(mkfile_path)Common/Color \
 	-I$(mkfile_path)Common/Color/ColorHSV \
 	-I$(mkfile_path)Common/Color/ColorLAB \
@@ -39,6 +36,11 @@ INCLUDES += \
 
 APPL_LIBS += -lm
 
+# === Scene: HCR ===========================================
+APPL_CXXOBJS += HCR.o
+APPL_DIRS    += $(mkfile_path)Scene/HCR
+INCLUDES     += -I$(mkfile_path)Scene/HCR
+
 # === Scene: Member A =====================================
 APPL_CXXOBJS += Nansho1.o
 APPL_DIRS    += $(mkfile_path)Scene/Nansho1
@@ -48,3 +50,13 @@ INCLUDES     += -I$(mkfile_path)Scene/Nansho1
 APPL_CXXOBJS += Nansho2.o
 APPL_DIRS    += $(mkfile_path)Scene/Nansho2
 INCLUDES     += -I$(mkfile_path)Scene/Nansho2
+
+# === Scene: Member C =====================================
+APPL_CXXOBJS += Nansho3.o
+APPL_DIRS    += $(mkfile_path)Scene/Nansho3
+INCLUDES     += -I$(mkfile_path)Scene/Nansho3
+
+# === Scene: Test (首振り走査のみ) ========================
+APPL_CXXOBJS += Test.o
+APPL_DIRS    += $(mkfile_path)Scene/Test
+INCLUDES     += -I$(mkfile_path)Scene/Test

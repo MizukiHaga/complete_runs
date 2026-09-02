@@ -94,12 +94,13 @@ void main_task(intptr_t unused)
   printf("|            TestApp start        |\n");
   printf("+---------------------------------+\n");
 
-  /* カラーセンサ(E) を最初に初期化・起動する。
-   * 他センサ (モータ A/B, 距離/超音波 F) が未接続だと、その get_device が
-   * デバイス待ちで無限ループして main_task が止まる。先に周期タスクを
-   * 起動しておけば、以降の init がブロックしても color は動き続ける。
-   * Configure を呼ばないとデバイスが NULL のまま task が走り、NULL 参照で
-   * 落ちるので必ず呼ぶこと。 */
+  /* IMU 方位ログ。ANGLE_KALMAN_ENABLE / Angle_SetKalmanEnabled でカルマン ON/OFF。 */
+  Angle_Init(bt_out);
+  Angle_SetKalmanEnabled(ANGLE_KALMAN_ENABLE);
+  sta_cyc(ANGLE_TASK_CYC);
+
+  /* カラーセンサ(E) 等。未接続だと get_device がブロックする。
+   * Angle は上で既に周期起動済みなので、ここで止まっても IMU_h は出続ける。 */
 
   /* LAB ログ (Viewcmd) → BLE 出力。100ms 周期で L,a,b を送信。
    * カラーセンサのライトを点灯し、RGB から LAB を計算する。
@@ -120,15 +121,13 @@ void main_task(intptr_t unused)
    * 同一ポート(E)の LAB/RGB ログと同時起動しないこと。 */
   ReflectionSensor_Configure(color_sensor_port);
   ReflectionSensor_SetOutput(bt_out);
-  sta_cyc(REFLECTION_SENSOR_TASK_CYC);
+  // sta_cyc(REFLECTION_SENSOR_TASK_CYC);
 
-  Angle_Init(bt_out);
   Morter_Configure(morter_left_motor_port, morter_right_motor_port);
   DistanceSensor_Init(bt_out, DISTANCE_SENSOR_PORT);
   Battery_Init(bt_out);
   SonicLight_Init(nullptr, SONIC_LIGHT_PORT);
 
-  //sta_cyc(ANGLE_TASK_CYC);
   //sta_cyc(MORTER_TASK_CYC);
   //sta_cyc(DISTANCE_TASK_CYC);
   //sta_cyc(BATTERY_TASK_CYC);

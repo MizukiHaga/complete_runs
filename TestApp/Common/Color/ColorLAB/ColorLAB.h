@@ -78,39 +78,39 @@ static constexpr LabColorProfile LabRange_make(float L_lo, float L_hi,
   LabRange_make((L_lo), (L_hi), (a_lo), (a_hi), (b_lo), (b_hi), (margin))
 
 /* LogTest の L,a,b 最小・最大 (順不同可)。lab_map_detect と並び・個数を揃える。 */
-// 學校
 static constexpr LabColorProfile lab_map_edit[] = {
   /*  L_lo    L_hi   a_lo   a_hi   b_lo   b_hi  margin */
-  LAB_RANGE(-999,   40.0f, -2.0f,  2.0f, -2.0f,  2.0f,  2.0f),  // Black (unused: reflection)
-  LAB_RANGE( 30.0f,  75.0f, -2.0f,  -6.0f, -17.0f, -9.0f,  3.0f),  // Skyblue
-  LAB_RANGE( 18.0f,  65.0f, -1.0f,  0.0f, -3.0f, -1.0f,  3.0f),  // BlackLine
-  LAB_RANGE( 5.0f,  40.0f, 15.5f,  42.0f,  3.0f, 14.0f,  3.0f),  // RED
-  LAB_RANGE( 66.0f,  75.0f, 4.0f,  1.0f,  28.0f, 30.0f,  3.0f),  // YELLOW
-  LAB_RANGE( 11.0f,  45.0f, -2.0f,  -5.0f, -10.0f, -33.0f,  3.0f),  // BLUE
+  LAB_RANGE( 50.0f,  75.0f, -8.0f,  -6.0f, -17.0f, -12.0f,  3.0f),  // Skyblue
+  LAB_RANGE( 40.0f,  65.0f, -6.0f,  0.0f, -4.0f, -1.0f,  3.0f),  // BlackLine
+  LAB_RANGE( 40.0f,  50.0f, 57.0f,  38.0f,  24.0f, 9.0f,  3.0f),  // RED
+  LAB_RANGE( 83.0f,  90.0f, -7.0f,  -6.0f,  37.0f, 42.0f,  3.0f),  // YELLOW
+  LAB_RANGE( 21.0f,  45.0f, -5.0f,  -3.0f, -33.0f, -27.0f,  3.0f),  // BLUE
+  LAB_RANGE( 30.0f, 31.0f, -23.0f, -21.0f, 8.0f, 9.0f, 3.0f),  // GREEN
+  LAB_RANGE( 6.0f, 28.0f, -6.0f, -2.0f, -12.0f, -8.0f, 3.0f),  // PETBLUE
+  LAB_RANGE( 15.0f, 24.0f, 0.5f, 2.5f, 8.0f, 10.0f, 3.0f),  // PETYELLOW
+  LAB_RANGE( 7.0f, 13.0f, 13.0f,  17.0f,  2.0f, 4.0f,  3.0f),  // PETRED
 };
-// 本番
-// static constexpr LabColorProfile lab_map_edit[] = {
-// //   /*  L_lo    L_hi   a_lo   a_hi   b_lo   b_hi  margin */
-//   LAB_RANGE(-999,   40.0f, -2.0f,  2.0f, -2.0f,  2.0f,  2.0f),  // Black (unused: reflection)
-//   LAB_RANGE( 50.0f,  75.0f, -8.0f,  -6.0f, -17.0f, -12.0f,  3.0f),  // Skyblue テスト30.0f,  75.0f, -2.0f,  -6.0f, -17.0f, -9.0f,  3.0f
-//   LAB_RANGE( 40.0f,  65.0f, -6.0f,  0.0f, -4.0f, -1.0f,  3.0f),  // BlackLine　テスト18.0f,  65.0f, -1.0f,  0.0f, -3.0f, -1.0f,  3.0f
-//   LAB_RANGE( 40.0f,  50.0f, 57.0f,  38.0f,  24.0f, 9.0f,  3.0f),  // RED　テスト5.0f,  40.0f, 15.5f,  42.0f,  3.0f, 14.0f,  3.0f
-//   LAB_RANGE( 83.0f,  90.0f, -7.0f,  -6.0f,  37.0f, 42.0f,  3.0f),  // YELLOW　テスト66.0f,  75.0f, 4.0f,  1.0f,  28.0f, 30.0f,  3.0f
-//   LAB_RANGE( 21.0f,  45.0f, -5.0f,  -3.0f, -33.0f, -27.0f,  3.0f),  // BLUE　テスト11.0f,  45.0f, -2.0f,  -5.0f, -10.0f, -33.0f,  3.0f
-//   LAB_RANGE( 30.0f, 31.0f, -23.0f ,-21.0f, 8.0f, 9.0f, 3.0f),
-// };
 
+/* lab_map_edit と同じ並び・個数にする。
+ * COLOR_DETECT_BLACK / WHITE は is() 内で反射値判定するためここには入れない。 */
 static constexpr color_detect_t lab_map_detect[] = {
-  COLOR_DETECT_BLACK,
   COLOR_DETECT_SKYBLUE,
   COLOR_DETECT_BLACKLINE,
   COLOR_DETECT_RED,
   COLOR_DETECT_YELLOW,
   COLOR_DETECT_BLUE,
+  COLOR_DETECT_GREEN,
+  COLOR_DETECT_PETBLUE,
+  COLOR_DETECT_PETYELLOW,
+  COLOR_DETECT_PETRED,
 };
 
 static constexpr int lab_map_size =
     sizeof(lab_map_edit) / sizeof(lab_map_edit[0]);
+
+static_assert(lab_map_size ==
+                  (int)(sizeof(lab_map_detect) / sizeof(lab_map_detect[0])),
+              "lab_map_edit and lab_map_detect must have the same length");
 
 class ColorLAB {
 public:

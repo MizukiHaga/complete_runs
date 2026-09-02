@@ -16,16 +16,17 @@
 class Nansho1Scene {
 public:
   /* === シーンの流れ ===========================================
-   *  ⓪ 開始時: ライントレース (スカイブルー → 黒) → 90° 旋回
+   *  ⓪ 開始時: InitialBlackTurnDeg 旋回（開始 LT なし）
    *  ① 旋回後に低速 LT → 本線 LT で円の終端まで移動 (固定時間 BackToEndMs)
    *  ② 円の方向へ旋回 (右 90°)、旋回後の向きを 0° にリセット、
    *     指定時間 (ForwardBeforeScanMs) 前進
-   *  ③ 右 90° 走査: 検知 → 検知方向へ灰色まで前進 → finishAfterDetect → ⑦
+   *  ③ 1回目走査 (LR共通で Right): 検知 → 灰色まで → finishAfterDetect(Right=180°) → ⑦
    *  ④ 検知なしで規定回数完了 → 円の反対を読み取る動き
-   *       (readOppositeSide: 直進 → 右旋回 → 直進 → 右旋回 → 灰色まで直進)
-   *  ⑤ 左 90° 走査: 検知 → 検知方向へ灰色まで前進 → finishAfterDetect → ⑦
+   *       (readOppositeSide: reset → 直進(時間) → 旋回 → reset → 直進(時間) → 旋回 → reset → 灰色まで直進 → reset)
+   *  ⑤ 2回目走査 (Left): 検知 → 灰色まで → finishAfterDetect(Left・0°基準) → ⑦
    *  ⑥ 検知なしで規定回数完了 → 黒線を読む動き → ⑦
-   *  ⑦ 黒線読み後: 指定方向に 90° 旋回 → 青線までライントレース
+   *  ⑦ 黒線読み後: 指定方向に 90° 旋回 → 低速LT → 青線までライントレース
+   *  ※ 振り角の符号のみ ETROBO_COURSE_L で反転。ScanSide の先右後左は LR 共通。
    * ============================================================ */
   void run();
 
@@ -50,6 +51,8 @@ private:
   /* 旋回走査 (片側振り・規定回数で打ち切り)。
    *   amp_deg    : 振り角 (右走査は +WigWagAmpDeg、左走査は -WigWagAmpDeg)
    *   max_cycles : 「規定回数」サイクル数
+   *   front_heading: 走査の正面 [deg]（1 回目=円向き reset 後 0°、2 回目=反対読み reset 後 0°）
+   *   走査中はジャイロ reset しない
    *   返り値:
    *     SonicDetected → out_heading に検知時ヨー角
    *     BlackDetected → 前進中に黒線エッジを踏んだ
@@ -59,24 +62,26 @@ private:
    *   その場ピボット旋回中はカラーセンサが弧を描いて元の黒線を
    *   横切り直してしまい誤終了するため、旋回中は黒を見ない。 */
   ScanResult wigwagScan(float amp_deg, int max_cycles, float *out_heading,
-                        ScanSide scan_side);
+                        ScanSide scan_side, float front_heading = 0.0f);
 
-  /* 円の反対を読み取る動き: 直進 → 右旋回 → 直進 → 右旋回 → 灰色まで直進。 */
+  /* 円の反対を読み取る動き: reset → 直進 → 旋回 → reset → 直進 → 旋回 → reset → 灰色まで直進 → reset。 */
   ScanResult readOppositeSide();
 
   /* 黒線を読む動き: target_heading を向いてから黒線エッジを踏むまで前進。 */
   void driveUntilBlackLine(float target_heading = 0.0f);
 
   /* 灰色ラインを踏むまで直進して停止。
-   * gray_ignore_ms: 開始直後この時間 [ms] は灰色判定を無視 (0 で無効)。 */
+   * gray_ignore_ms: 開始直後この時間 [ms] は灰色判定を無視 (0 で無効)。
+   * max_ms: 打ち切り [ms] (0 で無制限)。 */
   void driveUntilGrayLine(uint32_t gray_ignore_ms = DetectGrayIgnoreMs,
                           int left_power = LeftPower,
-                          int right_power = RightPower);
+                          int right_power = RightPower,
+                          uint32_t max_ms = 0U);
 
   /* 検知後の終了動作 (走査方向で分岐)。灰色直進後に待機・バックしてから分岐。
-   *   heading_offset_deg: Left 分岐の旋回目標角に加算 (④ 旋回中検知時は +180°)
-   *   Right: 180° → 黒線まで直進
-   *   Left:  heading < -56° → (0°+offset) 向き黒線 / 以上 → (-90°+offset) → 直進 → (90°+offset) → 黒線 */
+   *   heading_offset_deg: 2 回目走査の正面 (反対読み reset 後 0°)。Left の角度分岐に使用。
+   *   Right: 円側 0° 基準 180° → 黒線まで直進
+   *   Left:  浅い → 反対側 0° → 黒線 / 広い → 反対側 ±90° → 直進 → 反対側 0° → 黒線 */
   void finishAfterDetect(ScanSide side, float heading_offset_deg = 0.0f);
 
   /* 現在の向きのまま黒線エッジを踏むまで前進して停止。 */
@@ -88,19 +93,26 @@ private:
                                      ScanSide scan_side, float tolerance_deg);
 
   /* 直進しながら超音波 + 黒線エッジを監視。 */
-  ScanResult driveForwardWithScan(uint32_t duration_ms, int power, float *out_heading);
+  /* 直進中スキャン: duration_ms だけ power で前進しつつ超音波/黒を監視。
+   * ヨー保持は driveBalancedStraight と同じ手順 (目標角は呼び出し側で指定)。 */
+  ScanResult driveForwardWithScan(uint32_t duration_ms, int power,
+                                  float *out_heading, float target_heading);
+
+  /* 円向き後直進 / wigwag 直進の共通: LT・周期補正を止め、PI ヨー保持で直進。 */
+  void beginBalancedStraight(int left_power, int right_power,
+                             float target_heading);
+  void endBalancedStraight();
 
   /* 現在のヨー角を target_heading に合わせるピボット旋回 (検知判定なし)。
-   *   tolerance_deg: 目標角到達とみなす許容幅 [deg] (省略時 TurnToleranceDeg)。 */
+   *   tolerance_deg: 目標角到達とみなす許容幅 [deg] (省略時 TurnToleranceDeg)。
+   *   ジャイロ reset は行わない。必要なら呼び出し側で gGyro.reset() する。 */
   void turnToHeading(float target_heading,
                      float tolerance_deg = TurnToleranceDeg);
 
   /* 左右モーター個別パワーでピボット旋回 (符号は旋回方向に合わせて付与)。
-   *   left_power / right_power: 正のパワー値 (CW 時 L=+, R=− / CCW 時 L=−, R=+)。
-   *   reset_after: true なら停止後に gGyro.reset() する。 */
+   *   left_power / right_power: 正のパワー値 (CW 時 L=+, R=− / CCW 時 L=−, R=+)。 */
   void turnToHeading(float target_heading, float tolerance_deg,
-                     int left_power, int right_power,
-                     bool reset_after = true);
+                     int left_power, int right_power);
 
   /* その場で 360° ピボット旋回しながら超音波を読み続ける (即時停止式)。 */
   bool scan360(float *out_heading);
@@ -108,7 +120,7 @@ private:
   /* ③ 1回目 wig走査 → ④ 反対読み → ⑤ 2回目 wig走査。検知時 true。 */
   bool runWigwagScanPhases();
 
-   /* 開始時: ライントレース (スカイブルー → 黒) → 90° 旋回。 */
+  /* 開始時: ジャイロ初期化 → InitialBlackTurnDeg 旋回（開始 LT なし）。 */
    void runInitialForwardTrace();
 
   /* 最終黒線読み後: 指定方向に 90° 旋回 → 青線までライントレース。 */
@@ -128,31 +140,40 @@ private:
   /* 黒線読み後の旋回方向: true=左旋回, false=右旋回。試合前にここだけ変更する。 */
   static constexpr bool     FinalBlackTurnLeft            = (ETROBO_COURSE_L == 1);
   static constexpr float    FinalBlueTraceTurnDeg           = 90.0f;
-  static constexpr float    FinalBlueTraceTurnToleranceDeg  = 2.5f;
+  static constexpr float    FinalBlueTraceTurnToleranceDeg  = 1.0f;
   static constexpr uint32_t FinalBlueTraceTurnMaxMs         = 8000U;
   static constexpr int      FinalBlueTraceTurnSign =
       FinalBlackTurnLeft ? -1 : 1;
   /* 黒線読み後の旋回パワー（左右を独立に調整）。
    * 値は正の大きさを入れる。符号は FinalBlackTurnLeft で自動付与。 */
-  static constexpr int      FinalBlueTraceTurnLeftPowerMag  = 30;
+  static constexpr int      FinalBlueTraceTurnLeftPowerMag  = 33;
   static constexpr int      FinalBlueTraceTurnRightPowerMag = 43;
   static constexpr int      FinalBlueTraceTurnLeftPower =
       FinalBlackTurnLeft ? -FinalBlueTraceTurnLeftPowerMag : FinalBlueTraceTurnLeftPowerMag;
   static constexpr int      FinalBlueTraceTurnRightPower =
       FinalBlackTurnLeft ? FinalBlueTraceTurnRightPowerMag : -FinalBlueTraceTurnRightPowerMag;
-  static constexpr float    FinalBlueTracePower             = 80.0f;
-  static constexpr float    FinalBlueTraceKp                = 0.30f;
+  /* 旋回直後の低速 LT（本線 LT の前に線へ乗せる）。 */
+  static constexpr float    FinalSlowTracePower  = 35.0f;
+  static constexpr uint32_t FinalSlowTraceMs     = 600U;
+  static constexpr float    FinalSlowTraceKp     = 0.30f;
+  static constexpr float    FinalSlowTraceKi     = 0.01f;
+  static constexpr float    FinalSlowTraceKd     = 0.8f;
+  static constexpr float    FinalSlowTraceOutMax = 100.0f;
+  static constexpr float    FinalSlowTraceScale  = 1.0f;
+  /* 本線 LT（青線まで）。 */
+  static constexpr float    FinalBlueTracePower             = 70.0f;
+  static constexpr float    FinalBlueTraceKp                = 0.65f;
   static constexpr float    FinalBlueTraceKi                = 0.0005f;
-  static constexpr float    FinalBlueTraceKd                = 0.45f;
+  static constexpr float    FinalBlueTraceKd                = 0.85f;
   static constexpr float    FinalBlueTraceOutMax            = 100.0f;
   static constexpr float    FinalBlueTraceScale             = 1.0f;
 
   /* === ① バック・ライントレース (円の終端まで) パラメータ ========= */
   /* 旋回直後の低速 LT (本線 LT の前に線へ乗せる)。 */
   static constexpr int      BackSlowTracePower = 35;
-  static constexpr uint32_t BackSlowTraceMs    = 600U;
+  static constexpr uint32_t BackSlowTraceMs    = 770U;
   /* バック・ライントレースする時間 [ms]。 */
-  static constexpr uint32_t BackToEndMs        = 2100U;
+  static constexpr uint32_t BackToEndMs        = 700U;
   /* バック・ライントレースの左右パワー (負値で後退)。 */
   static constexpr int      BackTracePower     = 80;
   static constexpr float    BackTraceKp        = 0.6f;
@@ -166,17 +187,17 @@ private:
 
   /* === 検知共通パラメータ ==================================== */
   /* 走査検知: 超音波距離がこの値以下なら障害物ありとみなす [mm]。 */
-  static constexpr int32_t  DetectMaxMm        = 250;
+  static constexpr int32_t  DetectMaxMm        = 210;
 
   /* === 旋回走査 (wigwag) パラメータ ========================== */
   /* 1 方向あたりの「規定回数」サイクル数。９
    * これだけ繰り返して検知が無ければ次の動作へ移る。 */
-  static constexpr int      ScanCycles         = 8;
+  static constexpr int      ScanCycles         = 6;
   /* 振る角度 [°] (右走査は +、左走査は -)。
    * 1サイクル = 側方へ旋回 → 正面へ戻り → 少し前進 (reset なし)。 */
   static constexpr float    WigWagAmpDeg       = 90.0f;
   /* 1 サイクル末の「少し直進」する時間 [ms] とパワー。 */
-  static constexpr uint32_t WigWagForwardMs    = 400U;
+  static constexpr uint32_t WigWagForwardMs    = 250U;
   static constexpr int      WigWagForwardPower = 40;
   /* 左走査の旋回中に超音波検知したとき、停止せず旋回を継続する時間 [ms]。 */
   static constexpr uint32_t LeftScanDetectContinueMs = 0U;
@@ -186,15 +207,15 @@ private:
   static constexpr int      ScanTurnPower          = 40;
   /* 走査旋回の許容幅 [deg] (大きいほど早めに到達扱い)。 */
   /* 側方 90° への往路旋回 */
-  static constexpr float    WigWagOutToleranceDeg    = 2.5f;
+  static constexpr float    WigWagOutToleranceDeg    = 4.0f;
   /* 正面へ戻る復路旋回 */
-  static constexpr float    WigWagReturnToleranceDeg = 2.5f;
+  static constexpr float    WigWagReturnToleranceDeg = 4.0f;
   /* スキャンを打ち切る最大経過時間 [ms] (安全用) */
   static constexpr uint32_t ScanMaxMs              = 15000U;
 
   /* === 目標方向への旋回パラメータ ============================ */
   static constexpr int      TurnPower          = 40;
-  static constexpr float    TurnToleranceDeg   = 4.5f;
+  static constexpr float    TurnToleranceDeg   = 2.0f;
   /* この角度以内になったら低速に落とす [deg]（行き過ぎ防止） */
   static constexpr float    TurnSlowApproachDeg = 30.0f;
   static constexpr int      TurnSlowPower       = 33;
@@ -203,13 +224,14 @@ private:
 
   /* === 円の反対を読み取る動き (readOppositeSide) パラメータ === */
   static constexpr int      OppositeForwardPower       = 50;
-  /* 1 回目の直進時間 [ms]。 */
-  static constexpr uint32_t OppositeForwardFirstMs   = 700U;
-  /* 右旋回後の 2 回目の直進時間 [ms]。 */
-  static constexpr uint32_t OppositeForwardSecondMs  = 1500U;
+  static constexpr uint32_t OppositeForwardFirstMs     = 1000U; /* 1 回目直進 [ms] */
+  static constexpr uint32_t OppositeForwardSecondMs    = 1200U; /* 2 回目直進 [ms] */
   static constexpr int      OppositeTurnPower          = 45;
-  /* 反対読みの旋回角 [deg] (app.h の ETROBO_COURSE_L で L/R 切り替え)。 */
-  static constexpr float    OppositeTurnDeg            =
+  /* 反対読み: 各セグメント開始時に reset し、旋回はその 0° 基準の相対角。
+   * 1 回目旋回=±90°、2 回目旋回=±90° (1 回目 reset 後)。 */
+  static constexpr float    OppositeFirstTurnDeg         =
+      ETROBO_COURSE_L ? 90.0f : -90.0f;
+  static constexpr float    OppositeSecondTurnDeg        =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   static constexpr float    OppositeTurnToleranceDeg   = 4.0f;
 
@@ -218,24 +240,26 @@ private:
   static constexpr float    PreWigwagTurnDeg           =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   /* 旋回 + ヨー角リセットのあと、走査前に前進する時間 [ms]。 */
-  static constexpr uint32_t ForwardBeforeScanMs = 1000U;
-  static constexpr float    PreWigwagBalanceKp          = 0.35f;
+  static constexpr uint32_t ForwardBeforeScanMs = 200U;
+  static constexpr float    PreWigwagBalanceKp          = 3.0f;
   static constexpr float    PreWigwagBalanceKi          = 0.01f;
   static constexpr float    PreWigwagBalanceIntegralMax = 50.0f;
+  /* 直進ヨー角 PI 補正。false で open-loop（検証用。戻すときは true）。 */
+  static constexpr bool     UseHeadingCorrection        = true;
 
   /* === 検知後の終了動作 (finishAfterDetect) パラメータ ========= */
   /* 超音波検知後の灰色直進: 開始直後この時間 [ms] は灰色判定を無視する。 */
-  static constexpr uint32_t DetectGrayIgnoreMs    = 600U;
+  static constexpr uint32_t DetectGrayIgnoreMs    = 300U;
   /* 検知後共通: 灰色停止からバック開始までの待ち時間 [ms] (慣性で後部が上がるのを防ぐ)。 */
   static constexpr uint32_t DetectFinishBackDelayMs = 300U;
   /* 検知後共通: 灰色直進後のバック時間 [ms] / パワー。 */
   static constexpr uint32_t DetectFinishBackMs    = 700U;
   static constexpr int      DetectFinishBackPower = 50;
-  /* 右走査検知後: バック直後 reset した 0° 基準の絶対角 [deg]。 */
-  static constexpr float    DetectFinishRightTurnDeg =
-      ETROBO_COURSE_L ? 180.0f : -180.0f;
-  static constexpr float    DetectFinishLeftTurnDeg =
-      ETROBO_COURSE_L ? 90.0f : -90.0f;    /* 左走査で検知 */
+  /* 右走査 (円側 reset 後): 黒線方向 = 絶対 180°。 */
+  static constexpr float    DetectFinishRightTurnDeg = 180.0f;
+  /* 左走査 (反対読み reset 後): 黒線方向 = 正面 0°
+   * (円側 0° 基準の 180° と同じ向き)。 */
+  static constexpr float    DetectFinishLeftTurnDeg = 0.0f;
   /* 超音波検知後の目標角 [deg] (旧経路用・互換)。 */
   static constexpr float    DetectAfterSonicTurnDeg =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
@@ -244,15 +268,17 @@ private:
       ETROBO_COURSE_L ? 1 : -1;
   static constexpr float    DetectFinishClassicMaxDeg =
       ETROBO_COURSE_L ? -40.0f : 40.0f;
+  /* 左走査・広い検知角 (反対読み reset 後の絶対角)。
+   * 1回目: L=-90° / R=+90° (円側 ±90° から 180° オフセット) */
   static constexpr float    DetectWideTurnFirstDeg =
       ETROBO_COURSE_L ? -90.0f : 90.0f;
-  static constexpr float    DetectWideTurnSecondDeg =
-      ETROBO_COURSE_L ? 90.0f : -90.0f;
+  /* 2回目: 反対側 0° (= 黒線方向) */
+  static constexpr float    DetectWideTurnSecondDeg = 0.0f;
   /* 広い検知角ルート: 1回目旋回後の直進時間 [ms]。 */
   static constexpr uint32_t DetectMidForwardMs          = 1500U;
 
   /* === 制御ループ周期 [ms] =================================== */
-  static constexpr uint32_t StepMs             = 10U;
+  static constexpr uint32_t StepMs             = 1U;
 };
 
 #ifdef __cplusplus
