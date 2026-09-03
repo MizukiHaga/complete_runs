@@ -6,10 +6,11 @@ extern "C" {
 #include <kernel.h>
 
 /* === LRコース切り替え ==========================================
- * ETROBO_COURSE_L を 1 で Lコース、0 で Rコース。
+ * ETROBO_COURSE_L を 1 で Rコース、0 で Lコース。
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_COURSE_L
-#define ETROBO_COURSE_L 1
+#define ETROBO_COURSE_L 0
+// #define ETROBO_COURSE_L 1
 #endif
 
 /* === 実行シーン切り替え ==========================================
@@ -27,7 +28,7 @@ extern "C" {
  *  10: Test のみ（直進のみ・0°・ヨー補正・台形減速・カルマンログ）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 2
+#define ETROBO_SCENE 0
 #endif
 
 /* タスク優先度 */

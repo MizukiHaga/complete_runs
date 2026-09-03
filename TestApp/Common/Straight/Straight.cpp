@@ -111,6 +111,7 @@ void Straight::setTargetHeading(float heading_deg)
   integral_              = 0.0f;
 }
 
+// 直進補正のpid設定
 void Straight::setBalancePid(float kp, float ki, float i_max)
 {
   kp_       = kp;
@@ -119,6 +120,7 @@ void Straight::setBalancePid(float kp, float ki, float i_max)
   integral_ = 0.0f;
 }
 
+// 直進補正のオン・オフ
 void Straight::setHeadingCorrection(bool enabled)
 {
   heading_correction_ = enabled;

@@ -109,8 +109,8 @@ private:
   static constexpr uint32_t ArmLowerMaxMs = 4000U; /* 下げタイムアウト [ms] */
 
   /* === ⓪ ブロック色検知（0° 直進） === */
-  static constexpr int      ColorForwardLeftPower  = 35;     /* 直進左パワー */
-  static constexpr int      ColorForwardRightPower = 35;     /* 直進右パワー */
+  static constexpr int      ColorForwardLeftPower  = 40;     /* 直進左パワー */
+  static constexpr int      ColorForwardRightPower = 40;     /* 直進右パワー */
   static constexpr uint32_t ColorForwardMaxMs      = 3000U;  /* 色検知タイムアウト [ms] */
   /* 0° 直進のヨー角 PI 補正（gMotors.setBalancePid） */
   static constexpr float    ColorForwardBalanceKp         = 3.0f; /* P */
@@ -125,10 +125,10 @@ private:
   static constexpr float    AfterColorTraceKd         = 0.8f;   /* LT PID: D */
   static constexpr float    AfterColorTraceOutMax     = 100.0f; /* LT PID 出力上限 */
   static constexpr float    AfterColorTraceScale      = 1.0f;
-  static constexpr bool     AfterColorEdgeFollow      = (ETROBO_COURSE_L == 0);
+  static constexpr bool     AfterColorEdgeFollow      = (ETROBO_COURSE_L != 0);
   /* AfterColorEdgeFollow: L=右エッジ, R=左エッジ */
   static constexpr float    AfterColorTraceStopHeadingDeg =
-      ETROBO_COURSE_L ? -77.0f : 77.0f;  /* LT 終了の目標ヨー角 [deg] */
+      ETROBO_COURSE_L ? 77.0f : -77.0f;  /* LT 終了の目標ヨー角 [deg] */
   static constexpr float    AfterColorTraceStopToleranceDeg = 2.0f;
   /* AfterColorTraceStopToleranceDeg: LT 終了の角度許容 ±[deg] */
 
@@ -139,7 +139,7 @@ private:
 
   /* === ① その場旋回（±90°） === */
   static constexpr float    AfterPivotTurnDeg =
-      ETROBO_COURSE_L ? -90.0f : 90.0f;  /* 旋回目標角 [deg] */
+      ETROBO_COURSE_L ? 90.0f : -90.0f;  /* 旋回目標角 [deg] */
   static constexpr float    AfterPivotTurnToleranceDeg    = 1.64f; /* 角度許容 ±[deg] */
   static constexpr int      AfterPivotTurnLeftPower       = 0;   /* 旋回 左パワー */
   static constexpr int      AfterPivotTurnRightPower      = 36;   /* 旋回 右パワー */
@@ -149,16 +149,16 @@ private:
   /* 直進の目標ヨー角 [deg] */
   static constexpr int      AfterStraightToBlackLeftPower  = 100;    /* 直進左パワー */
   static constexpr int      AfterStraightToBlackRightPower = 100;    /* 直進右パワー */
-  static constexpr float    AfterStraightBalanceKp         = 1.5f; /* 直進補正: P */
-  static constexpr float    AfterStraightBalanceKi         = 0.3f; /* 直進補正: I */
+  static constexpr float    AfterStraightBalanceKp         = 4.0f; /* 直進補正: P */
+  static constexpr float    AfterStraightBalanceKi         = 0.1f; /* 直進補正: I */
   static constexpr float    AfterStraightBalanceIntegralMax = 50.0f;
-  static constexpr uint32_t AfterStraightToBlackCruiseMs   = 1225U; /* クルーズ時間 [ms] */
-  static constexpr uint32_t AfterStraightToBlackDecelMs    = 500U;  /* 台形減速時間 [ms] */
+  static constexpr uint32_t AfterStraightToBlackCruiseMs   = 1290U; /* クルーズ時間 [ms] */
+  static constexpr uint32_t AfterStraightToBlackDecelMs    = 400U;  /* 台形減速時間 [ms] */
   static constexpr uint32_t AfterStraightToBlackDecelStepMs = 40U;
 
   /* === ① 黒到達後の左向き旋回 === */
   static constexpr float    AfterBlackLeftTurnDeg =
-      ETROBO_COURSE_L ? -180.0f : 180.0f;  /* 左向き旋回の目標角 [deg] */
+      ETROBO_COURSE_L ? 180.0f : -180.0f;  /* 左向き旋回の目標角 [deg] */
   static constexpr float    AfterBlackLeftTurnToleranceDeg = 1.64f; /* 角度許容 [deg] */
   static constexpr int      AfterBlackLeftTurnLeftPower    = 37;   /* 旋回 左パワー（調整用） */
   static constexpr int      AfterBlackLeftTurnRightPower   = 37;   /* 旋回 右パワー（調整用） */
@@ -180,7 +180,7 @@ private:
   static constexpr float    PostBlackTraceKd         = 0.8f;   /* LT PID: D */
   static constexpr float    PostBlackTraceOutMax     = 100.0f; /* LT PID 出力上限 */
   static constexpr float    PostBlackTraceScale      = 1.0f;
-  static constexpr bool     PostBlackTraceEdgeFollow = (ETROBO_COURSE_L != 0);
+  static constexpr bool     PostBlackTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* PostBlackTraceEdgeFollow: L=左エッジ, R=右エッジ */
 
   /* === ② 黄/青/赤共通（右旋回後の直進） === */
@@ -198,7 +198,7 @@ private:
   static constexpr uint32_t BlueAfterSecondBlueForwardMs    = 200U;
   /* BlueAfterSecondBlueForwardMs: 少し直進の時間 [ms] */
   static constexpr float    BlueTurnRightOffsetDeg =
-      ETROBO_COURSE_L ? 90.0f : -90.0f;
+      ETROBO_COURSE_L ? -90.0f : 90.0f;
   /* BlueTurnRightOffsetDeg: 直進後の右旋回量 [deg]（現在角 + この値） */
   static constexpr float    BlueTurnToleranceDeg            = 4.0f; /* 旋回角度許容 [deg] */
   static constexpr int      BlueTurnLeftPower               = 40;   /* 旋回 左パワー */
@@ -214,7 +214,7 @@ private:
 
   /* === ② 後退後（黄/青/赤共通）: 絶対±180°旋回 → 直進（黒または青検知まで） === */
   static constexpr float    AfterFinalBackTurnDeg =
-      ETROBO_COURSE_L ? 180.0f : -180.0f;
+      ETROBO_COURSE_L ? -180.0f : 180.0f;
   /* AfterFinalBackTurnDeg: 直進後 reset 基準の絶対目標角 [deg] */
   static constexpr float    AfterFinalBackTurnToleranceDeg    = 1.8f; /* 旋回角度許容 [deg] */
   static constexpr int      AfterFinalBackTurnLeftPower     = 35;   /* 旋回 左パワー */
@@ -228,18 +228,18 @@ private:
 
   /* === ② ライン停止後: 絶対角へ旋回 → 低速LT → 白で停止 === */
   static constexpr float    AfterFinalTurnToZeroDeg =
-      ETROBO_COURSE_L ? -90.0f : 0.0f;
+      ETROBO_COURSE_L ? 0.0f : -90.0f;
   /* AfterFinalTurnToZeroDeg: ライン停止後の絶対目標角 [deg]（L=-90 / R=0） */
   static constexpr float    AfterFinalRightTurnToleranceDeg = 4.0f;
   static constexpr int      AfterFinalRightTurnLeftPower    = 50;
   static constexpr int      AfterFinalRightTurnRightPower   = 40;
-  static constexpr float    FinalSlowTracePower             = 50.0f;
+  static constexpr float    FinalSlowTracePower             = 30.0f;
   static constexpr float    FinalSlowTraceKp                = 0.30f;
   static constexpr float    FinalSlowTraceKi                = 0.01f;
   static constexpr float    FinalSlowTraceKd                = 0.8f;
   static constexpr float    FinalSlowTraceOutMax            = 100.0f;
   static constexpr float    FinalSlowTraceScale             = 1.0f;
-  static constexpr bool     FinalSlowTraceEdgeFollow = (ETROBO_COURSE_L != 0);
+  static constexpr bool     FinalSlowTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* FinalSlowTraceEdgeFollow: L=左エッジ, R=右エッジ */
   static constexpr uint32_t FinalSlowTraceWhiteIgnoreMs     = 800U;
   /* FinalSlowTraceWhiteIgnoreMs: 最終旋回後LT開始直後、白判定を無視する時間 [ms] */

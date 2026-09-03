@@ -239,8 +239,8 @@ Nansho1Scene::wigwagScan(float amp_deg, int max_cycles, float *out_heading,
  * --------------------------------------------------------------------- */
 bool Nansho1Scene::runWigwagScanPhases()
 {
-  const float first_amp = ETROBO_COURSE_L ? WigWagAmpDeg : -WigWagAmpDeg;
-  const float second_amp = ETROBO_COURSE_L ? -WigWagAmpDeg : WigWagAmpDeg;
+  const float first_amp = ETROBO_COURSE_L ? -WigWagAmpDeg : WigWagAmpDeg;
+  const float second_amp = ETROBO_COURSE_L ? WigWagAmpDeg : -WigWagAmpDeg;
   const ScanSide first_side = ScanSide::Right;
   const ScanSide second_side = ScanSide::Left;
 
@@ -540,7 +540,7 @@ void Nansho1Scene::runAfterFinalBlackLine()
   dly_tsk(StepMs * 1000U);
 
   gLineTracer.setEnabled(true);
-  gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
+  gLineTracer.setEdgeFollow(ETROBO_COURSE_L != 0);
 
   /* 旋回直後は低速で線に乗せる */
   gLineTracer.setBaseSpeed(FinalSlowTracePower, FinalSlowTracePower);

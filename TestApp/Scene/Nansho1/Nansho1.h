@@ -138,7 +138,7 @@ private:
 
   /* === ⑦ 最終黒線読み後 (青線ライントレース) パラメータ */
   /* 黒線読み後の旋回方向: true=左旋回, false=右旋回。試合前にここだけ変更する。 */
-  static constexpr bool     FinalBlackTurnLeft            = (ETROBO_COURSE_L == 1);
+  static constexpr bool     FinalBlackTurnLeft            = (ETROBO_COURSE_L == 0);
   static constexpr float    FinalBlueTraceTurnDeg           = 90.0f;
   static constexpr float    FinalBlueTraceTurnToleranceDeg  = 1.0f;
   static constexpr uint32_t FinalBlueTraceTurnMaxMs         = 8000U;
@@ -230,15 +230,15 @@ private:
   /* 反対読み: 各セグメント開始時に reset し、旋回はその 0° 基準の相対角。
    * 1 回目旋回=±90°、2 回目旋回=±90° (1 回目 reset 後)。 */
   static constexpr float    OppositeFirstTurnDeg         =
-      ETROBO_COURSE_L ? 90.0f : -90.0f;
+      ETROBO_COURSE_L ? -90.0f : 90.0f;
   static constexpr float    OppositeSecondTurnDeg        =
-      ETROBO_COURSE_L ? 90.0f : -90.0f;
+      ETROBO_COURSE_L ? -90.0f : 90.0f;
   static constexpr float    OppositeTurnToleranceDeg   = 4.0f;
 
   /* === ② 旋回後の前進 (走査開始前) パラメータ =============== */
   /* 円方向への旋回角 [deg] (app.h で L/R 切り替え)。 */
   static constexpr float    PreWigwagTurnDeg           =
-      ETROBO_COURSE_L ? 90.0f : -90.0f;
+      ETROBO_COURSE_L ? -90.0f : 90.0f;
   /* 旋回 + ヨー角リセットのあと、走査前に前進する時間 [ms]。 */
   static constexpr uint32_t ForwardBeforeScanMs = 200U;
   static constexpr float    PreWigwagBalanceKp          = 3.0f;
@@ -262,16 +262,16 @@ private:
   static constexpr float    DetectFinishLeftTurnDeg = 0.0f;
   /* 超音波検知後の目標角 [deg] (旧経路用・互換)。 */
   static constexpr float    DetectAfterSonicTurnDeg =
-      ETROBO_COURSE_L ? 90.0f : -90.0f;
+      ETROBO_COURSE_L ? -90.0f : 90.0f;
   /* 左走査検知後の角度分岐 (旧ルート用)。 */
   static constexpr int      DetectFinishAngleSign =
-      ETROBO_COURSE_L ? 1 : -1;
+      ETROBO_COURSE_L ? -1 : 1;
   static constexpr float    DetectFinishClassicMaxDeg =
-      ETROBO_COURSE_L ? -40.0f : 40.0f;
+      ETROBO_COURSE_L ? 40.0f : -40.0f;
   /* 左走査・広い検知角 (反対読み reset 後の絶対角)。
    * 1回目: L=-90° / R=+90° (円側 ±90° から 180° オフセット) */
   static constexpr float    DetectWideTurnFirstDeg =
-      ETROBO_COURSE_L ? -90.0f : 90.0f;
+      ETROBO_COURSE_L ? 90.0f : -90.0f;
   /* 2回目: 反対側 0° (= 黒線方向) */
   static constexpr float    DetectWideTurnSecondDeg = 0.0f;
   /* 広い検知角ルート: 1回目旋回後の直進時間 [ms]。 */

@@ -111,7 +111,7 @@ void HCR::LineTrace()
 {
   // catch_color_line();
   gLineTracer.setBaseSpeed(100.0f, 100.0f);
-  gLineTracer.setPid(0.068f,0.0006f,0.52f, 100.0f);
+  gLineTracer.setPid(0.07f,0.0006f,0.52f, 100.0f);
   gLineTracer.setScale(18.0f);
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
@@ -123,11 +123,11 @@ void HCR::LineTrace()
   stp_cyc(LINE_TRACER_TASK_CYC);
   gGyro.reset();
   sta_cyc(LINE_TRACER_TASK_CYC);
-  dly_tsk(500 * 1000);
+  dly_tsk(300 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
   gLineTracer.setEnabled(true);
-  gLineTracer.setScale(15.0f);
-  gLineTracer.setPid(0.065f,0.0006f,0.52f, 100.0f);
+  gLineTracer.setScale(16.0f);
+  gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(1000 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
@@ -159,14 +159,14 @@ void HCR::AllLineTrace()
         if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
           gLineTracer.setEnabled(false);
           gMotors.stop();
-          dly_tsk(5000 * 1000);
-          break;
+          stp_cyc(LINE_TRACER_TASK_CYC);
+          dly_tsk(1000 * 1000);
+          return;
         }
         gLineTracer.step();
         dly_tsk(1 * 1000);
       }
     }
-    // gLineTracer.step();
     gLineTracer.step();
     dly_tsk(5 * 1000);
   }
