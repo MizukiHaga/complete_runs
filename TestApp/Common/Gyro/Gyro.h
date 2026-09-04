@@ -25,9 +25,14 @@
 
 class Gyro {
 public:
-  /* プロセスノイズ [deg^2/s] と観測ノイズ [deg^2] の既定値。 */
+  /* プロセスノイズ Q [deg^2/s] と観測ノイズ R [deg^2] の既定値。
+   * Q↑ / R↓: hub 方位に追従（旋回は速い、直進で観測ドリフトに引っ張られやすい）
+   * Q↓ / R↑: 角速度予測を信頼（直進が安定、旋回で遅れやすい）
+   * Nansho3 は Scene 側の KalmanProcessNoise / KalmanMeasNoise で上書きする。 */
   static constexpr float DefaultKalmanProcessNoise = 4.0f;
-  static constexpr float DefaultKalmanMeasNoise    = 25.0f;
+  static constexpr float DefaultKalmanMeasNoise    = 100.0f;
+  /* ハブの後傾 [deg]。未設定だと 3D heading が直進中に流れる。LogTest と同じ。 */
+  static constexpr float TiltDeg = 51.0f;
 
   void init();
   bool isReady() const;

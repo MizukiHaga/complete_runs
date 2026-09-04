@@ -13,13 +13,17 @@ public:
    * ETROBO_SCENE==7: 時間制御直進のみ（0°・ヨー補正・減速なし）
    * ETROBO_SCENE==8: 直進＋90°旋回を繰り返す四角走行（無限ループ）
    * ETROBO_SCENE==9: 前後往復（カルマン効果確認・台形減速）
-   * ETROBO_SCENE==10: 直進のみ（0°・ヨー補正・台形減速・カルマンログ） */
+   * ETROBO_SCENE==10: 直進のみ（0°・ヨー補正・台形減速・カルマンログ）
+   * ETROBO_SCENE==11: Nansho3 直進と同じパワー・PI（0°・周期補正・減速なし）
+   * ETROBO_SCENE==12: 直進のみ（Nansho3 と同じ 780 枠・380 クルーズ＋400 減速・coast。旋回なし） */
   void run();
 
 private:
   void runLineTraceUntilSkyblueThenStraight();
   void runStraightOnly();
   void runStraightOnlyTest();
+  void runNansho3StraightTest();
+  void runNansho3DecelStraightTest();
   void runSquareLoop();
   void runKalmanPingPongLoop();
   void logGyroKalman(const char *label);
@@ -57,10 +61,10 @@ private:
   static constexpr uint32_t StraightOnlyMs            = 600U;
 
   /* === 直進テスト（ETROBO_SCENE==10） === */
-  static constexpr int      StraightTestPower         = 50;
-  static constexpr float    StraightTestBalanceKp     = 1.2f;
-  static constexpr float    StraightTestBalanceKi     = 0.02f;
-  static constexpr uint32_t StraightTestMs            = 1000U;
+  static constexpr int      StraightTestPower         = 75;
+  static constexpr float    StraightTestBalanceKp     = 1.5f;
+  static constexpr float    StraightTestBalanceKi     = 0.01f;
+  static constexpr uint32_t StraightTestMs            = 640U;
   static constexpr uint32_t StraightTestDecelMs       = 400U;
   static constexpr uint32_t StraightTestLogIntervalMs = 200U;
   static constexpr float    StraightTestProcessNoise  = 8.0f;
@@ -91,6 +95,28 @@ private:
   /* カルマン Q/R（Gyro::setKalmanNoise）。実機で raw と kf の差を見て調整 */
   static constexpr float    KalmanTestProcessNoise    = 8.0f;
   static constexpr float    KalmanTestMeasNoise       = 25.0f;
+
+  /* === Nansho3 直進コピー（ETROBO_SCENE==11）
+   * 目標ヨーは常に 0° を明示指定（走り出しで現在角を掴み直さない） === */
+  static constexpr int      Nansho3StraightPower    = 75;
+  static constexpr float    Nansho3StraightKp       = 2.2f;
+  static constexpr float    Nansho3StraightKi       = 0.1f;
+  static constexpr float    Nansho3StraightIMax     = 50.0f;
+  static constexpr float    Nansho3StraightTargetDeg = 0.0f;
+  static constexpr uint32_t Nansho3StraightMs       = 15000U;
+
+  /* === Nansho3 直進の減速コピー（ETROBO_SCENE==12）
+   * 直進のみ。旋回なし。枠 CoreStraightMs、クルーズ後 decelToStop+coast === */
+  static constexpr int      Nansho3DecelPower         = 75;
+  static constexpr float    Nansho3DecelKp            = 1.5f;
+  static constexpr float    Nansho3DecelKi            = 0.01f;
+  static constexpr float    Nansho3DecelIMax          = 18.0f;
+  static constexpr float    Nansho3DecelDeadbandDeg   = 0.8f;
+  static constexpr uint32_t Nansho3DecelTotalMs       = 860U;
+  static constexpr uint32_t Nansho3DecelMs            = 400U;
+  static constexpr uint32_t Nansho3DecelStepMs        = 100U;
+  static constexpr float    Nansho3DecelProcessNoise  = 8.0f;
+  static constexpr float    Nansho3DecelMeasNoise     = 100.0f;
 };
 
 #ifdef __cplusplus

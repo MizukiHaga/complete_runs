@@ -22,6 +22,7 @@ static constexpr uint32_t kReadyPollMs = 10U;
 void Gyro::init()
 {
   hub_imu_init();
+  hub_imu_set_tilt(TiltDeg);
   while (!hub_imu_is_ready()) {
     dly_tsk(kReadyPollMs * 1000U);
   }

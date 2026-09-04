@@ -6,8 +6,9 @@
  *
  *  直進補正:
  *    左右パワーが同じ (1:1) のとき、目標ヨー角を維持するよう
- *    gGyro の角度ずれを PI 補正する。目標角は run() 開始時の向きか、
- *    setTargetHeading() で指定した角度。弧走行・ピボットでは補正しない。
+ *    gGyro の角度ずれを PI 補正する。目標角は setTargetHeading() で指定
+ *   （未指定時は 0°。run 開始時の現在角は掴み直さない）。
+ *    弧走行・ピボットでは補正しない。
  *
  *  使い方:
  *    Straight gMotors;
@@ -52,13 +53,15 @@ public:
   void configure(pbio_port_id_t left_motor_port, pbio_port_id_t right_motor_port);
 
   /* 直進補正の目標ヨー角 [deg] を指定する (integral をリセット)。
-   * 未指定時は 1:1 直進開始時の gGyro.heading() が目標になる。
-   * stop() / resetCorrection() で自動目標に戻る。 */
+   * 未指定時は 0°（run 開始時の現在角は使わない）。
+   * stop() / coast() でも目標は残る。捨てるときは resetCorrection()。 */
   void setTargetHeading(float heading_deg);
 
   /* ヨー角 PI ゲインを実行時に変更する。設定時に積分項をリセット。
-   * i_max: 積分項クランプ上限 [deg] (省略時 BalanceIntegralMax)。 */
-  void setBalancePid(float kp, float ki, float i_max = BalanceIntegralMax);
+   * i_max: 積分項クランプ上限 [deg] (省略時 BalanceIntegralMax)。
+   * deadband_deg: |error| がこの以内なら P=0・I を減衰（省略時は不感帯なし）。 */
+  void setBalancePid(float kp, float ki, float i_max = BalanceIntegralMax,
+                     float deadband_deg = 0.0f);
 
   /* シリアルに tgt/cur/err/trim/L/R を出す（調整用）。 */
   void setCorrectionDebug(bool enabled) { correction_debug_ = enabled; }
@@ -75,19 +78,31 @@ public:
   void stop();
   /* 左右モータのエンコーダ [deg] で直進／ピボットを終了する。 */
   void runFor(int left_power, int right_power, int32_t target_deg);
-  /* 指定時間 [ms] 走行して減速停止（後退など時間制御向け）。 */
-  void runForMs(int left_power, int right_power, uint32_t duration_ms);
+  /* 指定時間 [ms] 走行して台形減速停止（後退など時間制御向け）。
+   * decel_ms: 終端でパワーを線形に落とす時間。省略時は DecelMs。
+   * step_ms: 減速の更新間隔。大きいほど 1 段の減少幅が大きい。 */
+  void runForMs(int left_power, int right_power, uint32_t duration_ms,
+                uint32_t decel_ms = DecelMs, uint32_t step_ms = DecelStepMs,
+                bool coast_end = false);
+  /* いまの直進パワーから線形に落として停止。停止中・ピボット中は halt のみ。
+   * coast_end: true なら終端は set_power(0) ではなく惰性停止（尾が上がりにくい）。 */
+  void decelToStop(uint32_t decel_ms = DecelMs, uint32_t step_ms = DecelStepMs,
+                   bool coast_end = false);
+  /* パワー指令を止め、モータは惰性（coast）。stop() の set_power(0) は使わない。 */
+  void coast();
 
-  /* 開始時の最短角だけを、経過角でその場旋回する（直進補正は使わない）。
-   * 開始時: delta = wrap(target - heading) を固定し、その方向へ |delta| 回る。
-   * 毎周期 heading を再ラップ比較しない（±180 / 360k で即終了しない）。
-   * delta>0 → CW (L+, R−) / delta<0 → CCW (L−, R+)
-   * 残り角が tolerance_deg 以内で終了。max_ms で安全打ち切り。 */
+  /* 開始時の最短角だけを、経過角でその場旋回する（両輪逆符号ピボット）。
+   * rem <= slow_approach_deg なら slow_power に落とす（行き過ぎ防止）。
+   * stop_early_deg: 残りがこの角以下で止める（慣性・カルマン遅れの行き過ぎ用）。 */
   void turnToHeading(float target_heading,
                      float tolerance_deg = 4.0f,
                      int left_power = 40,
                      int right_power = 40,
-                     uint32_t max_ms = 3000U);
+                     uint32_t max_ms = 3000U,
+                     float slow_approach_deg = 30.0f,
+                     int slow_power = 33,
+                     float stop_early_deg = 0.0f,
+                     bool coast_end = false);
 
   void pivotCW(int power)  { run( power, -power); }
   void pivotCCW(int power) { run(-power,  power); }
@@ -112,7 +127,7 @@ public:
                              int32_t target_deg, uint32_t step_ms);
 
 private:
-  static constexpr uint32_t TurnStepMs = 10U;
+  static constexpr uint32_t TurnStepMs = 1U;
 
   static int clampMotorPower(int power);
   static int clampInt(int value, int min_value, int max_value);
@@ -144,6 +159,7 @@ private:
   float   kp_               = DefaultBalanceKp;
   float   ki_               = DefaultBalanceKi;
   float   i_max_            = BalanceIntegralMax;
+  float   deadband_deg_     = 0.0f;
 };
 
 #endif  // TESTAPP_STRAIGHT_H_

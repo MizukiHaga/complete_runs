@@ -86,12 +86,13 @@ bool Straight::wheelEncoderReached(int32_t count, int power, int32_t target_deg)
 
 void Straight::syncStoppedState()
 {
-  correction_enabled_    = false;
-  last_cmd_left_         = 0;
-  last_cmd_right_        = 0;
-  cmd_initialized_       = false;
-  manual_target_heading_ = false;
-  integral_              = 0.0f;
+  correction_enabled_ = false;
+  last_cmd_left_      = 0;
+  last_cmd_right_     = 0;
+  cmd_initialized_    = false;
+  integral_           = 0.0f;
+  /* 目標角は残す。捨てると次の run() が現在角を目標に掴み、
+   * 走り出しのずれ角のまま直進する */
 }
 
 void Straight::resetCorrection()
@@ -112,12 +113,13 @@ void Straight::setTargetHeading(float heading_deg)
 }
 
 // 直進補正のpid設定
-void Straight::setBalancePid(float kp, float ki, float i_max)
+void Straight::setBalancePid(float kp, float ki, float i_max, float deadband_deg)
 {
-  kp_       = kp;
-  ki_       = ki;
-  i_max_    = i_max;
-  integral_ = 0.0f;
+  kp_            = kp;
+  ki_            = ki;
+  i_max_         = i_max;
+  deadband_deg_  = (deadband_deg < 0.0f) ? 0.0f : deadband_deg;
+  integral_      = 0.0f;
 }
 
 // 直進補正のオン・オフ
@@ -148,7 +150,7 @@ void Straight::setPowerRaw(int left_power, int right_power)
 
 /* ヨー角 PI で左右パワーを補正して set_power する。
  *
- * 目標角 = setTargetHeading() で指定、または run() 開始時の gGyro.heading()
+ * 目標角 = setTargetHeading()（未指定時は 0°。現在角は掴み直さない）
  * error  = wrap(現在角 − 目標角) [deg]
  *          本機は右 = +。error>0（右にずれた）→ 左へ戻す
  *          ＝ 左輪を弱く / 右輪を強く (L −, R +)
@@ -172,7 +174,12 @@ void Straight::applyWithCorrection(int left_power, int right_power)
   if (left_power == 0 && right_power == 0) {
     pup_motor_set_power(left_, 0);
     pup_motor_set_power(right_, 0);
-    resetCorrection();
+    /* 指令だけ落とす。目標角は resetCorrection しない（掴み直し防止） */
+    correction_enabled_ = false;
+    last_cmd_left_      = 0;
+    last_cmd_right_     = 0;
+    cmd_initialized_    = false;
+    integral_           = 0.0f;
     return;
   }
 
@@ -202,9 +209,9 @@ void Straight::applyWithCorrection(int left_power, int right_power)
                        last_cmd_left_, last_cmd_right_);
 
     if (!keep_heading) {
-      if (!manual_target_heading_) {
-        target_heading_ = gGyro.heading();
-      }
+      /* 現在角を目標に掴み直さない。
+       * 走り出しのヨーずれを目標にすると、ずれた向きのまま直進する。
+       * 目標は setTargetHeading() か、既定の target_heading_(0°) を使う。 */
       integral_ = 0.0f;
       /* ピボット等 → 直進へ切替時は raw のみ。1:1 直進なら PI へ続行。 */
       if (!straight_cmd) {
@@ -214,18 +221,23 @@ void Straight::applyWithCorrection(int left_power, int right_power)
     }
   }
 
-  const float error =
-      Gyro::wrapDeg180(gGyro.heading() - target_heading_);
+  float error = Gyro::wrapDeg180(gGyro.heading() - target_heading_);
 
-  integral_ += error;
-  integral_ = clampFloat(integral_, -i_max_, i_max_);
+  /* 不感帯: ジャイロの微小揺れで trim を出し続けない。
+   * 帯内では I を減衰させ、補正がマスをまたいで長く残らないようにする。 */
+  if (deadband_deg_ > 0.0f && fabsf(error) <= deadband_deg_) {
+    error = 0.0f;
+    integral_ *= 0.90f;
+    if (fabsf(integral_) < 0.5f) {
+      integral_ = 0.0f;
+    }
+  } else {
+    integral_ += error;
+    integral_ = clampFloat(integral_, -i_max_, i_max_);
+  }
 
   const float trim = kp_ * error + ki_ * integral_;
-  /* 整数化で消えないよう、|trim| がごく小さくても少なくとも ±1 を出す */
   int diff = (int)roundf(trim);
-  if (diff == 0 && fabsf(trim) > 0.0f) {
-    diff = (trim > 0.0f) ? 1 : -1;
-  }
   diff = clampInt(diff, -MaxHeadingTrim, MaxHeadingTrim);
   const int dL = diff / 2;
   const int dR = diff - dL;  /* |diff|==1 のとき片側に ±1 が残る */
@@ -411,12 +423,11 @@ void Straight::stop()
   }
   /* 先に周期補正を止め、計算途中の apply が指令を復活させない */
   correction_enabled_ = false;
-  last_cmd_left_         = 0;
-  last_cmd_right_        = 0;
-  cmd_initialized_       = false;
-  manual_target_heading_ = false;
-  integral_              = 0.0f;
-  target_heading_        = 0.0f;
+  last_cmd_left_      = 0;
+  last_cmd_right_     = 0;
+  cmd_initialized_    = false;
+  integral_           = 0.0f;
+  /* 目標角は残す（次 run で現在角を目標に掴み直さない） */
   pup_motor_set_power(left_, 0);
   pup_motor_set_power(right_, 0);
 }
@@ -480,13 +491,18 @@ void Straight::runFor(int left_power, int right_power, int32_t target_deg)
   heading_correction_ = prev_heading_correction;
 }
 
-void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms)
+void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms,
+                        uint32_t decel_ms, uint32_t step_ms, bool coast_end)
 {
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
   if (duration_ms == 0U) {
-    stop();
+    if (coast_end) {
+      coast();
+    } else {
+      stop();
+    }
     return;
   }
 
@@ -494,9 +510,12 @@ void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms)
     duration_ms = MaxDurationMs;
   }
 
-  uint32_t decel_ms = DecelMs;
   if (decel_ms > duration_ms) {
     decel_ms = duration_ms;
+  }
+
+  if (step_ms == 0U) {
+    step_ms = DecelStepMs;
   }
 
   const uint32_t cruise_ms = duration_ms - decel_ms;
@@ -507,7 +526,7 @@ void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms)
   }
 
   for (uint32_t t = 0U; t < decel_ms;) {
-    uint32_t slice = DecelStepMs;
+    uint32_t slice = step_ms;
     if (t + slice > decel_ms) {
       slice = decel_ms - t;
     }
@@ -521,24 +540,82 @@ void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms)
     t += slice;
   }
 
-  stop();
+  if (coast_end) {
+    coast();
+  } else {
+    stop();
+  }
+}
+
+void Straight::decelToStop(uint32_t decel_ms, uint32_t step_ms, bool coast_end)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+  const int lp = last_cmd_left_;
+  const int rp = last_cmd_right_;
+  if (!correction_enabled_ || !cmd_initialized_ || decel_ms == 0U ||
+      (lp == 0 && rp == 0) || !isSameStraightPower(lp, rp)) {
+    if (coast_end) {
+      coast();
+    } else {
+      stop();
+    }
+    return;
+  }
+  runForMs(lp, rp, decel_ms, decel_ms, step_ms, coast_end);
+}
+
+void Straight::coast()
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+  correction_enabled_ = false;
+  last_cmd_left_      = 0;
+  last_cmd_right_     = 0;
+  cmd_initialized_    = false;
+  integral_           = 0.0f;
+  /* 目標角は残す。coast のたびに捨てると、次の 1:1 run が
+   * 走り出し直後の現在角を目標にしてしまい、ずれた向きのまま直進する */
+  pup_motor_stop(left_);
+  pup_motor_stop(right_);
 }
 
 void Straight::turnToHeading(float target_heading, float tolerance_deg,
-                             int left_power, int right_power, uint32_t max_ms)
+                             int left_power, int right_power, uint32_t max_ms,
+                             float slow_approach_deg, int slow_power,
+                             float stop_early_deg, bool coast_end)
 {
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
 
-  /* 開始時点の最短角 delta を固定し、その方向へ |delta| 回る。
-   * 毎周期 wrap(target - heading) すると、アンラップ済み heading と
-   * ±180 目標が 360° ずれて差 0 になり、モータが動かない。 */
+  /* 開始時の最短角を固定し、経過角で打ち切る。
+   * 残りが slow_approach_deg 以内なら低速（行き過ぎ防止）。
+   * その場旋回は両輪逆符号（L+/R− または L−/R+）。 */
   float prev = gGyro.heading();
-  const float delta    = Gyro::wrapDeg180(target_heading - prev);
+  const float delta = Gyro::wrapDeg180(target_heading - prev);
+  if (fabsf(delta) <= tolerance_deg) {
+    if (coast_end) {
+      coast();
+    } else {
+      stop();
+    }
+    dly_tsk(TurnStepMs * 1000U);
+    return;
+  }
+
   const float turn_dir = (delta > 0.0f) ? 1.0f : -1.0f;
   const float need     = fabsf(delta);
   float       traveled = 0.0f;
+  float       early    = stop_early_deg;
+  if (early < 0.0f) {
+    early = 0.0f;
+  }
+  if (early > need) {
+    early = 0.0f;
+  }
 
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < max_ms) {
@@ -546,21 +623,32 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
     traveled += turn_dir * Gyro::wrapDeg180(h - prev);
     prev = h;
 
-    if ((need - traveled) <= tolerance_deg) {
+    const float rem = need - traveled;
+    if (rem <= early) {
       break;
     }
 
-    /* ピボットは 1:1 直進ではないので run() 内で補正はかからない */
+    int lp = left_power;
+    int rp = right_power;
+    if (slow_approach_deg > 0.0f && rem <= slow_approach_deg) {
+      lp = slow_power;
+      rp = slow_power;
+    }
+
     if (turn_dir > 0.0f) {
-      run(left_power, -right_power);
+      run(lp, -rp);
     } else {
-      run(-left_power, right_power);
+      run(-lp, rp);
     }
 
     dly_tsk(TurnStepMs * 1000U);
     elapsed_ms += TurnStepMs;
   }
 
-  stop();
+  if (coast_end) {
+    coast();
+  } else {
+    stop();
+  }
   dly_tsk(TurnStepMs * 1000U);
 }

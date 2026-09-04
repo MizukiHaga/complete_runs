@@ -19,8 +19,8 @@ extern "C" {
 #endif
 
 /* カルマン Q [deg^2/s] / R [deg^2] の既定値 */
-#define ANGLE_KALMAN_PROCESS_NOISE_DEG2_PER_S  (8.0f)
-#define ANGLE_KALMAN_MEAS_NOISE_DEG2           (25.0f)
+#define ANGLE_KALMAN_PROCESS_NOISE_DEG2_PER_S  (4.0f)
+#define ANGLE_KALMAN_MEAS_NOISE_DEG2           (100.0f)
 
 void Angle_Init(FILE *bt_out);
 
