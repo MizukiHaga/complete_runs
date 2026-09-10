@@ -1,5 +1,7 @@
 #include "Nansho3.h"
 
+#include "kernel_cfg.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -105,14 +107,14 @@ void Nansho3Scene::beepError() const
 
 float Nansho3Scene::absoluteCardinalDeg(float logical_facing_deg) const
 {
-  /* 旋回用: 90° 刻みのみ（HeadingOffset なし） */
-  return snapTo90(logical_facing_deg + cardinal_offset_);
+  /* 90° 刻み + HeadingOffsetDeg。旋回も直進も同じ量を載せる */
+  return Gyro::wrapDeg180(snapTo90(logical_facing_deg + cardinal_offset_) +
+                          HeadingOffsetDeg);
 }
 
 float Nansho3Scene::straightTargetDeg(float logical_facing_deg) const
 {
-  const float extra = heading_offset_active_ ? HeadingOffsetDeg : 0.0f;
-  return Gyro::wrapDeg180(absoluteCardinalDeg(logical_facing_deg) + extra);
+  return absoluteCardinalDeg(logical_facing_deg);
 }
 
 void Nansho3Scene::setNextTarget(QrPoint p)
@@ -131,44 +133,47 @@ void Nansho3Scene::onArrivedCell()
   }
 }
 
+/* 走り出しの 0 点から target_deg 進むまで待つ。モータは止めない。 */
+void Nansho3Scene::cruiseUntilDeg(int32_t left_base, int32_t right_base,
+                                  int32_t target_deg)
+{
+  while (gMotors.traveledDegFrom(left_base, right_base) < target_deg) {
+    dly_tsk(CoreStraightStepMs * 1000U);
+  }
+}
+
 void Nansho3Scene::driveOneCell(bool stop_after)
 {
   gLineTracer.setEnabled(false);
 
-  uint32_t extra = 0U;
   const int fi_ms = facingIndex(facing_deg_);
-  if (fi_ms == 1 || fi_ms == 3) {
-    extra = CoreStraightYExtraMs;
-  } else {
-    extra = CoreStraightXExtraMs;
-  }
+  const int32_t extra =
+      (fi_ms == 1 || fi_ms == 3) ? CoreStraightYExtraDeg : CoreStraightXExtraDeg;
   const int pwr = CoreRunStraightPower;
 
+  /* このマスの走り出しを 0 点にする。連続 Fwd の途中でも止めずに測れる。 */
+  const int32_t enc_left_base  = gMotors.leftEncoderCount();
+  const int32_t enc_right_base = gMotors.rightEncoderCount();
+
+  if (!straight_running_) {
+    gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
+    gMotors.run(pwr, pwr);
+    straight_running_ = true;
+  }
+
   if (stop_after) {
-    /* 1マス移動・連続の最後: CoreStraightMs 枠でクルーズしてから減速 */
-    uint32_t total = CoreStraightMs + extra;
-    uint32_t decel = CoreStraightDecelMs;
-    if (decel > total) {
-      decel = total;
+    /* 1マス移動・連続の最後: 減速で進む分を残してクルーズしてから減速 */
+    int32_t cruise = CoreStraightDeg + extra - CoreStraightDecelDeg;
+    if (cruise < 0) {
+      cruise = 0;
     }
-    const uint32_t cruise = total - decel;
-    if (!straight_running_) {
-      gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
-      gMotors.run(pwr, pwr);
-      straight_running_ = true;
-    }
-    if (cruise > 0U) {
-      dly_tsk(cruise * 1000U);
-    }
-    gMotors.decelToStop(decel, CoreStraightDecelStepMs, /*coast_end=*/true);
+    cruiseUntilDeg(enc_left_base, enc_right_base, cruise);
+    gMotors.decelToStop(CoreStraightDecelMs, CoreStraightDecelStepMs,
+                        /*coast_end=*/true);
     straight_running_ = false;
   } else {
-    if (!straight_running_) {
-      gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
-      gMotors.run(pwr, pwr);
-      straight_running_ = true;
-    }
-    dly_tsk((CoreStraightContinueMs + extra) * 1000U);
+    cruiseUntilDeg(enc_left_base, enc_right_base,
+                   CoreStraightContinueDeg + extra);
   }
 
   const int fi = facingIndex(facing_deg_);
@@ -198,6 +203,8 @@ void Nansho3Scene::turnToAbsolute(float target_heading, float extra_early_deg)
   gGyro.setKalmanNoise(KalmanProcessNoise, KalmanMeasNoise);
 }
 
+/* 周回中のジャイロ引き直し。現在はどこからも呼んでいない
+ * （1 周ごとの reset は入れない方針）。戻すときは prepareNextLap から呼ぶ。 */
 void Nansho3Scene::resetGyroForLap()
 {
   gLineTracer.setEnabled(false);
@@ -216,8 +223,6 @@ void Nansho3Scene::resetGyroForLap()
 
   /* 論理 0=+x / -90=+y / ±180=-x / +90=-y の絶対角を、この reset に合わせる */
   cardinal_offset_ = Gyro::wrapDeg180(-snapTo90(facing_deg_));
-  /* 周回 reset 後は今の向きが 0°。初期直進の Offset は載せない */
-  heading_offset_active_ = false;
   gates_since_gyro_reset_ = 0;
   gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
 }
@@ -225,9 +230,6 @@ void Nansho3Scene::resetGyroForLap()
 void Nansho3Scene::onGatePassed()
 {
   ++gates_since_gyro_reset_;
-  if (gates_since_gyro_reset_ >= 2) {
-    resetGyroForLap();
-  }
 }
 
 void Nansho3Scene::turnByAction(MoveAction action)
@@ -246,8 +248,6 @@ void Nansho3Scene::turnByAction(MoveAction action)
   const float extra_early =
       (action == MoveAction::L90) ? CoreTurnLeftEarlyExtraDeg : 0.0f;
   turnToAbsolute(target, extra_early);
-  /* 最初の旋回後直進はここまで。以降の直進には Offset を足さない */
-  heading_offset_active_ = false;
   gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
   dly_tsk(CoreTurnAfterMs * 1000U);
 }
@@ -620,7 +620,7 @@ void Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
   }
 
   /* 実走: first へ → second へ。次が Fwd ならつなぐ。次が旋回なら
-   * 連続の最後を CoreStraightMs で止める（2マス→旋回で距離が変わる）。 */
+   * 連続の最後を CoreStraightDeg で止める（2マス→旋回で距離が変わる）。 */
   bool block_first[GridSize][GridSize];
   clearBlocked(block_first);
   blockPoint(block_first, second, first);
@@ -684,7 +684,27 @@ void Nansho3Scene::runRallyLap(GateSeg red, GateSeg blue, GateSeg yellow)
   onGatePassed();
 }
 
-void Nansho3Scene::runExitStraightToBlack()
+void Nansho3Scene::prepareNextLap(GateSeg red, GateSeg blue, GateSeg yellow)
+{
+  gLineTracer.setEnabled(false);
+
+  /* 赤・青・黄マスを避けて開始位置へ（黄の縦抜けで再通過しない） */
+  bool blocked[GridSize][GridSize];
+  clearBlocked(blocked);
+  const QrPoint start = {LapStartX, LapStartY};
+  blockGate(blocked, red, start);
+  blockGate(blocked, blue, start);
+  blockGate(blocked, yellow, start);
+  goTo(start, blocked, /*stop_at_end=*/true);
+
+  /* 向き直しはしない。開始位置に着いた向きのまま次の周へ入る。
+   * ジャイロも引き直さない（周回中は最初の reset 基準のまま）。 */
+}
+
+/* ---------------------------------------------------------------------
+ * 指定周回後: 論理 −90°（+y）へ向き直し、完全な黒を検知するまで直進して停止。
+ * --------------------------------------------------------------------- */
+void Nansho3Scene::runExitStraightToBlackLine()
 {
   gLineTracer.setEnabled(false);
   if (straight_running_) {
@@ -696,20 +716,110 @@ void Nansho3Scene::runExitStraightToBlack()
   }
   dly_tsk(CoreTurnBeforeMs * 1000U);
 
-  const float target = absoluteCardinalDeg(ExitLogicalHeadingDeg);
-  turnToAbsolute(target);
-  gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
-                        StraightBalanceIMax, StraightBalanceDeadbandDeg);
-  gMotors.setTargetHeading(straightTargetDeg(ExitLogicalHeadingDeg));
+  facing_deg_       = ExitYLogicalHeadingDeg;
+  const float y_abs = absoluteCardinalDeg(ExitYLogicalHeadingDeg);
+  turnToAbsolute(y_abs);
   dly_tsk(CoreTurnAfterMs * 1000U);
 
-  gMotors.run(ExitStraightPower, ExitStraightPower);
+  gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
+                        StraightBalanceIMax, StraightBalanceDeadbandDeg);
+  gMotors.setTargetHeading(y_abs);
+  gMotors.run(ExitYStraightPower, ExitYStraightPower);
+
+  /* 黒線ではなく完全な黒。ColorLAB::BlackReflectionMax 以下の反射光で判定 */
   uint32_t elapsed_ms = 0U;
-  while (elapsed_ms < ExitStraightMaxMs) {
-    if (elapsed_ms >= ExitBlackIgnoreMs &&
+  while (elapsed_ms < ExitYStraightMaxMs) {
+    if (elapsed_ms >= ExitYBlackIgnoreMs &&
+        gColorLAB.is(COLOR_DETECT_BLACK, true)) {
+      break;
+    }
+    gMotors.tickCorrection();
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
+  }
+  gMotors.stop();
+  dly_tsk(StepMs * 1000U);
+}
+
+void Nansho3Scene::runExitAfterRally()
+{
+  gLineTracer.setEnabled(false);
+  if (straight_running_) {
+    gMotors.decelToStop(CoreStraightDecelMs, CoreStraightDecelStepMs,
+                        /*coast_end=*/true);
+    straight_running_ = false;
+  } else {
+    gMotors.coast();
+  }
+  dly_tsk(CoreTurnBeforeMs * 1000U);
+
+  /* 1) Y軸方向（論理 −90°=+y）へ旋回 → 黒線まで直進 */
+  facing_deg_       = ExitYLogicalHeadingDeg;
+  const float y_abs = absoluteCardinalDeg(ExitYLogicalHeadingDeg);
+  turnToAbsolute(y_abs);
+  dly_tsk(CoreTurnAfterMs * 1000U);
+
+  gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
+                        StraightBalanceIMax, StraightBalanceDeadbandDeg);
+  gMotors.setTargetHeading(y_abs);
+  gMotors.run(ExitYStraightPower, ExitYStraightPower);
+
+  uint32_t elapsed_ms = 0U;
+  while (elapsed_ms < ExitYStraightMaxMs) {
+    if (elapsed_ms >= ExitYBlackIgnoreMs &&
         (gColorLAB.reflection() <= ExitBlackReflectionMax ||
          gColorLAB.is(COLOR_DETECT_BLACKLINE, true) ||
          gColorLAB.is(COLOR_DETECT_BLACK, true))) {
+      break;
+    }
+    gMotors.tickCorrection();
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
+  }
+  gMotors.stop();
+  dly_tsk(StepMs * 1000U);
+
+  /* 1' ) 黒線つかみ後: 右へ相対 +90° 旋回 */
+  gLineTracer.setEnabled(false);
+  dly_tsk(CoreTurnBeforeMs * 1000U);
+  {
+    const float right_target =
+        Gyro::wrapDeg180(gGyro.heading() + ExitFirstRightTurnDeg);
+    turnToAbsolute(right_target);
+  }
+  dly_tsk(CoreTurnAfterMs * 1000U);
+
+  /* 2) 低速 LT → ジャイロ reset */
+  gLineTracer.setEnabled(true);
+  gLineTracer.setEdgeFollow(ExitTraceEdgeFollow);
+  gLineTracer.setPid(ExitTraceKp, ExitTraceKi, ExitTraceKd, ExitTraceOutMax);
+  gLineTracer.setScale(ExitTraceScale);
+  gLineTracer.setBaseSpeed(ExitSlowTracePower, ExitSlowTracePower);
+  for (elapsed_ms = 0U; elapsed_ms < ExitSlowTraceMs; elapsed_ms += StepMs) {
+    gLineTracer.step();
+    dly_tsk(StepMs * 1000U);
+  }
+
+  gMotors.stop();
+  gLineTracer.setEnabled(false);
+  gGyro.reset();
+  dly_tsk(StepMs * 1000U);
+  /* reset 後の現在向きを 0° とする。以降は絶対角のみ */
+  cardinal_offset_ = 0.0f;
+  facing_deg_ = 0.0f;
+
+  /* 3) LT → ±17° 到達 */
+  gLineTracer.setEnabled(true);
+  gLineTracer.setEdgeFollow(ExitTraceEdgeFollow);
+  gLineTracer.setPid(ExitAfter17TraceKp, ExitAfter17TraceKi,
+                     ExitAfter17TraceKd, ExitAfter17TraceOutMax);
+  gLineTracer.setScale(ExitAfter17TraceScale);
+  gLineTracer.setBaseSpeed(ExitAfter17TracePower, ExitAfter17TracePower);
+
+  elapsed_ms = 0U;
+  while (elapsed_ms < ExitAfter17TraceMaxMs) {
+    gLineTracer.step();
+    if (gGyro.reached(ExitLtStopHeadingDeg, ExitLtStopToleranceDeg)) {
       break;
     }
     dly_tsk(StepMs * 1000U);
@@ -717,32 +827,49 @@ void Nansho3Scene::runExitStraightToBlack()
   }
 
   gMotors.stop();
-  straight_running_ = false;
-  runExitTurnRightAndLineTrace();
-}
-
-void Nansho3Scene::runExitTurnRightAndLineTrace()
-{
   gLineTracer.setEnabled(false);
-  gMotors.coast();
-  dly_tsk(CoreTurnBeforeMs * 1000U);
+  dly_tsk(StepMs * 1000U);
 
-  const float target = Gyro::wrapDeg180(gGyro.heading() + ExitTurnRightDeg);
-  turnToAbsolute(target);
+  /* 4) 到達角を目標に直進 → 黒線 */
+  const float h17 = ExitLtStopHeadingDeg;
+  gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
+                        StraightBalanceIMax, StraightBalanceDeadbandDeg);
+  gMotors.setTargetHeading(h17);
+  gMotors.run(ExitAfter17StraightPower, ExitAfter17StraightPower);
+
+  elapsed_ms = 0U;
+  while (elapsed_ms < ExitAfter17StraightMaxMs) {
+    if (elapsed_ms >= ExitAfter17BlackIgnoreMs &&
+        (gColorLAB.reflection() <= ExitBlackReflectionMax ||
+         gColorLAB.is(COLOR_DETECT_BLACKLINE, true) ||
+         gColorLAB.is(COLOR_DETECT_BLACK, true))) {
+      break;
+    }
+    gMotors.tickCorrection();
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
+  }
+  gMotors.stop();
+  dly_tsk(StepMs * 1000U);
+
+  /* 4' ) 黒線つかみ後: 絶対 +90° へ旋回 */
+  gLineTracer.setEnabled(false);
+  dly_tsk(CoreTurnBeforeMs * 1000U);
+  turnToAbsolute(ExitSecondTurnAbsDeg);
   dly_tsk(CoreTurnAfterMs * 1000U);
 
+  /* 5) SKYBLUE まで LT */
   gLineTracer.setEnabled(true);
-  gLineTracer.setBaseSpeed(ExitTracePower, ExitTracePower);
+  gLineTracer.setEdgeFollow(ExitTraceEdgeFollow);
   gLineTracer.setPid(ExitTraceKp, ExitTraceKi, ExitTraceKd, ExitTraceOutMax);
   gLineTracer.setScale(ExitTraceScale);
-  gLineTracer.setEdgeFollow(ExitTraceEdgeFollow);
+  gLineTracer.setBaseSpeed(ExitFinalTracePower, ExitFinalTracePower);
 
-  uint32_t elapsed_ms = 0U;
-  while (elapsed_ms < ExitTraceMaxMs) {
+  elapsed_ms = 0U;
+  while (elapsed_ms < ExitFinalTraceMaxMs) {
     gLineTracer.step();
-    if (elapsed_ms >= ExitTraceWhiteIgnoreMs &&
-        (gColorLAB.reflection() >= ExitTraceWhiteReflectionMin ||
-         gColorLAB.is(COLOR_DETECT_WHITE, true))) {
+    if (elapsed_ms >= ExitFinalSkyblueIgnoreMs &&
+        gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
       break;
     }
     dly_tsk(StepMs * 1000U);
@@ -791,72 +918,105 @@ void Nansho3Scene::initialRun()
   gMotors.setBalancePid(InitialBackBalanceKp, InitialBackBalanceKi,
                         InitialBackBalanceIMax);
   gMotors.setTargetHeading(0.0f);
-  gMotors.runForMs(-InitialBackPower, -InitialBackPower, InitialBackMs,
-                   Straight::DecelMs, Straight::DecelStepMs, /*coast_end=*/true);
+  {
+    const int32_t enc_left_base  = gMotors.leftEncoderCount();
+    const int32_t enc_right_base = gMotors.rightEncoderCount();
+    int32_t cruise = InitialBackDeg - InitialBackDecelDeg;
+    if (cruise < 0) {
+      cruise = 0;
+    }
+    gMotors.run(-InitialBackPower, -InitialBackPower);
+    cruiseUntilDeg(enc_left_base, enc_right_base, cruise);
+    gMotors.decelToStop(Straight::DecelMs, Straight::DecelStepMs,
+                        /*coast_end=*/true);
+  }
   dly_tsk(CoreTurnBeforeMs * 1000U);
 
-  /* 2) 絶対 −90°（Offset なし） */
-  const float turn_target = InitialTurnOffsetDeg;
+  /* 2) 絶対 InitialTurnOffsetDeg（R=+90 / L=-90）+ HeadingOffsetDeg */
+  const float turn_target =
+      Gyro::wrapDeg180(InitialTurnOffsetDeg + HeadingOffsetDeg);
   turnToAbsolute(turn_target);
   dly_tsk(CoreTurnAfterMs * 1000U);
 
-  /* 3) 直進。ここから HeadingOffsetDeg。次が同じ向きの Fwd ならそれにも乗る */
-  heading_offset_active_ = true;
+  /* 3) 直進。目標は旋回と同じ */
   gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
                         StraightBalanceIMax, StraightBalanceDeadbandDeg);
-  gMotors.setTargetHeading(
-      Gyro::wrapDeg180(turn_target + HeadingOffsetDeg));
-  gMotors.runForMs(InitialStraightPower, InitialStraightPower,
-                   InitialStraightMs, CoreStraightDecelMs,
-                   CoreStraightDecelStepMs, /*coast_end=*/true);
+  gMotors.setTargetHeading(turn_target);
+  {
+    const int32_t enc_left_base  = gMotors.leftEncoderCount();
+    const int32_t enc_right_base = gMotors.rightEncoderCount();
+    int32_t cruise = InitialStraightDeg - InitialStraightDecelDeg;
+    if (cruise < 0) {
+      cruise = 0;
+    }
+    gMotors.run(InitialStraightPower, InitialStraightPower);
+    cruiseUntilDeg(enc_left_base, enc_right_base, cruise);
+    gMotors.decelToStop(CoreStraightDecelMs, CoreStraightDecelStepMs,
+                        /*coast_end=*/true);
+  }
   dly_tsk(StepMs * 1000U);
 }
 
 void Nansho3Scene::run()
 {
   gLineTracer.setEnabled(false);
+  /* Nansho2 が stp_cyc している。直進中の tickCorrection に必要 */
+  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gGyro.setKalmanNoise(KalmanProcessNoise, KalmanMeasNoise);
 
-  /* 低速LTで白まで（終了時にジャイロreset）→ バック → 旋回 → 直進 */
+  /* 単体(4) / 3→1(13): 低速LTで白まで＋ジャイロreset
+   * 通し(0/6): Nansho2 終了位置から。LT は省略し向きを 0° にしてバックへ */
+#if ETROBO_SCENE == 4 || ETROBO_SCENE == 13
   testInitialTrace();
+#else
+  gGyro.reset();
+  dly_tsk(StepMs * 1000U);
+#endif
   initialRun();
 
   gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
                         StraightBalanceIMax, StraightBalanceDeadbandDeg);
 
-  /* 初期: Lコース例 右上 QR = (2,2)。論理 0°=+x */
-  x_                 = 2;
-  y_                 = 2;
+  /* 初期 QR・仮ゲート配置（当日公開パターンで差し替え）
+   * ETROBO_COURSE_L: 0=L / 1=R。開始は LR とも (2,2)。赤=Y連続, 青=X連続, 黄=Y連続。 */
+  x_ = LapStartX;
+  y_ = LapStartY;
+#if ETROBO_COURSE_L
+  /* Rコース */
+  const GateSeg red    = {{5, 2}, {5, 3}}; /* Y連続 */
+  const GateSeg blue   = {{4, 4}, {5, 4}}; /* X連続 */
+  const GateSeg yellow = {{2, 4}, {2, 5}}; /* Y連続 */
+#else
+  /* Lコース */
+  const GateSeg red    = {{4, 2}, {4, 3}}; /* Y連続 */
+  const GateSeg blue   = {{4, 4}, {5, 4}}; /* X連続 */
+  const GateSeg yellow = {{3, 4}, {3, 5}}; /* Y連続 */
+#endif
+
   facing_deg_            = 0.0f;
   cardinal_offset_       = InitialTurnOffsetDeg;
   straight_running_      = false;
   has_next_target_       = false;
   gates_since_gyro_reset_ = 0;
-  /* heading_offset_active_ は initialRun のまま。同じ向きの Fwd が続く間だけ Offset */
   memset(grid_, 0, sizeof(grid_));
   grid_[x_][y_] = 1;
 
-  /* 仮ゲート配置（当日公開パターンで差し替え） */
-  const GateSeg red    = {{4, 4}, {4, 5}}; /* Y連続 */
-  const GateSeg blue   = {{5, 3}, {6, 3}}; /* X連続 */
-  const GateSeg yellow = {{2, 5}, {2, 6}}; /* Y連続 */
-
   for (int lap = 0; lap < RallyLapCount; ++lap) {
+    if (lap > 0) {
+      /* 黄終点から続けると赤の逆通過→青への進入が変わり、青ゲートを外す */
+      prepareNextLap(red, blue, yellow);
+    }
     runRallyLap(red, blue, yellow);
   }
-  runExitStraightToBlack();
+
+  /* 指定周回終了後: +y 方向へ完全な黒まで直進して停止（Nansho1 移行なし） */
+  runExitStraightToBlackLine();
+  gLineTracer.setEnabled(false);
 }
 
 extern "C" void Nansho3Task(intptr_t exinf)
 {
   (void)exinf;
   gNansho3.run();
-  /*
-  gLineTracer.setEnabled(false);
-  gMotors.setBalancePid( 0.85f, 0.1f, 50.0f);
-  gMotors.run(75, 75);
-  dly_tsk(700 * 1000U);
-  gMotors.stop();
-  */
   ext_tsk();
 }

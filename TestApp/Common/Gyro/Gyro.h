@@ -37,8 +37,11 @@ public:
   void init();
   bool isReady() const;
 
-  /* 現在ヨー角を 0° にリセットする。 */
-  void reset();
+  /* 現在ヨー角をリセットする。
+   * offset_deg を渡すと、リセット直後の heading() が 0° ではなく
+   * offset_deg になる（CW 正）。この下駄は次の reset まで載り続ける。
+   * 例: offset_deg = -2 なら、目標 0° の直進で車体は 2° CW（右）へ向く。 */
+  void reset(float offset_deg = 0.0f);
 
   /* カルマンフィルタのノイズ係数を変更する（実行時チューニング用）。 */
   void setKalmanNoise(float process_noise_deg2_per_s,
@@ -73,6 +76,10 @@ private:
 
   float kf_q_ = DefaultKalmanProcessNoise;
   float kf_r_ = DefaultKalmanMeasNoise;
+
+  /* reset(offset_deg) で載せる下駄 [deg]。heading() にだけ足す。
+   * カルマンの内部状態は 0 基準のままなので、観測で消えることはない。 */
+  float heading_offset_ = 0.0f;
 
   mutable float  kf_angle_    = 0.0f;
   mutable float  kf_variance_ = DefaultKalmanMeasNoise;

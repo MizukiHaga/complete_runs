@@ -275,38 +275,39 @@ bool Nansho1Scene::runWigwagScanPhases()
 
 /* ---------------------------------------------------------------------
  * 円の反対を読み取る動き (各セグメント開始で reset、旋回は 0° 基準):
- *   1. reset → 指定時間直進
+ *   1. reset → 指定距離だけ直進
  *   2. ±90° 旋回 → reset
- *   3. 指定時間直進
+ *   3. 指定距離だけ直進
  *   4. ±90° 旋回 → reset → 灰色まで直進 → reset
+ * 直進はエンコーダ距離で終わる（ヨー角 PI 補正つき）。
  * --------------------------------------------------------------------- */
 Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
 {
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
   gMotors.setTargetHeading(0.0f);
-  gMotors.runForMs(OppositeForwardPower, OppositeForwardPower,
-                   OppositeForwardFirstMs);
+  gMotors.runBalancedEncoderFor(OppositeForwardPower, OppositeForwardPower,
+                                OppositeForwardFirstDeg, StepMs);
   dly_tsk(StepMs * 1000U);
 
   turnToHeading(OppositeFirstTurnDeg, OppositeTurnToleranceDeg,
                 OppositeTurnPower, OppositeTurnPower);
   dly_tsk(StepMs * 1000U);
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
 
   gMotors.setTargetHeading(0.0f);
-  gMotors.runForMs(OppositeForwardPower, OppositeForwardPower,
-                   OppositeForwardSecondMs);
+  gMotors.runBalancedEncoderFor(OppositeForwardPower, OppositeForwardPower,
+                                OppositeForwardSecondDeg, StepMs);
   dly_tsk(StepMs * 1000U);
 
   turnToHeading(OppositeSecondTurnDeg, OppositeTurnToleranceDeg,
                 OppositeTurnPower, OppositeTurnPower);
   dly_tsk(StepMs * 1000U);
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
 
   gMotors.setTargetHeading(0.0f);
   driveUntilGrayLine(0U, OppositeForwardPower, OppositeForwardPower,
                      ScanMaxMs);
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
 
   return ScanResult::Completed;
 }
@@ -321,7 +322,7 @@ void Nansho1Scene::driveUntilBlackLine(float target_heading)
 {
   turnToHeading(target_heading);
   dly_tsk(StepMs * 1000U);
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
 
   gMotors.setTargetHeading(0.0f);
   while (1) {
@@ -400,7 +401,7 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
     /* バック後も reset せず、円向き 0° 基準で 180°（黒線方向）を向く */
     turnToHeading(DetectFinishRightTurnDeg);
     dly_tsk(StepMs * 1000U);
-    gGyro.reset();
+    gGyro.reset(GyroResetOffsetDeg);
     driveForwardUntilBlackLine();
     runAfterFinalBlackLine();
     return;
@@ -410,12 +411,12 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
   const float h_rel =
       Gyro::wrapDeg180(gGyro.heading() - heading_offset_deg);
 
-  /* 広い: |相対角| が大きい側 → 反対側 ±90° ルート
-   * 浅い: |相対角| が小さい側 → 反対側 0° (= 黒線)
-   * L: h_rel < -40 が広い / h_rel >= -40 が浅い */
-  if ((float)DetectFinishAngleSign * h_rel <
+  /* |相対角| が DetectFinishClassicMaxDeg 以内 → 反対側 ±90° の迂回ルート
+   * それより外               → 反対側 0° (= 黒線) へ直接
+   * R: h_rel <= 60 が迂回 / h_rel > 60 が直接。L はこの符号違い。 */
+  if ((float)DetectFinishAngleSign * h_rel >=
       (float)DetectFinishAngleSign * DetectFinishClassicMaxDeg) {
-    /* 広い検知角: 反対側 ±90° → 直進 → 反対側 0° → 黒線まで直進 */
+    /* 迂回ルート: 反対側 ±90° → 直進 → 反対側 0° → 黒線まで直進 */
     turnToHeading(DetectWideTurnFirstDeg);
     dly_tsk(StepMs * 1000U);
     gMotors.runForMs(LeftPower, RightPower, DetectMidForwardMs);
@@ -423,7 +424,7 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
 
     turnToHeading(DetectWideTurnSecondDeg);
     dly_tsk(StepMs * 1000U);
-    gGyro.reset();
+    gGyro.reset(GyroResetOffsetDeg);
     driveForwardUntilBlackLine();
     runAfterFinalBlackLine();
     return;
@@ -431,7 +432,7 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
 
   turnToHeading(DetectFinishLeftTurnDeg);
   dly_tsk(StepMs * 1000U);
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
   driveForwardUntilBlackLine();
   runAfterFinalBlackLine();
 }
@@ -495,26 +496,24 @@ void Nansho1Scene::turnToHeading(float target_heading, float tolerance_deg,
 }
 
 /* ---------------------------------------------------------------------
- * 開始時: ジャイロ初期化 → InitialBlackTurnDeg 旋回。
- * （開始 LT は省略。試合配置で向きを合わせてから起動する想定）
+ * 開始時: ジャイロ初期化 → InitialBlackTurn(180°) 旋回。
  * --------------------------------------------------------------------- */
 void Nansho1Scene::runInitialForwardTrace()
 {
-  gGyro.reset();
-  gLineTracer.setEnabled(false);
+  gGyro.reset(GyroResetOffsetDeg);
+  dly_tsk(StepMs * 1000U);
   turnToHeading(InitialBlackTurnDeg);
   dly_tsk(StepMs * 1000U);
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
+  gMotors.stop();
 }
 
 /* ---------------------------------------------------------------------
- * 最終黒線読み後の旋回 (FinalBlackTurnLeft で左右指定)。
+ * 最終黒線読み後の旋回 (角度・左右パワーとも L/R それぞれの定数で指定)。
  * --------------------------------------------------------------------- */
 void Nansho1Scene::turnAfterFinalBlackLine()
 {
-  const float target_heading =
-      gGyro.heading() +
-      (float)FinalBlueTraceTurnSign * FinalBlueTraceTurnDeg;
+  const float target_heading = gGyro.heading() + FinalBlueTraceTurnDeg;
   uint32_t elapsed_ms = 0U;
 
   while (elapsed_ms < FinalBlueTraceTurnMaxMs) {
@@ -527,12 +526,13 @@ void Nansho1Scene::turnAfterFinalBlackLine()
     elapsed_ms += StepMs;
   }
 
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
   gMotors.stop();
 }
 
 /* ---------------------------------------------------------------------
- * 最終黒線読み後: 指定方向に 90° 旋回 → 低速LT → 青線までライントレース。
+ * 最終黒線読み後: 指定方向に 90° 旋回 → LT → SKYBLUE/BLUE で停止。
+ * 追従エッジは FinalBlueTraceEdgeFollow（L=左 / R=右）。
  * --------------------------------------------------------------------- */
 void Nansho1Scene::runAfterFinalBlackLine()
 {
@@ -540,35 +540,67 @@ void Nansho1Scene::runAfterFinalBlackLine()
   dly_tsk(StepMs * 1000U);
 
   gLineTracer.setEnabled(true);
-  gLineTracer.setEdgeFollow(ETROBO_COURSE_L != 0);
+  gLineTracer.setEdgeFollow(FinalBlueTraceEdgeFollow);
 
-  /* 旋回直後は低速で線に乗せる */
+  /* 旋回直後は低速で線に乗せる（この間も青判定する） */
   gLineTracer.setBaseSpeed(FinalSlowTracePower, FinalSlowTracePower);
   gLineTracer.setPid(FinalSlowTraceKp, FinalSlowTraceKi, FinalSlowTraceKd,
                      FinalSlowTraceOutMax);
   gLineTracer.setScale(FinalSlowTraceScale);
-  for (uint32_t elapsed_ms = 0U; elapsed_ms < FinalSlowTraceMs;
-       elapsed_ms += StepMs) {
+
+  uint32_t elapsed_ms = 0U;
+  bool     hit_blue   = false;
+  while (elapsed_ms < FinalSlowTraceMs) {
     gLineTracer.step();
-    dly_tsk(StepMs * 1000U);
-  }
-
-  /* 本線 LT で青まで */
-  gLineTracer.setBaseSpeed(FinalBlueTracePower, FinalBlueTracePower);
-  gLineTracer.setPid(FinalBlueTraceKp, FinalBlueTraceKi,
-                     FinalBlueTraceKd, FinalBlueTraceOutMax);
-  gLineTracer.setScale(FinalBlueTraceScale);
-
-  while (1) {
-    gLineTracer.step();
-
-    if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
+    if (elapsed_ms >= FinalBlueTraceColorIgnoreMs &&
+        (gColorLAB.is(COLOR_DETECT_SKYBLUE, true) ||
+         gColorLAB.is(COLOR_DETECT_BLUE, true))) {
+      hit_blue = true;
       break;
     }
-
     dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
   }
+
+  /* 本線 LT。エッジは低速 LT のまま。SKYBLUE/BLUE 検知で終了 */
+  if (!hit_blue) {
+    gLineTracer.setBaseSpeed(FinalBlueTracePower, FinalBlueTracePower);
+    gLineTracer.setPid(FinalBlueTraceKp, FinalBlueTraceKi,
+                       FinalBlueTraceKd, FinalBlueTraceOutMax);
+    gLineTracer.setScale(FinalBlueTraceScale);
+
+    while (elapsed_ms < FinalBlueTraceMaxMs) {
+      gLineTracer.step();
+
+      if (elapsed_ms >= FinalBlueTraceColorIgnoreMs &&
+          (gColorLAB.is(COLOR_DETECT_SKYBLUE, true) ||
+           gColorLAB.is(COLOR_DETECT_BLUE, true))) {
+        break;
+      }
+
+      dly_tsk(StepMs * 1000U);
+      elapsed_ms += StepMs;
+    }
+  }
+
   gMotors.stop();
+  gLineTracer.setEnabled(false);
+}
+
+/* ---------------------------------------------------------------------
+ * ① のエンコーダ距離ログ（調整用。BackTraceEncoderLog を false で無効）。
+ * --------------------------------------------------------------------- */
+void Nansho1Scene::logBackTraceEncoder(const char *phase, int32_t traveled_deg,
+                                       int32_t target_deg, uint32_t steps)
+{
+  if (!BackTraceEncoderLog) {
+    return;
+  }
+  if (steps % BackTraceEncoderLogSteps != 0U) {
+    return;
+  }
+  printf("BackTrace %s enc=%d/%d step=%d\n", phase, (int)traveled_deg,
+         (int)target_deg, (int)steps);
 }
 
 /* ---------------------------------------------------------------------
@@ -582,34 +614,50 @@ void Nansho1Scene::run()
   gMotors.stop();
   gMotors.setHeadingCorrection(UseHeadingCorrection);
 
-  /* ⓪ 開始時: InitialBlackTurnDeg 旋回。 */
+  /* ⓪ 開始時: ジャイロ初期化 → 180° 旋回。 */
   runInitialForwardTrace();
 
-  /* 開始時: ジャイロを初期化する。 */
-  gGyro.reset();
-
-  
-  /* ① 旋回後: 低速 LT → 本線 LT で円の終端まで移動 (固定時間・減速あり)。 */
+  /* ① 低速 LT → 本線 LT で円の終端まで移動 (エンコーダ距離・減速あり)。 */
   {
+    /* pup_motor_reset_count に頼らず、開始値との差分で距離を測る。
+     * reset は pup_motor_brake を伴うので LT の走り出しとも競合しない。 */
+    const int32_t enc_left_base  = gMotors.leftEncoderCount();
+    const int32_t enc_right_base = gMotors.rightEncoderCount();
+
     gLineTracer.setEnabled(true);
     gLineTracer.setPid(BackTraceKp, BackTraceKi, BackTraceKd, BackTraceOutMax);
     gLineTracer.setScale(BackTraceScale);
-    gLineTracer.setEdgeFollow(false);
+    gLineTracer.setEdgeFollow(false);  /* 右エッジ */
 
-    /* 旋回直後は低速で線に乗せる。 */
+    /* ログ間引き用。走行の終了条件には使わない。 */
+    uint32_t steps = 0U;
+
+    /* 開始直後は低速で線に乗せる。 */
     gLineTracer.setBaseSpeed((float)BackSlowTracePower, (float)BackSlowTracePower);
-    for (uint32_t elapsed_ms = 0U; elapsed_ms < BackSlowTraceMs;
-         elapsed_ms += StepMs) {
+    for (;;) {
+      const int32_t traveled_deg =
+          gMotors.traveledDegFrom(enc_left_base, enc_right_base);
+      logBackTraceEncoder("slow", traveled_deg, BackSlowTraceDeg, steps);
+      if (traveled_deg >= BackSlowTraceDeg) {
+        break;
+      }
       gLineTracer.step();
       dly_tsk(StepMs * 1000U);
+      steps += StepMs;
     }
 
-    uint32_t elapsed_ms = 0U;
-    while (elapsed_ms < BackToEndMs) {
-      int trace_power = BackTracePower;
-      if (elapsed_ms < BackTraceDecelMs) {
+    int trace_power = BackTracePower;
+    for (;;) {
+      const int32_t traveled_deg =
+          gMotors.traveledDegFrom(enc_left_base, enc_right_base);
+      logBackTraceEncoder("main", traveled_deg, BackToEndDeg, steps);
+      if (traveled_deg >= BackToEndDeg) {
+        break;
+      }
+
+      if (traveled_deg < BackTraceDecelDeg) {
         trace_power = BackTracePower -
-                      (int)((float)elapsed_ms / (float)BackTraceDecelMs *
+                      (int)((float)traveled_deg / (float)BackTraceDecelDeg *
                             (float)(BackTracePower - BackTraceEndPower));
       } else {
         trace_power = BackTraceEndPower;
@@ -618,9 +666,9 @@ void Nansho1Scene::run()
       gLineTracer.setBaseSpeed((float)trace_power, (float)trace_power);
       gLineTracer.step();
       dly_tsk(StepMs * 1000U);
-      elapsed_ms += StepMs;
+      steps += StepMs;
     }
-    gGyro.reset();
+    gGyro.reset(GyroResetOffsetDeg);
     gMotors.stop();
   }
   gLineTracer.setEnabled(false);
@@ -629,7 +677,7 @@ void Nansho1Scene::run()
   /* ② 円の方向へ旋回。reset は旋回後に明示。 */
   turnToHeading(PreWigwagTurnDeg);
   dly_tsk(StepMs * 1000U);
-  gGyro.reset();
+  gGyro.reset(GyroResetOffsetDeg);
   /* 指定時間だけ前進してから走査を始める（wigwag 直進と同じ共通処理）。 */
   beginBalancedStraight(LeftPower, RightPower, 0.0f);
   for (uint32_t elapsed_ms = 0U; elapsed_ms < ForwardBeforeScanMs;

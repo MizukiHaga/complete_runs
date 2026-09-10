@@ -7,6 +7,9 @@
 
 #include "app.h"
 
+/* Nansho3 のカルマン Q/R をそのまま使うため（シーン11・12） */
+#include "Nansho3.h"
+
 class TestScene {
 public:
   /* ETROBO_SCENE==6: スカイブルーLT → 時間制御直進 → Nansho1〜3
@@ -14,8 +17,8 @@ public:
    * ETROBO_SCENE==8: 直進＋90°旋回を繰り返す四角走行（無限ループ）
    * ETROBO_SCENE==9: 前後往復（カルマン効果確認・台形減速）
    * ETROBO_SCENE==10: 直進のみ（0°・ヨー補正・台形減速・カルマンログ）
-   * ETROBO_SCENE==11: Nansho3 直進と同じパワー・PI（0°・周期補正・減速なし）
-   * ETROBO_SCENE==12: 直進のみ（Nansho3 と同じ 780 枠・380 クルーズ＋400 減速・coast。旋回なし） */
+   * ETROBO_SCENE==11: Nansho3 直進と同じパワー・PI（0°・周期補正・距離で終了・減速なし）
+   * ETROBO_SCENE==12: 直進のみ（Nansho3 と同じ距離枠・クルーズ後に減速して coast。旋回なし） */
   void run();
 
 private:
@@ -99,24 +102,37 @@ private:
   /* === Nansho3 直進コピー（ETROBO_SCENE==11）
    * 目標ヨーは常に 0° を明示指定（走り出しで現在角を掴み直さない） === */
   static constexpr int      Nansho3StraightPower    = 75;
-  static constexpr float    Nansho3StraightKp       = 2.2f;
-  static constexpr float    Nansho3StraightKi       = 0.1f;
+  static constexpr float    Nansho3StraightKp       = 3.0f;
+  static constexpr float    Nansho3StraightKi       = 0.07f;
   static constexpr float    Nansho3StraightIMax     = 50.0f;
   static constexpr float    Nansho3StraightTargetDeg = 0.0f;
-  static constexpr uint32_t Nansho3StraightMs       = 15000U;
+  /* 走行距離 [deg]。左右エンコーダの絶対値平均で判定する。
+   * 旧設定のパワー75・750ms 相当 */
+  static constexpr int32_t  Nansho3StraightDeg      = 490;
+  /* カルマン Q/R は Nansho3 本番と同じ。ここで別値にすると
+   * 追い込んだ結果が Nansho3 に移らない */
+  static constexpr float    Nansho3StraightProcessNoise =
+      Nansho3Scene::KalmanProcessNoise;
+  static constexpr float    Nansho3StraightMeasNoise    =
+      Nansho3Scene::KalmanMeasNoise;
 
   /* === Nansho3 直進の減速コピー（ETROBO_SCENE==12）
-   * 直進のみ。旋回なし。枠 CoreStraightMs、クルーズ後 decelToStop+coast === */
+   * 直進のみ。旋回なし。枠 CoreStraightDeg、クルーズ後 decelToStop+coast === */
   static constexpr int      Nansho3DecelPower         = 75;
-  static constexpr float    Nansho3DecelKp            = 1.5f;
-  static constexpr float    Nansho3DecelKi            = 0.01f;
+  static constexpr float    Nansho3DecelKp            = 3.0f;
+  static constexpr float    Nansho3DecelKi            = 0.07f;
   static constexpr float    Nansho3DecelIMax          = 18.0f;
   static constexpr float    Nansho3DecelDeadbandDeg   = 0.8f;
-  static constexpr uint32_t Nansho3DecelTotalMs       = 860U;
+  /* Nansho3 の CoreStraightDeg / CoreStraightDecelDeg と同じ値にする */
+  static constexpr int32_t  Nansho3DecelTotalDeg      = 370;
+  static constexpr int32_t  Nansho3DecelDeg           = 150;
   static constexpr uint32_t Nansho3DecelMs            = 400U;
   static constexpr uint32_t Nansho3DecelStepMs        = 100U;
-  static constexpr float    Nansho3DecelProcessNoise  = 8.0f;
-  static constexpr float    Nansho3DecelMeasNoise     = 100.0f;
+  /* カルマン Q/R は Nansho3 本番と同じ */
+  static constexpr float    Nansho3DecelProcessNoise  =
+      Nansho3Scene::KalmanProcessNoise;
+  static constexpr float    Nansho3DecelMeasNoise     =
+      Nansho3Scene::KalmanMeasNoise;
 };
 
 #ifdef __cplusplus

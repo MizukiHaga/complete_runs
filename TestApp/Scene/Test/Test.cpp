@@ -158,6 +158,7 @@ void TestScene::runStraightOnlyTest()
 void TestScene::runNansho3StraightTest()
 {
   gGyro.reset();
+  gGyro.setKalmanNoise(Nansho3StraightProcessNoise, Nansho3StraightMeasNoise);
   /* 周期補正は目標確定＋run のあと。先に回すと掴み直し競合の余地がある */
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
 
@@ -165,10 +166,15 @@ void TestScene::runNansho3StraightTest()
   gMotors.setBalancePid(Nansho3StraightKp, Nansho3StraightKi,
                         Nansho3StraightIMax);
   gMotors.setTargetHeading(Nansho3StraightTargetDeg);
+  const int32_t enc_left_base  = gMotors.leftEncoderCount();
+  const int32_t enc_right_base = gMotors.rightEncoderCount();
   gMotors.run(Nansho3StraightPower, Nansho3StraightPower);
   sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
 
-  dly_tsk(Nansho3StraightMs * 1000U);
+  while (gMotors.traveledDegFrom(enc_left_base, enc_right_base) <
+         Nansho3StraightDeg) {
+    dly_tsk(StepMs * 1000U);
+  }
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gMotors.stop();
   dly_tsk(StepMs * 1000U);
@@ -185,18 +191,19 @@ void TestScene::runNansho3DecelStraightTest()
   gMotors.setBalancePid(Nansho3DecelKp, Nansho3DecelKi, Nansho3DecelIMax,
                         Nansho3DecelDeadbandDeg);
   gMotors.setTargetHeading(0.0f);
+  const int32_t enc_left_base  = gMotors.leftEncoderCount();
+  const int32_t enc_right_base = gMotors.rightEncoderCount();
   gMotors.run(Nansho3DecelPower, Nansho3DecelPower);
   sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
 
-  uint32_t decel = Nansho3DecelMs;
-  if (decel > Nansho3DecelTotalMs) {
-    decel = Nansho3DecelTotalMs;
+  int32_t cruise = Nansho3DecelTotalDeg - Nansho3DecelDeg;
+  if (cruise < 0) {
+    cruise = 0;
   }
-  const uint32_t cruise = Nansho3DecelTotalMs - decel;
-  if (cruise > 0U) {
-    dly_tsk(cruise * 1000U);
+  while (gMotors.traveledDegFrom(enc_left_base, enc_right_base) < cruise) {
+    dly_tsk(StepMs * 1000U);
   }
-  gMotors.decelToStop(decel, Nansho3DecelStepMs, /*coast_end=*/true);
+  gMotors.decelToStop(Nansho3DecelMs, Nansho3DecelStepMs, /*coast_end=*/true);
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   dly_tsk(StepMs * 1000U);
 }

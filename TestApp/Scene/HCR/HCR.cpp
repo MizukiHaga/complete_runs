@@ -116,7 +116,7 @@ void HCR::LineTrace()
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
-  /* L=右エッジ, R=左エッジ（Nansho2 と同じ） */
+  /* L=右エッジ, R=左エッジ */
   gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(3500 * 1000);
@@ -305,8 +305,8 @@ void HCR::SpeedUp(float left_speed, float right_speed, float duration_sec, float
 
 void HCR::ShortCutRun()
 {
-  /* L=右エッジ, R=左エッジ（Nansho2 と同じ） */
-  gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
+  /* L=右エッジ, R=左エッジ */
+  gLineTracer.setEdgeFollow(ETROBO_COURSE_L != 0);
   gLineTracer.setBaseSpeed(80.0f, 80.0f);
   gLineTracer.setPid(0.05f,0.0004f,0.3f, 100.0f);
   gLineTracer.setScale(4.5f);

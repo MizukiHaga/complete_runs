@@ -45,9 +45,10 @@ void Gyro::setKalmanNoise(float process_noise_deg2_per_s,
   }
 }
 
-void Gyro::reset()
+void Gyro::reset(float offset_deg)
 {
   hub_imu_reset_heading();
+  heading_offset_ = offset_deg;
   kf_angle_    = 0.0f;
   kf_variance_ = kf_r_;
   SYSTIM now     = 0U;
@@ -105,7 +106,7 @@ void Gyro::updateKalman() const
 float Gyro::heading() const
 {
   updateKalman();
-  return kf_angle_;
+  return kf_angle_ + heading_offset_;
 }
 
 float Gyro::rawHeading() const

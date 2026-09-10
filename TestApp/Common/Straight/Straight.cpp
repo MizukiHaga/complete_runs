@@ -10,8 +10,28 @@
 #include <math.h>
 #include <stdio.h>
 
+/* pup_motor_get_count() は pbio のサーボ更新ループが動いているときしか値を返さない。
+ * set_power (dcmotor duty) を呼ぶとサーボが親から切り離されて更新ループが止まり、
+ * 以降 get_count は常に 0 になる。走行中に距離を測るため回転センサを直接読む。 */
+extern "C" {
+#include <pbio/tacho.h>
+}
+
 extern Straight gMotors;
 extern Gyro     gGyro;
+
+/* 回転センサの角度 [deg]。取得できなければ 0。 */
+static int32_t tachoDeg(pup_motor_t *motor)
+{
+  if (motor == nullptr) {
+    return 0;
+  }
+  pbio_angle_t angle;
+  if (pbio_tacho_get_angle(motor->tacho, &angle) != PBIO_SUCCESS) {
+    return 0;
+  }
+  return (angle.rotations * 360) + (angle.millidegrees / 1000);
+}
 
 float Straight::clampFloat(float value, float min_value, float max_value)
 {
@@ -301,6 +321,26 @@ void Straight::resetEncoderCount()
   if (right_ != nullptr) {
     pup_motor_reset_count(right_);
   }
+  /* reset_count が効いても効かなくても、ここを 0 点として扱えるようにする。 */
+  enc_zero_left_  = tachoDeg(left_);
+  enc_zero_right_ = tachoDeg(right_);
+}
+
+int32_t Straight::leftEncoderCount() const
+{
+  return tachoDeg(left_);
+}
+
+int32_t Straight::rightEncoderCount() const
+{
+  return tachoDeg(right_);
+}
+
+int32_t Straight::traveledDegFrom(int32_t left_base, int32_t right_base) const
+{
+  const int32_t left_diff  = tachoDeg(left_)  - left_base;
+  const int32_t right_diff = tachoDeg(right_) - right_base;
+  return (absEncoderDeg(left_diff) + absEncoderDeg(right_diff)) / 2;
 }
 
 int32_t Straight::straightEncoderDeg(int left_power, int right_power) const
@@ -308,14 +348,9 @@ int32_t Straight::straightEncoderDeg(int left_power, int right_power) const
   if (left_ == nullptr || right_ == nullptr) {
     return 0;
   }
-  const int32_t lc = pup_motor_get_count(left_);
-  const int32_t rc = pup_motor_get_count(right_);
-
-  if (isSameStraightPower(left_power, right_power)) {
-    return (absEncoderDeg(lc) + absEncoderDeg(rc)) / 2;
-  }
-
-  return (absEncoderDeg(lc) + absEncoderDeg(rc)) / 2;
+  (void)left_power;
+  (void)right_power;
+  return traveledDegFrom(enc_zero_left_, enc_zero_right_);
 }
 
 bool Straight::straightEncoderReached(int left_power, int right_power,
@@ -327,8 +362,8 @@ bool Straight::straightEncoderReached(int left_power, int right_power,
   if (target_deg <= 0) {
     return true;
   }
-  const int32_t lc = pup_motor_get_count(left_);
-  const int32_t rc = pup_motor_get_count(right_);
+  const int32_t lc = tachoDeg(left_)  - enc_zero_left_;
+  const int32_t rc = tachoDeg(right_) - enc_zero_right_;
 
   if (isSameStraightPower(left_power, right_power)) {
     return (absEncoderDeg(lc) + absEncoderDeg(rc)) / 2 >= absEncoderDeg(target_deg);
@@ -354,6 +389,8 @@ void Straight::beginBalancedEncoderRun()
   if (right_ != nullptr) {
     pup_motor_reset_count(right_);
   }
+  enc_zero_left_  = tachoDeg(left_);
+  enc_zero_right_ = tachoDeg(right_);
 }
 
 void Straight::endBalancedEncoderRun()
@@ -365,6 +402,9 @@ void Straight::endBalancedEncoderRun()
     pup_motor_brake(right_);
   }
   syncStoppedState();
+  /* begin で止めた周期補正を戻す。戻さないと、以降の runForMs のように
+   * 指令を 1 回置いて待つ直進でヨー補正が更新されなくなる。 */
+  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
 }
 
 void Straight::runBalancedEncoderFor(int left_power, int right_power,
@@ -437,8 +477,8 @@ bool Straight::encoderReached(int left_power, int right_power, int32_t target_de
   if (left_ == nullptr || right_ == nullptr) {
     return false;
   }
-  const int32_t lc = pup_motor_get_count(left_);
-  const int32_t rc = pup_motor_get_count(right_);
+  const int32_t lc = tachoDeg(left_)  - enc_zero_left_;
+  const int32_t rc = tachoDeg(right_) - enc_zero_right_;
 
   if (isSameStraightPower(left_power, right_power)) {
     const int32_t l_abs = absEncoderDeg(lc);
@@ -469,10 +509,7 @@ void Straight::runFor(int left_power, int right_power, int32_t target_deg)
   const int l_pwr = clampMotorPower(left_power);
   const int r_pwr = clampMotorPower(right_power);
 
-  pup_motor_brake(left_);
-  pup_motor_brake(right_);
-  pup_motor_reset_count(left_);
-  pup_motor_reset_count(right_);
+  resetEncoderCount();
   pup_motor_set_power(left_, l_pwr);
   pup_motor_set_power(right_, r_pwr);
 

@@ -48,7 +48,6 @@ public:
   /* 1 周期あたりの左右パワー差 |L-R| の上限。
    * ここが小さいと Kp を上げても trim が頭打ちになり挙動が変わらない。 */
   static constexpr int      MaxHeadingTrim     = 40;
-  static constexpr uint32_t BalanceStepMs      = 10U;
 
   void configure(pbio_port_id_t left_motor_port, pbio_port_id_t right_motor_port);
 
@@ -115,6 +114,15 @@ public:
   void tickCorrection();
 
   void resetEncoderCount();
+  /* 左右エンコーダの生カウント [deg]（符号つき）。回転センサを直接読むので、
+   * set_power で走らせている最中（LT 中など）でも値が進む。
+   * 呼び出し側で開始値を控えて差分を取れば、reset なしで距離を測れる。 */
+  int32_t leftEncoderCount() const;
+  int32_t rightEncoderCount() const;
+  /* 開始時に控えた生カウントからの走行距離 [deg]（左右の絶対値平均）。
+   * 走行を止めずに測れるので、LT 中や連続直進の途中でも使える。
+   * 車輪 56mm なら 360deg ≒ 176mm（約 0.49mm/deg）。 */
+  int32_t traveledDegFrom(int32_t left_base, int32_t right_base) const;
   int32_t straightEncoderDeg(int left_power, int right_power) const;
   bool straightEncoderReached(int left_power, int right_power,
                               int32_t target_deg) const;
@@ -145,6 +153,11 @@ private:
 
   pup_motor_t *left_ = nullptr;
   pup_motor_t *right_ = nullptr;
+
+  /* resetEncoderCount() 時点の生カウント。pup_motor_reset_count() は
+   * サーボ更新ループが止まっていると効かないので、ソフト側でも 0 点を持つ。 */
+  int32_t enc_zero_left_  = 0;
+  int32_t enc_zero_right_ = 0;
 
   float   target_heading_   = 0.0f;
   float   integral_         = 0.0f;
