@@ -154,6 +154,60 @@ void TestScene::runStraightOnlyTest()
   dly_tsk(StepMs * 1000U);
 }
 
+/* Nansho3 直進コピー。目標 0° を先に確定してから周期補正を開始する */
+void TestScene::runNansho3StraightTest()
+{
+  gGyro.reset();
+  gGyro.setKalmanNoise(Nansho3StraightProcessNoise, Nansho3StraightMeasNoise);
+  /* 周期補正は目標確定＋run のあと。先に回すと掴み直し競合の余地がある */
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+
+  gMotors.setHeadingCorrection(true);
+  gMotors.setBalancePid(Nansho3StraightKp, Nansho3StraightKi,
+                        Nansho3StraightIMax);
+  gMotors.setTargetHeading(Nansho3StraightTargetDeg);
+  const int32_t enc_left_base  = gMotors.leftEncoderCount();
+  const int32_t enc_right_base = gMotors.rightEncoderCount();
+  gMotors.run(Nansho3StraightPower, Nansho3StraightPower);
+  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
+
+  while (gMotors.traveledDegFrom(enc_left_base, enc_right_base) <
+         Nansho3StraightDeg) {
+    dly_tsk(StepMs * 1000U);
+  }
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  gMotors.stop();
+  dly_tsk(StepMs * 1000U);
+}
+
+/* 直進のみ。Nansho3 と同じ減速。目標 0° を先に確定してから周期補正を開始 */
+void TestScene::runNansho3DecelStraightTest()
+{
+  gGyro.reset();
+  gGyro.setKalmanNoise(Nansho3DecelProcessNoise, Nansho3DecelMeasNoise);
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+
+  gMotors.setHeadingCorrection(true);
+  gMotors.setBalancePid(Nansho3DecelKp, Nansho3DecelKi, Nansho3DecelIMax,
+                        Nansho3DecelDeadbandDeg);
+  gMotors.setTargetHeading(0.0f);
+  const int32_t enc_left_base  = gMotors.leftEncoderCount();
+  const int32_t enc_right_base = gMotors.rightEncoderCount();
+  gMotors.run(Nansho3DecelPower, Nansho3DecelPower);
+  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
+
+  int32_t cruise = Nansho3DecelTotalDeg - Nansho3DecelDeg;
+  if (cruise < 0) {
+    cruise = 0;
+  }
+  while (gMotors.traveledDegFrom(enc_left_base, enc_right_base) < cruise) {
+    dly_tsk(StepMs * 1000U);
+  }
+  gMotors.decelToStop(Nansho3DecelMs, Nansho3DecelStepMs, /*coast_end=*/true);
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  dly_tsk(StepMs * 1000U);
+}
+
 /* Nansho1 と同じピボット旋回（経過角で終了、ジャイロ reset はしない） */
 void TestScene::turnToHeading(float target_heading, float tolerance_deg)
 {
@@ -270,6 +324,10 @@ void TestScene::run()
   runKalmanPingPongLoop();
 #elif ETROBO_SCENE == 10
   runStraightOnlyTest();
+#elif ETROBO_SCENE == 11
+  runNansho3StraightTest();
+#elif ETROBO_SCENE == 12
+  runNansho3DecelStraightTest();
 #else
   runLineTraceUntilSkyblueThenStraight();
 #endif

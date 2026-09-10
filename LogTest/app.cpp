@@ -97,7 +97,7 @@ void main_task(intptr_t unused)
   /* IMU 方位ログ。ANGLE_KALMAN_ENABLE / Angle_SetKalmanEnabled でカルマン ON/OFF。 */
   Angle_Init(bt_out);
   Angle_SetKalmanEnabled(ANGLE_KALMAN_ENABLE);
-  sta_cyc(ANGLE_TASK_CYC);
+  //sta_cyc(ANGLE_TASK_CYC);
 
   /* カラーセンサ(E) 等。未接続だと get_device がブロックする。
    * Angle は上で既に周期起動済みなので、ここで止まっても IMU_h は出続ける。 */
@@ -128,7 +128,7 @@ void main_task(intptr_t unused)
   Battery_Init(bt_out);
   SonicLight_Init(nullptr, SONIC_LIGHT_PORT);
 
-  //sta_cyc(MORTER_TASK_CYC);
+  sta_cyc(MORTER_TASK_CYC);
   //sta_cyc(DISTANCE_TASK_CYC);
   //sta_cyc(BATTERY_TASK_CYC);
   //sta_cyc(SONIC_LIGHT_TASK_CYC);

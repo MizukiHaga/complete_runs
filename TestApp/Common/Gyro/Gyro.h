@@ -25,15 +25,23 @@
 
 class Gyro {
 public:
-  /* プロセスノイズ [deg^2/s] と観測ノイズ [deg^2] の既定値。 */
+  /* プロセスノイズ Q [deg^2/s] と観測ノイズ R [deg^2] の既定値。
+   * Q↑ / R↓: hub 方位に追従（旋回は速い、直進で観測ドリフトに引っ張られやすい）
+   * Q↓ / R↑: 角速度予測を信頼（直進が安定、旋回で遅れやすい）
+   * Nansho3 は Scene 側の KalmanProcessNoise / KalmanMeasNoise で上書きする。 */
   static constexpr float DefaultKalmanProcessNoise = 4.0f;
-  static constexpr float DefaultKalmanMeasNoise    = 25.0f;
+  static constexpr float DefaultKalmanMeasNoise    = 100.0f;
+  /* ハブの後傾 [deg]。未設定だと 3D heading が直進中に流れる。LogTest と同じ。 */
+  static constexpr float TiltDeg = 51.0f;
 
   void init();
   bool isReady() const;
 
-  /* 現在ヨー角を 0° にリセットする。 */
-  void reset();
+  /* 現在ヨー角をリセットする。
+   * offset_deg を渡すと、リセット直後の heading() が 0° ではなく
+   * offset_deg になる（CW 正）。この下駄は次の reset まで載り続ける。
+   * 例: offset_deg = -2 なら、目標 0° の直進で車体は 2° CW（右）へ向く。 */
+  void reset(float offset_deg = 0.0f);
 
   /* カルマンフィルタのノイズ係数を変更する（実行時チューニング用）。 */
   void setKalmanNoise(float process_noise_deg2_per_s,
@@ -68,6 +76,10 @@ private:
 
   float kf_q_ = DefaultKalmanProcessNoise;
   float kf_r_ = DefaultKalmanMeasNoise;
+
+  /* reset(offset_deg) で載せる下駄 [deg]。heading() にだけ足す。
+   * カルマンの内部状態は 0 基準のままなので、観測で消えることはない。 */
+  float heading_offset_ = 0.0f;
 
   mutable float  kf_angle_    = 0.0f;
   mutable float  kf_variance_ = DefaultKalmanMeasNoise;

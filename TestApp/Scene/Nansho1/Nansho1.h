@@ -16,8 +16,8 @@
 class Nansho1Scene {
 public:
   /* === シーンの流れ ===========================================
-   *  ⓪ 開始時: InitialBlackTurnDeg 旋回（開始 LT なし）
-   *  ① 旋回後に低速 LT → 本線 LT で円の終端まで移動 (固定時間 BackToEndMs)
+   *  ⓪ 開始時: ジャイロ初期化 → InitialBlackTurn(180°) → その後 LT
+   *  ① 低速 LT → 本線 LT で円の終端まで移動 (エンコーダ距離 BackToEndDeg)
    *  ② 円の方向へ旋回 (右 90°)、旋回後の向きを 0° にリセット、
    *     指定時間 (ForwardBeforeScanMs) 前進
    *  ③ 1回目走査 (LR共通で Right): 検知 → 灰色まで → finishAfterDetect(Right=180°) → ⑦
@@ -120,15 +120,18 @@ private:
   /* ③ 1回目 wig走査 → ④ 反対読み → ⑤ 2回目 wig走査。検知時 true。 */
   bool runWigwagScanPhases();
 
-  /* 開始時: ジャイロ初期化 → InitialBlackTurnDeg 旋回（開始 LT なし）。 */
+  /* 開始時: ジャイロ初期化のみ（旋回なし。低速 LT から開始）。 */
    void runInitialForwardTrace();
 
-  /* 最終黒線読み後: 指定方向に 90° 旋回 → 青線までライントレース。 */
+  /* 最終黒線読み後: 指定方向に 90° 旋回 → LT → SKYBLUE で停止。 */
   void runAfterFinalBlackLine();
   void turnAfterFinalBlackLine();
 
+  /* ① のエンコーダ距離ログ（調整用）。 */
+  static void logBackTraceEncoder(const char *phase, int32_t traveled_deg,
+                                  int32_t target_deg, uint32_t steps);
+
   /* === ⓪ 開始時 (ライントレース) パラメータ */
-  static constexpr float    InitialTracePower   = 33.0f;
   static constexpr float    InitialTraceKp      = 0.30f;
   static constexpr float    InitialTraceKi      = 0.01f;
   static constexpr float    InitialTraceKd      = 0.8f;
@@ -136,44 +139,65 @@ private:
   static constexpr float    InitialTraceScale   = 1.0f;  /* HCR 後も自前 PID を維持 */
   static constexpr float    InitialBlackTurnDeg = 180.0f;
 
-  /* === ⑦ 最終黒線読み後 (青線ライントレース) パラメータ */
-  /* 黒線読み後の旋回方向: true=左旋回, false=右旋回。試合前にここだけ変更する。 */
-  static constexpr bool     FinalBlackTurnLeft            = (ETROBO_COURSE_L == 0);
-  static constexpr float    FinalBlueTraceTurnDeg           = 90.0f;
+  /* === ⑦ 最終黒線読み後 (旋回 → LT → SKYBLUE) パラメータ */
+  /* 黒線読み後の旋回。L と R を鏡像にせず、それぞれ独立に設定する。
+   * 旋回角は現在角からの相対量 [deg]（CW 正 = 右旋回, 負 = 左旋回）。
+   * パワーは左右モータへそのまま入る値（正 = 前進, 負 = 後退）。
+   * 試合前にこの 6 個だけ調整する。 */
+  /* R コース（ETROBO_COURSE_L が 1） */
+  static constexpr float    FinalBlueTraceTurnDegR        =  90.0f;
+  static constexpr int      FinalBlueTraceTurnLeftPowerR  =  60;
+  static constexpr int      FinalBlueTraceTurnRightPowerR = -40;
+  /* L コース（ETROBO_COURSE_L が 0） */
+  static constexpr float    FinalBlueTraceTurnDegL        = -90.0f;
+  static constexpr int      FinalBlueTraceTurnLeftPowerL  = -40;
+  static constexpr int      FinalBlueTraceTurnRightPowerL =  60;
+
+  /* 実際に使う値。上のどちらかが選ばれるだけなので、ここは触らない。 */
+  static constexpr float    FinalBlueTraceTurnDeg =
+      ETROBO_COURSE_L ? FinalBlueTraceTurnDegR : FinalBlueTraceTurnDegL;
+  static constexpr int      FinalBlueTraceTurnLeftPower =
+      ETROBO_COURSE_L ? FinalBlueTraceTurnLeftPowerR
+                      : FinalBlueTraceTurnLeftPowerL;
+  static constexpr int      FinalBlueTraceTurnRightPower =
+      ETROBO_COURSE_L ? FinalBlueTraceTurnRightPowerR
+                      : FinalBlueTraceTurnRightPowerL;
   static constexpr float    FinalBlueTraceTurnToleranceDeg  = 1.0f;
   static constexpr uint32_t FinalBlueTraceTurnMaxMs         = 8000U;
-  static constexpr int      FinalBlueTraceTurnSign =
-      FinalBlackTurnLeft ? -1 : 1;
-  /* 黒線読み後の旋回パワー（左右を独立に調整）。
-   * 値は正の大きさを入れる。符号は FinalBlackTurnLeft で自動付与。 */
-  static constexpr int      FinalBlueTraceTurnLeftPowerMag  = 33;
-  static constexpr int      FinalBlueTraceTurnRightPowerMag = 43;
-  static constexpr int      FinalBlueTraceTurnLeftPower =
-      FinalBlackTurnLeft ? -FinalBlueTraceTurnLeftPowerMag : FinalBlueTraceTurnLeftPowerMag;
-  static constexpr int      FinalBlueTraceTurnRightPower =
-      FinalBlackTurnLeft ? FinalBlueTraceTurnRightPowerMag : -FinalBlueTraceTurnRightPowerMag;
   /* 旋回直後の低速 LT（本線 LT の前に線へ乗せる）。 */
   static constexpr float    FinalSlowTracePower  = 35.0f;
-  static constexpr uint32_t FinalSlowTraceMs     = 600U;
+  static constexpr uint32_t FinalSlowTraceMs     = 800U;
   static constexpr float    FinalSlowTraceKp     = 0.30f;
   static constexpr float    FinalSlowTraceKi     = 0.01f;
   static constexpr float    FinalSlowTraceKd     = 0.8f;
   static constexpr float    FinalSlowTraceOutMax = 100.0f;
   static constexpr float    FinalSlowTraceScale  = 1.0f;
-  /* 本線 LT（青線まで）。 */
+  /* 本線 LT（SKYBLUE/BLUE 検知で終了）。 */
   static constexpr float    FinalBlueTracePower             = 70.0f;
   static constexpr float    FinalBlueTraceKp                = 0.65f;
   static constexpr float    FinalBlueTraceKi                = 0.0005f;
   static constexpr float    FinalBlueTraceKd                = 0.85f;
   static constexpr float    FinalBlueTraceOutMax            = 100.0f;
   static constexpr float    FinalBlueTraceScale             = 1.0f;
+  /* 追従エッジ: L=左エッジ / R=右エッジ */
+  static constexpr bool     FinalBlueTraceEdgeFollow = (ETROBO_COURSE_L == 1);
+  /* 旋回直後の誤検知防止。低速LT中も含めた経過時間で数える [ms] */
+  static constexpr uint32_t FinalBlueTraceColorIgnoreMs     = 200U;
+  static constexpr uint32_t FinalBlueTraceMaxMs             = 15000U;
 
-  /* === ① バック・ライントレース (円の終端まで) パラメータ ========= */
+  /* === ① バック・ライントレース (円の終端まで) パラメータ =========
+   * 終了条件はエンコーダ距離。距離は左右エンコーダ [deg] の平均で、
+   * ⓪ の旋回直後（低速 LT の開始時）からの累計。
+   * 車輪 56mm なら 1 回転 360deg ≒ 176mm（約 0.49mm/deg）。 */
   /* 旋回直後の低速 LT (本線 LT の前に線へ乗せる)。 */
   static constexpr int      BackSlowTracePower = 35;
-  static constexpr uint32_t BackSlowTraceMs    = 770U;
-  /* バック・ライントレースする時間 [ms]。 */
-  static constexpr uint32_t BackToEndMs        = 700U;
+  /* 低速 LT を終える累計距離 [deg]。 */
+  static constexpr int32_t  BackSlowTraceDeg   = 190;
+  /* ① 全体を終える累計距離 [deg]（低速 LT の分を含む）。 */
+  static constexpr int32_t  BackToEndDeg       = 1600;
+  /* 調整用: エンコーダ距離をシリアルに出す。調整後は false に戻す。 */
+  static constexpr bool     BackTraceEncoderLog      = false;
+  static constexpr uint32_t BackTraceEncoderLogSteps = 200U;
   /* バック・ライントレースの左右パワー (負値で後退)。 */
   static constexpr int      BackTracePower     = 80;
   static constexpr float    BackTraceKp        = 0.6f;
@@ -181,13 +205,13 @@ private:
   static constexpr float    BackTraceKd        = 0.8f;
   static constexpr float    BackTraceOutMax    = 100.0f;
   static constexpr float    BackTraceScale     = 1.0f;
-  /* バック LT 中の減速: DecelMs かけて Power → EndPower へ線形に下げる。 */
+  /* バック LT 中の減速: DecelDeg 進む間に Power → EndPower へ線形に下げる。 */
   static constexpr int      BackTraceEndPower  = 30;
-  static constexpr uint32_t BackTraceDecelMs   = 3200U;
+  static constexpr int32_t  BackTraceDecelDeg  = 2550;
 
   /* === 検知共通パラメータ ==================================== */
   /* 走査検知: 超音波距離がこの値以下なら障害物ありとみなす [mm]。 */
-  static constexpr int32_t  DetectMaxMm        = 210;
+  static constexpr int32_t  DetectMaxMm        = 320;
 
   /* === 旋回走査 (wigwag) パラメータ ========================== */
   /* 1 方向あたりの「規定回数」サイクル数。９
@@ -207,9 +231,9 @@ private:
   static constexpr int      ScanTurnPower          = 40;
   /* 走査旋回の許容幅 [deg] (大きいほど早めに到達扱い)。 */
   /* 側方 90° への往路旋回 */
-  static constexpr float    WigWagOutToleranceDeg    = 4.0f;
+  static constexpr float    WigWagOutToleranceDeg    = 6.0f;
   /* 正面へ戻る復路旋回 */
-  static constexpr float    WigWagReturnToleranceDeg = 4.0f;
+  static constexpr float    WigWagReturnToleranceDeg = 6.0f;
   /* スキャンを打ち切る最大経過時間 [ms] (安全用) */
   static constexpr uint32_t ScanMaxMs              = 15000U;
 
@@ -224,8 +248,10 @@ private:
 
   /* === 円の反対を読み取る動き (readOppositeSide) パラメータ === */
   static constexpr int      OppositeForwardPower       = 50;
-  static constexpr uint32_t OppositeForwardFirstMs     = 1000U; /* 1 回目直進 [ms] */
-  static constexpr uint32_t OppositeForwardSecondMs    = 1200U; /* 2 回目直進 [ms] */
+  /* 直進はエンコーダ距離で終わる。左右エンコーダ [deg] の平均で、
+   * 車輪 56mm なら 360deg ≒ 176mm（約 0.49mm/deg）。 */
+  static constexpr int32_t  OppositeForwardFirstDeg    = 360;  /* 1 回目直進 [deg] */
+  static constexpr int32_t  OppositeForwardSecondDeg   = 300;  /* 2 回目直進 [deg] */
   static constexpr int      OppositeTurnPower          = 45;
   /* 反対読み: 各セグメント開始時に reset し、旋回はその 0° 基準の相対角。
    * 1 回目旋回=±90°、2 回目旋回=±90° (1 回目 reset 後)。 */
@@ -260,22 +286,32 @@ private:
   /* 左走査 (反対読み reset 後): 黒線方向 = 正面 0°
    * (円側 0° 基準の 180° と同じ向き)。 */
   static constexpr float    DetectFinishLeftTurnDeg = 0.0f;
-  /* 超音波検知後の目標角 [deg] (旧経路用・互換)。 */
-  static constexpr float    DetectAfterSonicTurnDeg =
-      ETROBO_COURSE_L ? -90.0f : 90.0f;
-  /* 左走査検知後の角度分岐 (旧ルート用)。 */
+  /* 左走査検知後の角度分岐。|相対角| がこの値以内なら迂回ルート、
+   * 外なら 0° へ旋回して黒線まで直進。 */
   static constexpr int      DetectFinishAngleSign =
       ETROBO_COURSE_L ? -1 : 1;
   static constexpr float    DetectFinishClassicMaxDeg =
-      ETROBO_COURSE_L ? 40.0f : -40.0f;
-  /* 左走査・広い検知角 (反対読み reset 後の絶対角)。
+      ETROBO_COURSE_L ? 27.0f : -27.0f;
+  /* 左走査・迂回ルート (反対読み reset 後の絶対角)。
    * 1回目: L=-90° / R=+90° (円側 ±90° から 180° オフセット) */
   static constexpr float    DetectWideTurnFirstDeg =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   /* 2回目: 反対側 0° (= 黒線方向) */
   static constexpr float    DetectWideTurnSecondDeg = 0.0f;
-  /* 広い検知角ルート: 1回目旋回後の直進時間 [ms]。 */
+  /* 迂回ルート: 1回目旋回後の直進時間 [ms]。 */
   static constexpr uint32_t DetectMidForwardMs          = 1500U;
+
+  /* === ジャイロ reset の下駄 [deg] =========================== */
+  /* Nansho1 の gGyro.reset() すべてに載せる。CW 正。
+   * reset 直後の heading() が 0° ではなくこの値になるので、
+   * 目標 0° の直進は車体をこの符号と逆へ向ける。
+   * -2 なら車体は 2° CW（右）。左へずらしたいなら正にする。
+   * L と R は鏡像にせず、それぞれ独立に設定する。 */
+  static constexpr float    GyroResetOffsetDegR = 1.7f;  /* R コース */
+  static constexpr float    GyroResetOffsetDegL = -1.0f;  /* L コース */
+  /* 実際に使う値。ここは触らない。 */
+  static constexpr float    GyroResetOffsetDeg =
+      ETROBO_COURSE_L ? GyroResetOffsetDegR : GyroResetOffsetDegL;
 
   /* === 制御ループ周期 [ms] =================================== */
   static constexpr uint32_t StepMs             = 1U;

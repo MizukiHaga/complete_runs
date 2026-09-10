@@ -22,6 +22,7 @@ static constexpr uint32_t kReadyPollMs = 10U;
 void Gyro::init()
 {
   hub_imu_init();
+  hub_imu_set_tilt(TiltDeg);
   while (!hub_imu_is_ready()) {
     dly_tsk(kReadyPollMs * 1000U);
   }
@@ -44,9 +45,10 @@ void Gyro::setKalmanNoise(float process_noise_deg2_per_s,
   }
 }
 
-void Gyro::reset()
+void Gyro::reset(float offset_deg)
 {
   hub_imu_reset_heading();
+  heading_offset_ = offset_deg;
   kf_angle_    = 0.0f;
   kf_variance_ = kf_r_;
   SYSTIM now     = 0U;
@@ -104,7 +106,7 @@ void Gyro::updateKalman() const
 float Gyro::heading() const
 {
   updateKalman();
-  return kf_angle_;
+  return kf_angle_ + heading_offset_;
 }
 
 float Gyro::rawHeading() const

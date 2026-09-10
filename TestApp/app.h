@@ -20,15 +20,18 @@ extern "C" {
  *   2: Nansho2 のみ
  *   3: HCR のみ
  *   4: Nansho3 のみ
- *   5: Nansho1 → Nansho2（HCRなし）
+ *   5: Nansho1 → Nansho2 → Nansho3（HCRなし）
  *   6: Test → Nansho1 → Nansho2 → Nansho3（LT前段つき）
  *   7: Test のみ（時間制御直進テスト。0°・ヨー補正）
  *   8: Test のみ（直進＋90°旋回の四角走行ループ）
  *   9: Test のみ（前後往復・カルマン確認・台形減速）
- *  10: Test のみ（直進のみ・0°・ヨー補正・台形減速・カルマンログ）
+ *   10: Test のみ（直進のみ・0°・ヨー補正・台形減速・カルマンログ）
+ *   11: Test のみ（Nansho3 直進と同じパワー・PI・0°・減速なし）
+ *   12: Test のみ（直進だけ。Nansho3 と同じ 1000 枠・台形減速・coast。旋回なし）
+ *   13: Nansho3 のみ（単体LT開始つき。旧 3→1 は廃止）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 0
+#define ETROBO_SCENE 4
 #endif
 
 /* タスク優先度 */

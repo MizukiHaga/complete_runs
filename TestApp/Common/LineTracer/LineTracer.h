@@ -48,7 +48,6 @@ public:
 
   /* 走行エッジの初期値 (1=左エッジ追従)。実行時は setEdgeFollow() で変更可。 */
   static constexpr int LeftEdge  = 1;
-  static constexpr int RightEdge = 0;
 
   /* === API ================================================ */
 

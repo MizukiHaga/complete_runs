@@ -84,8 +84,7 @@ void main_task(intptr_t unused)
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
   // gHCR.run_hrc();
   gHCR.AllLineTrace();
-  // act_tsk(NANSHO1_TASK);
-  act_tsk(NANSHO2_TASK);
+  act_tsk(NANSHO1_TASK);
 #elif ETROBO_SCENE == 1 || ETROBO_SCENE == 5
   act_tsk(NANSHO1_TASK);
 #elif ETROBO_SCENE == 2
@@ -93,14 +92,14 @@ void main_task(intptr_t unused)
 #elif ETROBO_SCENE == 3
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
   gHCR.run_hrc();
-#elif ETROBO_SCENE == 4
+#elif ETROBO_SCENE == 4 || ETROBO_SCENE == 13
   act_tsk(NANSHO3_TASK);
 #elif ETROBO_SCENE == 6
   act_tsk(TEST_TASK);
-#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 9 || ETROBO_SCENE == 10
+#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 9 || ETROBO_SCENE == 10 || ETROBO_SCENE == 11 || ETROBO_SCENE == 12
   act_tsk(TEST_TASK);
 #else
-#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 or 10"
+#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 or 13"
 #endif
   ext_tsk();
 }
