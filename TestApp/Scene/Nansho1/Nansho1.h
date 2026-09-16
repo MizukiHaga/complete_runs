@@ -192,7 +192,8 @@ private:
   /* 旋回直後の低速 LT (本線 LT の前に線へ乗せる)。 */
   static constexpr int      BackSlowTracePower = 35;
   /* 低速 LT を終える累計距離 [deg]。 */
-  static constexpr int32_t  BackSlowTraceDeg   = 190;
+  static constexpr int32_t  BackSlowTraceDeg   = 188;
+//   static constexpr int32_t  BackSlowTraceDeg   = 190;
   /* ① 全体を終える累計距離 [deg]（低速 LT の分を含む）。 */
   static constexpr int32_t  BackToEndDeg       = 1600;
   /* 調整用: エンコーダ距離をシリアルに出す。調整後は false に戻す。 */

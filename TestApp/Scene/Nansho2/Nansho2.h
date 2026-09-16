@@ -54,6 +54,7 @@ private:
   void runYellowRouteAfterBlue();
   void runBlueRouteAfterBlue();
   void runRedRouteAfterBlue();
+  void runRouteFinalBackCaseRed();
 
   float runBlackBlueForwardTurnRight(int black_blue_pairs = 1);
   float runShortForwardTurnRight();
@@ -241,7 +242,10 @@ private:
   /* === ② 赤ルート（右旋回後） === */
   static constexpr int      RedFinalBackPower                 = 50;   /* 赤到達後の後退パワー */
   static constexpr uint32_t RedFinalBackIgnoreMs              = 400U;
+  static constexpr float RedFinalBackHeading = 0.0f;
   /* 赤到達後、後退を始めてからライン判定を無視する時間 [ms] */
+  static constexpr float CaseRedTargetHeading = -70.0f;
+  static constexpr uint32_t CaseRedLtMaxMs = 200U;
 
   /* === ② 後退でライン検知（黄/青/赤共通） === */
   static constexpr int32_t  AfterFinalBackReflectionLineMax     = 30;
@@ -277,12 +281,12 @@ private:
   static constexpr float    FinalSlowTraceOutMax            = 100.0f;
   static constexpr float    FinalSlowTraceScale             = 1.0f;
   /* 赤ルート時の最終LT（従来の低速） */
-  static constexpr float    FinalRedSlowTracePower          = 30.0f;
-  static constexpr float    FinalRedSlowTraceKp             = 0.30f;
-  static constexpr float    FinalRedSlowTraceKi             = 0.01f;
-  static constexpr float    FinalRedSlowTraceKd             = 0.8f;
+  static constexpr float    FinalRedSlowTracePower          = 70.0f;
+  static constexpr float    FinalRedSlowTraceKp             = 0.07f;
+  static constexpr float    FinalRedSlowTraceKi             = 0.006f;
+  static constexpr float    FinalRedSlowTraceKd             = 0.5f;
   static constexpr float    FinalRedSlowTraceOutMax         = 100.0f;
-  static constexpr float    FinalRedSlowTraceScale          = 1.0f;
+  static constexpr float    FinalRedSlowTraceScale          = 15.0f;
   static constexpr bool     FinalSlowTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* FinalSlowTraceEdgeFollow: L=左エッジ, R=右エッジ */
   static constexpr uint32_t FinalSlowTraceWhiteIgnoreMs     = 500U;

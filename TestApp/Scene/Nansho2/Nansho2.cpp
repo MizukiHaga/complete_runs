@@ -426,16 +426,17 @@ void Nansho2Scene::runAfterFinalStopTurnRightAndSlowTraceToWhite()
     turn_ms += StepMs;
   }
   gMotors.stop();
-  dly_tsk(StepMs * 1000U);
+  dly_tsk(3000 * 1000U);
 
   gLineTracer.setEnabled(true);
-  if (route_branch_ == RouteBranch::Red) {
-    /* 赤: 従来の低速 LT */
-    gLineTracer.setBaseSpeed(FinalRedSlowTracePower, FinalRedSlowTracePower);
-    gLineTracer.setPid(FinalRedSlowTraceKp, FinalRedSlowTraceKi,
-                       FinalRedSlowTraceKd, FinalRedSlowTraceOutMax);
-    gLineTracer.setScale(FinalRedSlowTraceScale);
-  } else {
+  // if (route_branch_ == RouteBranch::Red) {
+  //   /* 赤: 従来の低速 LT */
+  //   gLineTracer.setBaseSpeed(FinalRedSlowTracePower, FinalRedSlowTracePower);
+  //   gLineTracer.setPid(FinalRedSlowTraceKp, FinalRedSlowTraceKi,
+  //                      FinalRedSlowTraceKd, FinalRedSlowTraceOutMax);
+  //   gLineTracer.setScale(FinalRedSlowTraceScale);
+  // } else 
+   if (true){
     gLineTracer.setBaseSpeed(FinalSlowTracePower, FinalSlowTracePower);
     gLineTracer.setPid(FinalSlowTraceKp, FinalSlowTraceKi, FinalSlowTraceKd,
                        FinalSlowTraceOutMax);
@@ -511,6 +512,44 @@ float Nansho2Scene::runBlackBlueForwardTurnRight(int black_blue_pairs)
   return runShortForwardTurnRight();
 }
 
+void Nansho2Scene::runRouteFinalBackCaseRed(){
+  gLineTracer.setEnabled(false);
+  gMotors.stop();
+  dly_tsk(StepMs * 1000U);
+  gMotors.setHeadingCorrection(true);
+  gMotors.setTargetHeading(RedFinalBackHeading);
+  gMotors.run(-RedFinalBackPower, -RedFinalBackPower);
+
+  uint32_t elapsed_ms = 0U;
+  while (elapsed_ms < CaseRedLtMaxMs) {
+    gMotors.tickCorrection();
+    // if (elapsed_ms >= ignore_ms) {
+    //   if (gColorLAB.reflection() <= AfterFinalBackReflectionLineMax) {
+    //     beepOnBlackDetected();
+    //     break;
+    //   }
+    //   if (gColorLAB.is(COLOR_DETECT_BLUE, true)) {
+    //     beepOnBlueDetected();
+    //     break;
+    //   }
+    // }
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
+  }
+
+  gMotors.setTargetHeading(CaseRedTargetHeading);
+  while(true){
+    if(gColorLAB.is(COLOR_DETECT_BLACKLINE, true) || gColorLAB.is(COLOR_DETECT_SKYBLUE, true)){
+      gMotors.stop();
+      dly_tsk(StepMs * 1000U);
+      break;
+    }
+    gMotors.run(-RedFinalBackPower,-RedFinalBackPower);
+    dly_tsk(StepMs * 1000U);
+  }
+  runAfterFinalStopTurnRightAndSlowTraceToWhite();
+}
+
 /* ボトル設置後: 旋回も前進も挟まず、後退したままラインを検知するまで下がる。
  * ignore_ms の間は判定しない（設置位置のラインを拾い直さないため）。 */
 void Nansho2Scene::runRouteFinalBack(float heading, int power,
@@ -560,10 +599,12 @@ void Nansho2Scene::runBlueRouteAfterBlue()
 void Nansho2Scene::runRedRouteAfterBlue()
 {
   const float turn_target = runBlackBlueForwardTurnRight(2);
+  // ボトルを置く位置まで前進
   runStraightAfterTurn(turn_target, RouteFinalApproachLeftPower,
                        RouteFinalApproachRightPower, RouteFinalApproachDeg);
   gGyro.reset();
-  runRouteFinalBack(0.0f, RedFinalBackPower, RedFinalBackIgnoreMs);
+  // runRouteFinalBack(0.0f, RedFinalBackPower, RedFinalBackIgnoreMs);
+  runRouteFinalBackCaseRed();
 }
 
 void Nansho2Scene::runAfterBlueByRouteBranch()
