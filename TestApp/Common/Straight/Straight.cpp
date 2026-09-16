@@ -622,15 +622,18 @@ void Straight::coast()
 void Straight::turnToHeading(float target_heading, float tolerance_deg,
                              int left_power, int right_power, uint32_t max_ms,
                              float slow_approach_deg, int slow_power,
-                             float stop_early_deg, bool coast_end)
+                             float stop_early_deg, bool coast_end,
+                             int prefer_sign)
 {
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
 
-  /* 開始時の最短角を固定し、経過角で打ち切る。
+  /* 開始時の目標差分を固定し、経過角で打ち切る。
+   * prefer_sign=0 なら最短側。±1 ならその向きに強制し、必要なら遠回りする。
    * 残りが slow_approach_deg 以内なら低速（行き過ぎ防止）。
-   * その場旋回は両輪逆符号（L+/R− または L−/R+）。 */
+   * その場旋回は両輪逆符号（L+/R− または L−/R+）。
+   * 左右のエンコーダ回転量が揃うようパワーを補正する。 */
   float prev = gGyro.heading();
   const float delta = Gyro::wrapDeg180(target_heading - prev);
   if (fabsf(delta) <= tolerance_deg) {
@@ -643,8 +646,27 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
     return;
   }
 
-  const float turn_dir = (delta > 0.0f) ? 1.0f : -1.0f;
-  const float need     = fabsf(delta);
+  float turn_dir;
+  float need;
+  if (prefer_sign > 0 || prefer_sign < 0) {
+    const float forced = (prefer_sign > 0) ? 1.0f : -1.0f;
+    if (forced * delta > 0.0f) {
+      /* 最短が計画どおり */
+      turn_dir = forced;
+      need     = fabsf(delta);
+    } else if (fabsf(delta) < 45.0f) {
+      /* 目標をわずかに通り過ぎているだけ。逆向きに大旋回せず最短で合わせる */
+      turn_dir = (delta > 0.0f) ? 1.0f : -1.0f;
+      need     = fabsf(delta);
+    } else {
+      /* 最短が計画と逆で角も大きい → 計画方向へ遠回り */
+      turn_dir = forced;
+      need     = 360.0f - fabsf(delta);
+    }
+  } else {
+    turn_dir = (delta > 0.0f) ? 1.0f : -1.0f;
+    need     = fabsf(delta);
+  }
   float       traveled = 0.0f;
   float       early    = stop_early_deg;
   if (early < 0.0f) {
@@ -653,6 +675,12 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   if (early > need) {
     early = 0.0f;
   }
+
+  const int32_t enc_l0 = tachoDeg(left_);
+  const int32_t enc_r0 = tachoDeg(right_);
+  const bool    prev_heading_correction = heading_correction_;
+  /* 旋回中は直進ヨー補正を掛けない（ピボット指令を崩さない） */
+  heading_correction_ = false;
 
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < max_ms) {
@@ -665,22 +693,57 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
       break;
     }
 
-    int lp = left_power;
-    int rp = right_power;
+    int base = left_power;
+    if (right_power < base) {
+      base = right_power;
+    }
+    if (base < 0) {
+      base = -base;
+    }
     if (slow_approach_deg > 0.0f && rem <= slow_approach_deg) {
-      lp = slow_power;
-      rp = slow_power;
+      base = slow_power;
+      if (base < 0) {
+        base = -base;
+      }
+    }
+    if (base < TurnEncBalanceMinPower) {
+      base = TurnEncBalanceMinPower;
+    }
+
+    /* |ΔL| と |ΔR| を揃える。進みすぎた側のパワーを落とす */
+    const int32_t l_abs =
+        absEncoderDeg(tachoDeg(left_) - enc_l0);
+    const int32_t r_abs =
+        absEncoderDeg(tachoDeg(right_) - enc_r0);
+    const int32_t enc_diff = l_abs - r_abs;
+
+    int l_mag = base;
+    int r_mag = base;
+    if (enc_diff > TurnEncBalanceDeadbandDeg) {
+      const int corr = clampInt(
+          static_cast<int>(TurnEncBalanceKp *
+                           static_cast<float>(enc_diff - TurnEncBalanceDeadbandDeg)),
+          0, TurnEncBalanceMaxCorr);
+      l_mag = clampInt(base - corr, TurnEncBalanceMinPower, base);
+    } else if (enc_diff < -TurnEncBalanceDeadbandDeg) {
+      const int corr = clampInt(
+          static_cast<int>(TurnEncBalanceKp *
+                           static_cast<float>(-enc_diff - TurnEncBalanceDeadbandDeg)),
+          0, TurnEncBalanceMaxCorr);
+      r_mag = clampInt(base - corr, TurnEncBalanceMinPower, base);
     }
 
     if (turn_dir > 0.0f) {
-      run(lp, -rp);
+      run(l_mag, -r_mag);
     } else {
-      run(-lp, rp);
+      run(-l_mag, r_mag);
     }
 
     dly_tsk(TurnStepMs * 1000U);
     elapsed_ms += TurnStepMs;
   }
+
+  heading_correction_ = prev_heading_correction;
 
   if (coast_end) {
     coast();

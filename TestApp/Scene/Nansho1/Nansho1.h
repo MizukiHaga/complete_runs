@@ -166,17 +166,17 @@ private:
   static constexpr uint32_t FinalBlueTraceTurnMaxMs         = 8000U;
   /* 旋回直後の低速 LT（本線 LT の前に線へ乗せる）。 */
   static constexpr float    FinalSlowTracePower  = 35.0f;
-  static constexpr uint32_t FinalSlowTraceMs     = 800U;
+  static constexpr uint32_t FinalSlowTraceMs     = 400U;
   static constexpr float    FinalSlowTraceKp     = 0.30f;
   static constexpr float    FinalSlowTraceKi     = 0.01f;
   static constexpr float    FinalSlowTraceKd     = 0.8f;
   static constexpr float    FinalSlowTraceOutMax = 100.0f;
   static constexpr float    FinalSlowTraceScale  = 1.0f;
   /* 本線 LT（SKYBLUE/BLUE 検知で終了）。 */
-  static constexpr float    FinalBlueTracePower             = 70.0f;
+  static constexpr float    FinalBlueTracePower             = 80.0f;
   static constexpr float    FinalBlueTraceKp                = 0.65f;
-  static constexpr float    FinalBlueTraceKi                = 0.0005f;
-  static constexpr float    FinalBlueTraceKd                = 0.85f;
+  static constexpr float    FinalBlueTraceKi                = 0.0001f;
+  static constexpr float    FinalBlueTraceKd                = 0.8f;
   static constexpr float    FinalBlueTraceOutMax            = 100.0f;
   static constexpr float    FinalBlueTraceScale             = 1.0f;
   /* 追従エッジ: L=左エッジ / R=右エッジ */
@@ -211,7 +211,7 @@ private:
 
   /* === 検知共通パラメータ ==================================== */
   /* 走査検知: 超音波距離がこの値以下なら障害物ありとみなす [mm]。 */
-  static constexpr int32_t  DetectMaxMm        = 320;
+  static constexpr int32_t  DetectMaxMm        = 280;
 
   /* === 旋回走査 (wigwag) パラメータ ========================== */
   /* 1 方向あたりの「規定回数」サイクル数。９
@@ -308,7 +308,7 @@ private:
    * -2 なら車体は 2° CW（右）。左へずらしたいなら正にする。
    * L と R は鏡像にせず、それぞれ独立に設定する。 */
   static constexpr float    GyroResetOffsetDegR = 1.7f;  /* R コース */
-  static constexpr float    GyroResetOffsetDegL = -1.0f;  /* L コース */
+  static constexpr float    GyroResetOffsetDegL = -1.7f;  /* L コース */
   /* 実際に使う値。ここは触らない。 */
   static constexpr float    GyroResetOffsetDeg =
       ETROBO_COURSE_L ? GyroResetOffsetDegR : GyroResetOffsetDegL;

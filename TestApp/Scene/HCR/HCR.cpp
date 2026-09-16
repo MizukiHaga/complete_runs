@@ -116,21 +116,15 @@ void HCR::LineTrace()
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
-  /* L=右エッジ, R=左エッジ */
-  gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
+  /* L=右エッジ, R=左エッジ（ShortCutRun と同じ。==0 だと R が右エッジになり曲がり切れない） */
+  gLineTracer.setEdgeFollow(ETROBO_COURSE_L != 0);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(3500 * 1000);
-  stp_cyc(LINE_TRACER_TASK_CYC);
   gGyro.reset();
-  sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(300 * 1000);
-  stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setEnabled(true);
   gLineTracer.setScale(16.0f);
-  gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
-  sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(1000 * 1000);
-  stp_cyc(LINE_TRACER_TASK_CYC);
+  /* 周期 LT は止めない。カーブ終端で制御が途切れると右へ飛ぶ */
   
   
 
@@ -150,10 +144,11 @@ void HCR::LineTrace()
 void HCR::AllLineTrace()
 {
   LineTrace();
+  /* 周期 LT が動いたまま。ここで step() すると D が二重になりカーブ終端で飛ぶ */
   while (true) {
     if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
-      gLineTracer.setBaseSpeed(50.0f, 50.0f);
-      gLineTracer.setPid(0.062f,0.0006f,0.5f, 100.0f);
+      gLineTracer.setBaseSpeed(90.0f, 90.0f);
+      gLineTracer.setPid(0.06f,0.0008f,0.6f, 100.0f);//L = 0.062f,0.0006f,0.5f, 100.0f
       gLineTracer.setScale(15.0f);
       while (true) {
         if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
@@ -163,11 +158,9 @@ void HCR::AllLineTrace()
           dly_tsk(1000 * 1000);
           return;
         }
-        gLineTracer.step();
         dly_tsk(1 * 1000);
       }
     }
-    gLineTracer.step();
     dly_tsk(5 * 1000);
   }
 }
@@ -176,7 +169,6 @@ void HCR::run_hrc()
 {
   LineTrace();
   while (gGyro.heading() > -90.0f) {
-    gLineTracer.step();
     dly_tsk(5 * 1000);
   }
   gLineTracer.setEnabled(false);

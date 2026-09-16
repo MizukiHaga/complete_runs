@@ -102,6 +102,7 @@ private:
   static constexpr uint32_t BackBeforeLowerMs    = 300U;  /* 後退時間 [ms] */
 
   /* === ⓪ アーム === */
+  static constexpr uint32_t ArmRaiseBeforeMs = 300U; /* 上げ前の待ち [ms] */
   static constexpr int      ArmRaisePower = 100;     /* 上げパワー */
   static constexpr int      ArmLowerPower = -100;  /* 下げパワー */
   static constexpr int32_t  ArmRaiseDeg   = 140;   /* 上げ角度 [deg] */
@@ -193,7 +194,7 @@ private:
 
   /* === ① 左向き旋回直後の低速LT（線に乗せる） === */
   static constexpr float    PostBlackSlowTracePower  = 35.0f; /* 低速LT パワー */
-  static constexpr uint32_t PostBlackSlowTraceMs     = 600U;  /* 低速LT 時間 [ms] */
+  static constexpr uint32_t PostBlackSlowTraceMs     = 300U;  /* 低速LT 時間 [ms] */
   static constexpr float    PostBlackSlowTraceKp     = 0.30f;
   static constexpr float    PostBlackSlowTraceKi     = 0.01f;
   static constexpr float    PostBlackSlowTraceKd     = 0.8f;

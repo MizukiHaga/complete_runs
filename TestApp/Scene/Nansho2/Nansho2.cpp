@@ -66,6 +66,7 @@ void Nansho2Scene::runShortBackBeforeLowerArm()
 
 void Nansho2Scene::raiseArm()
 {
+  dly_tsk(ArmRaiseBeforeMs * 1000U);
   gArm.raise(ArmRaisePower, ArmRaiseDeg, ArmRaiseMaxMs);
 }
 
