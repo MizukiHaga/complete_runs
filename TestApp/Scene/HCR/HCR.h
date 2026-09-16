@@ -26,6 +26,17 @@ private:
   pbio_port_id_t color_sensor_port_;
   bool configured_ = false;
   double TARGET_ANGLE = 80.0; /* 黒検知時の終了判定に使う角度 */
+  static constexpr uint32_t ignore_time = 500U;
+  uint32_t ms = 0U;
+  float hcr_90 = ETROBO_COURSE_L ? 90.0f : -90.0f;
+  float hcr_175 = ETROBO_COURSE_L ? 175.0f : -175.0f;
+  float hcr_p = ETROBO_COURSE_L ? 0.07f : 0.07f;
+  float hcr_i = 0.0006f;
+  float hcr_d = ETROBO_COURSE_L ? 0.52f : 0.52f;
+  float hcr_scale = ETROBO_COURSE_L ? 20.0f : 18.0f;
+  float hcr_p_s = ETROBO_COURSE_L ? 0.065f : 0.067f;
+  float hcr_scale_s = ETROBO_COURSE_L ? 15.0f : 16.0f;
+  float targetHeading = ETROBO_COURSE_L ? 145.0f : -145.0f;
 };
 
 #endif  // GUARD_HCR_H_

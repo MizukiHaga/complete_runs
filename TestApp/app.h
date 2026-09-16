@@ -9,7 +9,7 @@ extern "C" {
  * ETROBO_COURSE_L を 1 で Rコース、0 で Lコース。
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_COURSE_L
-#define ETROBO_COURSE_L 0
+#define ETROBO_COURSE_L 1
 // #define ETROBO_COURSE_L 1
 #endif
 
@@ -31,7 +31,7 @@ extern "C" {
  *   13: Nansho3 のみ（単体LT開始つき。旧 3→1 は廃止）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 4
+#define ETROBO_SCENE 0
 #endif
 
 /* タスク優先度 */

@@ -37,29 +37,8 @@ void HCR::configure_hrc(pbio_port_id_t left_motor_port,
   // gLineTracer.configure(left_motor_port, right_motor_port, color_sensor_port);
 }
 
-void HCR::turn_90(const char* direction, int32_t inner_arc_deg)
-{
-  if (!configured_) {
-    return;
-  }
-
-  gMotors.setTargetHeading(0.0f);
-  gMotors.runFor(80, 80, 360);
-
-  if (strcmp(direction, "left") == 0) {
-    gMotors.runFor(-80, -80, inner_arc_deg);
-    gMotors.runFor(-80, 80, inner_arc_deg);
-  } else if (strcmp(direction, "right") == 0) {
-    gMotors.runFor(-80, -80, inner_arc_deg);
-    gMotors.runFor(80, -80, inner_arc_deg);
-  }
-
-  gMotors.stop();
-}
-
 void HCR::catch_blue_line()
 {
-  gLineTracer.setEnabled(true);
   gLineTracer.setEnabled(true);
   gLineTracer.setBaseSpeed(90.0f, 90.0f);
   gLineTracer.setPid(0.06f,0.0004f,0.3f, 100.0f);
@@ -111,8 +90,9 @@ void HCR::LineTrace()
 {
   // catch_color_line();
   gLineTracer.setBaseSpeed(100.0f, 100.0f);
-  gLineTracer.setPid(0.07f,0.0006f,0.52f, 100.0f);
-  gLineTracer.setScale(18.0f);
+  gLineTracer.setPid(hcr_p,hcr_i,hcr_d,100.0f);
+  // gLineTracer.setPid(0.07f,0.0006f,0.52f, 100.0f);
+  gLineTracer.setScale(hcr_scale);
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
@@ -121,13 +101,19 @@ void HCR::LineTrace()
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(3500 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
+  gLineTracer.setEnabled(false);
   gGyro.reset();
+// gMotors.stop();
+// dly_tsk(2000 * 1000);
+
+  gLineTracer.setEnabled(true);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(300 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setEnabled(true);
-  gLineTracer.setScale(16.0f);
-  gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
+  gLineTracer.setScale(hcr_scale_s);
+  gLineTracer.setPid(hcr_p_s,hcr_i,hcr_d,100.0f);
+  // gLineTracer.setScale(16.0f);
+  // gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(1000 * 1000);
   stp_cyc(LINE_TRACER_TASK_CYC);
@@ -175,33 +161,55 @@ void HCR::AllLineTrace()
 void HCR::run_hrc()
 {
   LineTrace();
-  while (gGyro.heading() > -90.0f) {
-    gLineTracer.step();
-    dly_tsk(5 * 1000);
+  if (!ETROBO_COURSE_L) {
+    while (gGyro.heading() > hcr_90) {
+      gLineTracer.step();
+      dly_tsk(5 * 1000);
+    }
+  }else{
+    while (gGyro.heading() < hcr_90) {
+      gLineTracer.step();
+      dly_tsk(5 * 1000);
+    }
   }
   gLineTracer.setEnabled(false);
-  if (ETROBO_COURSE_L) {
+  if (!ETROBO_COURSE_L) {
     gMotors.run(90.0f, 100.0f);
   } else {
     gMotors.run(100.0f, 90.0f);
   }
   dly_tsk(320 * 1000);
-  if (ETROBO_COURSE_L) {
+  if (!ETROBO_COURSE_L) {
     while (gGyro.heading() > -175.0f) {
       gMotors.run(77.0f, 100.0f);
       dly_tsk(5 * 1000);
     }
   } else {
-    while (gGyro.heading() > 175.0f) {
-      gMotors.run(100.0f, 77.0f);
+    while (gGyro.heading() < 173.0f) {
+      gMotors.run(100.0f, 84.0f);
       dly_tsk(5 * 1000);
     }
   }
-  gMotors.run(100.0f, 100.0f);
-  dly_tsk(400 * 1000);
+  gMotors.setTargetHeading(hcr_175);
+  // while(true){
+  //   if(ms > ignore_time){
+  //     if(gColorLAB.is(COLOR_DETECT_BLACK, true)){
+  //       gLineTracer.setEnabled(true);
+  //       gLineTracer.setScale(16.0f);
+  //       gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
+  //       sta_cyc(LINE_TRACER_TASK_CYC);
+  //       dly_tsk(2000 * 1000);
+  //       stp_cyc(LINE_TRACER_TASK_CYC);
+  //     }
+  //   }
+  //   gMotors.run(100.0f,100.0f);
+  //   ms++;
+  //   dly_tsk(1 * 1000);
+  // }
+  gLineTracer.setEnabled(false);
   gMotors.stop();
   dly_tsk(5000 * 1000);
-  if (ETROBO_COURSE_L) {
+  if (!ETROBO_COURSE_L) {
     gMotors.run(100.0f, 85.0f);
     dly_tsk(830 * 1000);
     gMotors.run(100.0f, 100.0f);
@@ -212,11 +220,35 @@ void HCR::run_hrc()
   } else {
     gMotors.run(85.0f, 100.0f);
     dly_tsk(830 * 1000);
-    gMotors.run(100.0f, 100.0f);
-    dly_tsk(310 * 1000);
-    gMotors.setTargetHeading(180.0f);
-    gMotors.run(100.0f, 70.0f);
-    dly_tsk(600 * 1000);
+    // gMotors.run(100.0f, 100.0f);
+    // dly_tsk(900 * 1000);
+    // gMotors.setTargetHeading(180.0f);
+    // gMotors.run(100.0f, 70.0f);
+    // dly_tsk(600 * 1000);
+    
+    gMotors.setTargetHeading(targetHeading);
+    while(true){
+      if(ms > ignore_time){
+        while(true){  
+          if(gColorLAB.is(COLOR_DETECT_BLACK, true)){
+            gLineTracer.setEnabled(true);
+            gLineTracer.setScale(16.0f);
+            gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
+            sta_cyc(LINE_TRACER_TASK_CYC);
+            dly_tsk(2000 * 1000);
+            stp_cyc(LINE_TRACER_TASK_CYC);
+            break;
+          }
+          gMotors.run(70.0f,70.0f);
+          ms++;
+          dly_tsk(1 * 1000);
+        }
+      }
+      gMotors.run(100.0f,100.0f);
+      ms++;
+      dly_tsk(1 * 1000);
+    }
+
   }
   catch_black_line();
   catch_blue_line();
@@ -315,7 +347,7 @@ void HCR::ShortCutRun()
   stp_cyc(LINE_TRACER_TASK_CYC);
   gMotors.run(-80.0f, -80.0f);
   dly_tsk(500 * 1000);
-  if (ETROBO_COURSE_L) {
+  if (!ETROBO_COURSE_L) {
     gMotors.run(0.0f, -70.0f);
   } else {
     gMotors.run(-70.0f, 0.0f);
@@ -323,7 +355,7 @@ void HCR::ShortCutRun()
   dly_tsk(550 * 1000);
   gMotors.stop();
   dly_tsk(500 * 1000);
-  gMotors.setTargetHeading(ETROBO_COURSE_L ? 70.0f : -70.0f);
+  gMotors.setTargetHeading(ETROBO_COURSE_L ? -70.0f : 70.0f);
   gMotors.run(80.0f, 80.0f);
   dly_tsk(1800 * 1000);
   while (true) {
@@ -336,7 +368,7 @@ void HCR::ShortCutRun()
       dly_tsk(1500 * 1000);
       break;
     }
-    if (ETROBO_COURSE_L) {
+    if (!ETROBO_COURSE_L) {
       gMotors.run(80, 77);
     } else {
       gMotors.run(77, 80);
@@ -344,9 +376,9 @@ void HCR::ShortCutRun()
     dly_tsk(5 * 1000);
   }
   stp_cyc(LINE_TRACER_TASK_CYC);
-  gMotors.setTargetHeading(ETROBO_COURSE_L ? 162.0f : -162.0f);
+  gMotors.setTargetHeading(ETROBO_COURSE_L ? -162.0f : 162.0f);
   SpeedUp(80.0f, 80.0f, 0.5f, 100.0f, true);
-  gMotors.setTargetHeading(ETROBO_COURSE_L ? 153.0f : -153.0f);
+  gMotors.setTargetHeading(ETROBO_COURSE_L ? -153.0f : 153.0f);
   gMotors.run(100.0f, 100.0f);
   dly_tsk(1200 * 1000);
   catch_black_line();

@@ -46,6 +46,8 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading,
   uint32_t elapsed_ms = 0U;
   bool     left_sonic_pending = false;
   uint32_t left_delay_ms = 0U;
+  bool sonic_pending = false;
+  uint32_t sonic_delay_ms = 0U;
 
   while (elapsed_ms < TurnMaxMs) {
     const float h = gGyro.heading();
@@ -55,37 +57,63 @@ Nansho1Scene::rotateToHeadingWithScan(float target_heading, float *out_heading,
     const float rem = need - traveled;
 
     /* (1) 超音波距離検知 (旋回中も常時監視) */
-    if (!left_sonic_pending && gSonic.isCloserThan(DetectMaxMm)) {
-      if (scan_side == ScanSide::Left) {
-        left_sonic_pending = true;
-        if (out_heading != nullptr) {
-          *out_heading = h;
-        }
-      } else {
-        gMotors.stop();
-        if (out_heading != nullptr) {
-          *out_heading = h;
-        }
-        return ScanResult::SonicDetected;
+    if (!sonic_pending && gSonic.isCloserThan(DetectMaxMm)) {
+      sonic_pending = true;
+
+      if (out_heading != nullptr) {
+        *out_heading = h;
       }
     }
+    // if (!left_sonic_pending && gSonic.isCloserThan(DetectMaxMm)) {
+    //   if (scan_side == ScanSide::Left) {
+    //     left_sonic_pending = true;
+    //     if (out_heading != nullptr) {
+    //       *out_heading = h;
+    //     }
+    //   } else {
+    //     gMotors.stop();
+    //     if (out_heading != nullptr) {
+    //       *out_heading = h;
+    //     }
+    //     return ScanResult::SonicDetected;
+    //   }
+    // }
 
     /* (2) 左走査で検知後: n ms の間は旋回継続 → 経過後に SonicDetected で確定 */
-    if (left_sonic_pending) {
+    if (sonic_pending) {
       gMotors.pivotTowardDiff(ScanTurnPower, turn_dir * rem);
 
       dly_tsk(StepMs * 1000U);
       elapsed_ms += StepMs;
-      left_delay_ms += StepMs;
-      if (left_delay_ms >= LeftScanDetectContinueMs) {
+      sonic_delay_ms += StepMs;
+
+      if (sonic_delay_ms >= LeftScanDetectContinueMs) {
         gMotors.stop();
+
         if (out_heading != nullptr) {
           *out_heading = gGyro.heading();
         }
+
         return ScanResult::SonicDetected;
       }
+
       continue;
     }
+    // if (left_sonic_pending) {
+    //   gMotors.pivotTowardDiff(ScanTurnPower, turn_dir * rem);
+
+    //   dly_tsk(StepMs * 1000U);
+    //   elapsed_ms += StepMs;
+    //   left_delay_ms += StepMs;
+    //   if (left_delay_ms >= LeftScanDetectContinueMs) {
+    //     gMotors.stop();
+    //     if (out_heading != nullptr) {
+    //       *out_heading = gGyro.heading();
+    //     }
+    //     return ScanResult::SonicDetected;
+    //   }
+    //   continue;
+    // }
 
     /* (3) 目標角度に到達 (または行き過ぎ) → 正面戻りでも 180° 回り続けない */
     if (rem <= tolerance_deg) {
@@ -264,7 +292,7 @@ bool Nansho1Scene::runWigwagScanPhases()
                  second_front) == ScanResult::SonicDetected) {
     turnToHeading(detect_heading, TurnToleranceDeg, TurnPower, TurnPower);
     gMotors.setTargetHeading(detect_heading);
-    driveUntilGrayLine(DetectGrayIgnoreMs);
+    driveUntilGrayLine(DetectGrayIgnoreMs-125U);
     /* 反対側 reset 後: 黒線方向は 0° */
     finishAfterDetect(second_side, second_front);
     return true;
