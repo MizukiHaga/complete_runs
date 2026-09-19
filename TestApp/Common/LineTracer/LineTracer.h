@@ -30,7 +30,7 @@ public:
   /* === 各ロボットに合わせて値を調整するパラメータ ============== */
 
   /* カラーセンサの輝度設定（白/黒の代表値、目標輝度の計算に使う）。 */
-  static constexpr uint16_t WhiteBrightness = 80;
+  static constexpr uint16_t WhiteBrightness = 75;
   static constexpr uint16_t BlackBrightness = 20;
 
   /* PID ゲインの初期値。 */

@@ -98,10 +98,13 @@ private:
   ScanResult driveForwardWithScan(uint32_t duration_ms, int power,
                                   float *out_heading, float target_heading);
 
-  /* 円向き後直進 / wigwag 直進の共通: LT・周期補正を止め、PI ヨー保持で直進。 */
+  /* 円向き後直進 / wigwag 直進の共通: LT・周期補正を止め、PI ヨー保持で直進。
+   * 目標角は logical + 位置クルーズ加算。 */
   void beginBalancedStraight(int left_power, int right_power,
                              float target_heading);
   void endBalancedStraight();
+  float cruiseHeading(float logical_heading) const;
+  void bumpCruiseHeading();
 
   /* 現在のヨー角を target_heading に合わせるピボット旋回 (検知判定なし)。
    *   tolerance_deg: 目標角到達とみなす許容幅 [deg] (省略時 TurnToleranceDeg)。
@@ -131,13 +134,17 @@ private:
   static void logBackTraceEncoder(const char *phase, int32_t traveled_deg,
                                   int32_t target_deg, uint32_t steps);
 
+  /* 位置クルーズごとに目標角へ足す累積 [deg]。
+   * 走査前 reset・反対読みの各 reset では 0 に戻す。wigwag 中は溜める。 */
+  float heading_add_ = 0.0f;
+
   /* === ⓪ 開始時 (ライントレース) パラメータ */
   static constexpr float    InitialTraceKp      = 0.30f;
   static constexpr float    InitialTraceKi      = 0.01f;
   static constexpr float    InitialTraceKd      = 0.8f;
   static constexpr float    InitialTraceOutMax  = 100.0f;
   static constexpr float    InitialTraceScale   = 1.0f;  /* HCR 後も自前 PID を維持 */
-  static constexpr float    InitialBlackTurnDeg = 180.0f;
+  static constexpr float    InitialBlackTurnDeg = 190.0f;
 
   /* === ⑦ 最終黒線読み後 (旋回 → LT → SKYBLUE) パラメータ */
   /* 黒線読み後の旋回。L と R を鏡像にせず、それぞれ独立に設定する。
@@ -166,7 +173,7 @@ private:
   static constexpr uint32_t FinalBlueTraceTurnMaxMs         = 8000U;
   /* 旋回直後の低速 LT（本線 LT の前に線へ乗せる）。 */
   static constexpr float    FinalSlowTracePower  = 35.0f;
-  static constexpr uint32_t FinalSlowTraceMs     = 400U;
+  static constexpr uint32_t FinalSlowTraceMs     = 700U;
   static constexpr float    FinalSlowTraceKp     = 0.30f;
   static constexpr float    FinalSlowTraceKi     = 0.01f;
   static constexpr float    FinalSlowTraceKd     = 0.8f;
@@ -174,9 +181,9 @@ private:
   static constexpr float    FinalSlowTraceScale  = 1.0f;
   /* 本線 LT（SKYBLUE/BLUE 検知で終了）。 */
   static constexpr float    FinalBlueTracePower             = 80.0f;
-  static constexpr float    FinalBlueTraceKp                = 0.65f;
-  static constexpr float    FinalBlueTraceKi                = 0.0001f;
-  static constexpr float    FinalBlueTraceKd                = 0.8f;
+  static constexpr float    FinalBlueTraceKp                = 0.45f;
+  static constexpr float    FinalBlueTraceKi                = 0.00001f;
+  static constexpr float    FinalBlueTraceKd                = 0.6f;
   static constexpr float    FinalBlueTraceOutMax            = 100.0f;
   static constexpr float    FinalBlueTraceScale             = 1.0f;
   /* 追従エッジ: L=左エッジ / R=右エッジ */
@@ -195,7 +202,7 @@ private:
   static constexpr int32_t  BackSlowTraceDeg   = 188;
 //   static constexpr int32_t  BackSlowTraceDeg   = 190;
   /* ① 全体を終える累計距離 [deg]（低速 LT の分を含む）。 */
-  static constexpr int32_t  BackToEndDeg       = 1600;
+  static constexpr int32_t  BackToEndDeg       = 1590;
   /* 調整用: エンコーダ距離をシリアルに出す。調整後は false に戻す。 */
   static constexpr bool     BackTraceEncoderLog      = false;
   static constexpr uint32_t BackTraceEncoderLogSteps = 200U;
@@ -206,13 +213,15 @@ private:
   static constexpr float    BackTraceKd        = 0.8f;
   static constexpr float    BackTraceOutMax    = 100.0f;
   static constexpr float    BackTraceScale     = 1.0f;
+  /* 追従エッジ: L=左エッジ / R=右エッジ（L の逆） */
+  static constexpr bool     BackTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* バック LT 中の減速: DecelDeg 進む間に Power → EndPower へ線形に下げる。 */
   static constexpr int      BackTraceEndPower  = 30;
-  static constexpr int32_t  BackTraceDecelDeg  = 2550;
+  static constexpr int32_t  BackTraceDecelDeg  = 2580;
 
   /* === 検知共通パラメータ ==================================== */
   /* 走査検知: 超音波距離がこの値以下なら障害物ありとみなす [mm]。 */
-  static constexpr int32_t  DetectMaxMm        = 280;
+  static constexpr int32_t  DetectMaxMm        = 250;
 
   /* === 旋回走査 (wigwag) パラメータ ========================== */
   /* 1 方向あたりの「規定回数」サイクル数。９
@@ -273,6 +282,12 @@ private:
   static constexpr float    PreWigwagBalanceIntegralMax = 50.0f;
   /* 直進ヨー角 PI 補正。false で open-loop（検証用。戻すときは true）。 */
   static constexpr bool     UseHeadingCorrection        = true;
+  /* 位置クルーズ（走査前直進・wigwag 1 サイクル・反対読み直進）ごとに
+   * 目標角へ足す量 [deg]。CW 正。Nansho3 の PerNTurnsHeadingAdd と同じ系統。 */
+  static constexpr float    PerCruiseHeadingAddDegR = 0.4f;
+  static constexpr float    PerCruiseHeadingAddDegL = 0.9f;
+  static constexpr float    PerCruiseHeadingAddDeg =
+      ETROBO_COURSE_L ? PerCruiseHeadingAddDegR : PerCruiseHeadingAddDegL;
 
   /* === 検知後の終了動作 (finishAfterDetect) パラメータ ========= */
   /* 超音波検知後の灰色直進: 開始直後この時間 [ms] は灰色判定を無視する。 */
@@ -308,8 +323,8 @@ private:
    * 目標 0° の直進は車体をこの符号と逆へ向ける。
    * -2 なら車体は 2° CW（右）。左へずらしたいなら正にする。
    * L と R は鏡像にせず、それぞれ独立に設定する。 */
-  static constexpr float    GyroResetOffsetDegR = 1.7f;  /* R コース */
-  static constexpr float    GyroResetOffsetDegL = -1.7f;  /* L コース */
+  static constexpr float    GyroResetOffsetDegR = 1.2f;  /* R コース */
+  static constexpr float    GyroResetOffsetDegL = 1.2f;  /* L コース */
   /* 実際に使う値。ここは触らない。 */
   static constexpr float    GyroResetOffsetDeg =
       ETROBO_COURSE_L ? GyroResetOffsetDegR : GyroResetOffsetDegL;

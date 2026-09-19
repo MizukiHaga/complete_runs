@@ -306,13 +306,13 @@ void Nansho3Scene::turnByAction(MoveAction action)
   gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
   dly_tsk(CoreTurnAfterMs * 1000U);
 
-  /* 左・右を別カウント。N 回ごとに、曲がった向きと逆へ目標角を足す */
+  /* 左・右を別カウント。N 回ごとに、その向き用の補正を目標角へ足す */
   if (action == MoveAction::L90) {
     ++left_turn_count_;
     if (left_turn_count_ >= TurnsPerHeadingAdd) {
       left_turn_count_ = 0;
       heading_add_ =
-          Gyro::wrapDeg180(heading_add_ + PerNTurnsHeadingAddDeg);
+          Gyro::wrapDeg180(heading_add_ + PerLeftTurnHeadingAddDeg);
       gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
     }
   } else {
@@ -320,7 +320,7 @@ void Nansho3Scene::turnByAction(MoveAction action)
     if (right_turn_count_ >= TurnsPerHeadingAdd) {
       right_turn_count_ = 0;
       heading_add_ =
-          Gyro::wrapDeg180(heading_add_ - PerNTurnsHeadingAddDeg);
+          Gyro::wrapDeg180(heading_add_ + PerRightTurnHeadingAddDeg);
       gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
     }
   }
@@ -508,7 +508,9 @@ bool Nansho3Scene::planStartsWithFwd(int sx, int sy, int sfacing_i, QrPoint goal
 
 bool Nansho3Scene::passGateStartsWithFwd(
     int sx, int sy, int sfacing_i, GateSeg gate, const GateSeg *past_gates,
-    int past_count, const GateSeg *future_gates, int future_count) const
+    int past_count, const GateSeg *future_gates, int future_count,
+    const GateSeg *tgt_continue_gate, const GateSeg *tgt_continue_futures,
+    int tgt_continue_future_count) const
 {
   /* 通過済・未通過（次以外）のゲートマスは通らない */
   bool block_to_a[GridSize][GridSize];
@@ -525,11 +527,12 @@ bool Nansho3Scene::passGateStartsWithFwd(
   int face_at_a = sfacing_i;
   const int cost_to_a =
       bfsCost(sx, sy, sfacing_i, gate.a.x, gate.a.y, block_to_a, &face_at_a);
+  int face_ab_at_b = face_at_a;
   const int cost_a_to_b =
       (cost_to_a < 0)
           ? -1
           : bfsCost(gate.a.x, gate.a.y, face_at_a, gate.b.x, gate.b.y,
-                    block_a_to_b, nullptr);
+                    block_a_to_b, &face_ab_at_b);
 
   bool block_to_b[GridSize][GridSize];
   clearBlocked(block_to_b);
@@ -545,11 +548,69 @@ bool Nansho3Scene::passGateStartsWithFwd(
   int face_at_b = sfacing_i;
   const int cost_to_b =
       bfsCost(sx, sy, sfacing_i, gate.b.x, gate.b.y, block_to_b, &face_at_b);
+  int face_ba_at_a = face_at_b;
   const int cost_b_to_a =
       (cost_to_b < 0)
           ? -1
           : bfsCost(gate.b.x, gate.b.y, face_at_b, gate.a.x, gate.a.y,
-                    block_b_to_a, nullptr);
+                    block_b_to_a, &face_ba_at_a);
+
+  /* passGateShortest と同じく、出口→次ゲートも足して a→b / b→a を選ぶ */
+  int extra_ab = 0;
+  int extra_ba = 0;
+  const GateSeg *next_gate = nullptr;
+  const GateSeg *next_rest = nullptr;
+  int            next_rest_n = 0;
+  if (future_count > 0) {
+    next_gate = &future_gates[0];
+    if (future_count > 1) {
+      next_rest   = &future_gates[1];
+      next_rest_n = future_count - 1;
+    }
+  } else if (tgt_continue_gate != nullptr) {
+    next_gate   = tgt_continue_gate;
+    next_rest   = tgt_continue_futures;
+    next_rest_n = tgt_continue_future_count;
+  }
+  if (next_gate != nullptr) {
+    bool block_from_exit[GridSize][GridSize];
+    clearBlocked(block_from_exit);
+    blockFutures(block_from_exit, past_gates, past_count, gate.a);
+    block_from_exit[gate.a.x][gate.a.y] = true;
+    block_from_exit[gate.b.x][gate.b.y] = true;
+    if (next_rest_n > 0) {
+      blockFutures(block_from_exit, next_rest, next_rest_n, next_gate->a);
+    }
+    block_from_exit[next_gate->a.x][next_gate->a.y] = false;
+    block_from_exit[next_gate->b.x][next_gate->b.y] = false;
+
+    if (cost_a_to_b >= 0) {
+      block_from_exit[gate.b.x][gate.b.y] = false;
+      const QrPoint next_ab =
+          nearerGateEnd(*next_gate, gate.b.x, gate.b.y, face_ab_at_b,
+                        block_from_exit);
+      int face_tmp = face_ab_at_b;
+      const int c = bfsCost(gate.b.x, gate.b.y, face_ab_at_b, next_ab.x,
+                            next_ab.y, block_from_exit, &face_tmp);
+      if (c >= 0) {
+        extra_ab = c;
+      }
+      block_from_exit[gate.b.x][gate.b.y] = true;
+    }
+    if (cost_b_to_a >= 0) {
+      block_from_exit[gate.a.x][gate.a.y] = false;
+      const QrPoint next_ba =
+          nearerGateEnd(*next_gate, gate.a.x, gate.a.y, face_ba_at_a,
+                        block_from_exit);
+      int face_tmp = face_ba_at_a;
+      const int c = bfsCost(gate.a.x, gate.a.y, face_ba_at_a, next_ba.x,
+                            next_ba.y, block_from_exit, &face_tmp);
+      if (c >= 0) {
+        extra_ba = c;
+      }
+      block_from_exit[gate.a.x][gate.a.y] = true;
+    }
+  }
 
   const bool ab_ok = (cost_to_a >= 0 && cost_a_to_b >= 0);
   const bool ba_ok = (cost_to_b >= 0 && cost_b_to_a >= 0);
@@ -560,7 +621,8 @@ bool Nansho3Scene::passGateStartsWithFwd(
   QrPoint first = gate.a;
   bool    use_ab = ab_ok;
   if (ab_ok && ba_ok) {
-    use_ab = (cost_to_a + cost_a_to_b) <= (cost_to_b + cost_b_to_a);
+    use_ab = (cost_to_a + cost_a_to_b + extra_ab) <=
+             (cost_to_b + cost_b_to_a + extra_ba);
     const QrPoint here = {sx, sy};
     /* 既に端上なら、その端から他端へ通過（逆向き→戻りは二重通過になる） */
     if (here.x == gate.a.x && here.y == gate.a.y) {
@@ -583,9 +645,19 @@ bool Nansho3Scene::passGateStartsWithFwd(
     first = gate.b;
   }
 
+  const QrPoint other = use_ab ? gate.b : gate.a;
+  if (sx == first.x && sy == first.y) {
+    /* 入口にいるなら、最初の動きは他端への通過 */
+    bool block_other[GridSize][GridSize];
+    clearBlocked(block_other);
+    blockFutures(block_other, past_gates, past_count, other);
+    blockFutures(block_other, future_gates, future_count, other);
+    return planStartsWithFwd(sx, sy, sfacing_i, other, block_other);
+  }
+
   bool block_first[GridSize][GridSize];
   clearBlocked(block_first);
-  blockPoint(block_first, use_ab ? gate.b : gate.a, first);
+  blockPoint(block_first, other, first);
   blockFutures(block_first, past_gates, past_count, first);
   blockFutures(block_first, future_gates, future_count, first);
   return planStartsWithFwd(sx, sy, sfacing_i, first, block_first);
@@ -719,27 +791,40 @@ void Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
           : bfsCost(gate.b.x, gate.b.y, face_at_b, gate.a.x, gate.a.y,
                     block_b_to_a, &face_ba_at_a);
 
-  /* 出口から次ゲート入口までの最短も足して a→b / b→a を選ぶ */
+  /* 出口から次ゲート入口までの最短も足して a→b / b→a を選ぶ。
+   * 周回の黄は future が空なので、次周の赤 (continue_gate) を次ゲートとして使う。 */
   int extra_ab = 0;
   int extra_ba = 0;
+  const GateSeg *next_gate = nullptr;
+  const GateSeg *next_rest = nullptr;
+  int            next_rest_n = 0;
   if (future_count > 0) {
+    next_gate = &future_gates[0];
+    if (future_count > 1) {
+      next_rest   = &future_gates[1];
+      next_rest_n = future_count - 1;
+    }
+  } else if (continue_gate != nullptr) {
+    next_gate   = continue_gate;
+    next_rest   = continue_futures;
+    next_rest_n = continue_future_count;
+  }
+  if (next_gate != nullptr) {
     bool block_from_exit[GridSize][GridSize];
     clearBlocked(block_from_exit);
     blockFutures(block_from_exit, past_gates, past_count, gate.a);
     block_from_exit[gate.a.x][gate.a.y] = true;
     block_from_exit[gate.b.x][gate.b.y] = true;
-    /* 次の次以降のゲートは塞ぐ。次ゲート両端は開放 */
-    if (future_count > 1) {
-      blockFutures(block_from_exit, &future_gates[1], future_count - 1,
-                   future_gates[0].a);
+    if (next_rest_n > 0) {
+      blockFutures(block_from_exit, next_rest, next_rest_n, next_gate->a);
     }
-    block_from_exit[future_gates[0].a.x][future_gates[0].a.y] = false;
-    block_from_exit[future_gates[0].b.x][future_gates[0].b.y] = false;
+    block_from_exit[next_gate->a.x][next_gate->a.y] = false;
+    block_from_exit[next_gate->b.x][next_gate->b.y] = false;
 
     if (cost_a_to_b >= 0) {
       block_from_exit[gate.b.x][gate.b.y] = false;
       const QrPoint next_ab =
-          nearerGateEnd(future_gates[0], gate.b.x, gate.b.y, face_ab_at_b,
+          nearerGateEnd(*next_gate, gate.b.x, gate.b.y, face_ab_at_b,
                         block_from_exit);
       int face_tmp = face_ab_at_b;
       const int c = bfsCost(gate.b.x, gate.b.y, face_ab_at_b, next_ab.x,
@@ -752,7 +837,7 @@ void Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
     if (cost_b_to_a >= 0) {
       block_from_exit[gate.a.x][gate.a.y] = false;
       const QrPoint next_ba =
-          nearerGateEnd(future_gates[0], gate.a.x, gate.a.y, face_ba_at_a,
+          nearerGateEnd(*next_gate, gate.a.x, gate.a.y, face_ba_at_a,
                         block_from_exit);
       int face_tmp = face_ba_at_a;
       const int c = bfsCost(gate.a.x, gate.a.y, face_ba_at_a, next_ba.x,
@@ -845,11 +930,11 @@ void Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
       continue_after_second = passGateStartsWithFwd(
           second.x, second.y, face_at_second, future_gates[0], past_next,
           past_n, (future_count > 1) ? &future_gates[1] : nullptr,
-          (future_count > 1) ? future_count - 1 : 0);
-    }
-    /* 次周の赤: 次の通過が Fwd で始まるときだけ止めない。
-     * どちらかの端へ Fwd できるだけでつなぐと、実際は旋回なのに前へ出る */
-    if (!continue_after_second && continue_gate != nullptr) {
+          (future_count > 1) ? future_count - 1 : 0, continue_gate,
+          continue_futures, continue_future_count);
+    } else if (continue_gate != nullptr) {
+      /* 周回末の黄のみ: 次周の赤が Fwd で始まるときだけ止めない。
+       * 赤・青でここを見ると、次が黄なのに次周赤へつなぐ誤判定になる */
       continue_after_second = passGateStartsWithFwd(
           second.x, second.y, face_at_second, *continue_gate, nullptr, 0,
           continue_futures, continue_future_count);
@@ -867,12 +952,18 @@ void Nansho3Scene::runRallyLap(GateSeg red, GateSeg blue, GateSeg yellow,
   }
 
   const GateSeg after_red[2] = {blue, yellow};
-  passGateShortest(red, nullptr, 0, after_red, 2);
+  passGateShortest(red, nullptr, 0, after_red, 2,
+                   continue_to_next_lap ? &red : nullptr,
+                   continue_to_next_lap ? after_red : nullptr,
+                   continue_to_next_lap ? 2 : 0);
   onGatePassed();
 
   const GateSeg before_blue[1] = {red};
   const GateSeg after_blue[1]  = {yellow};
-  passGateShortest(blue, before_blue, 1, after_blue, 1);
+  passGateShortest(blue, before_blue, 1, after_blue, 1,
+                   continue_to_next_lap ? &red : nullptr,
+                   continue_to_next_lap ? after_red : nullptr,
+                   continue_to_next_lap ? 2 : 0);
   onGatePassed();
 
   const GateSeg before_yellow[2] = {red, blue};
@@ -914,7 +1005,7 @@ void Nansho3Scene::runExitStraightToBlackLine()
     gMotors.coast();
   }
 
-  /* x<=1 だと +y 直進がコース外寄りなので、同じ y のまま x=2 へ戻してから脱出 */
+  /* x<=0 だと +y 直進がコース外寄りなので、同じ y のまま x=1 へ戻してから脱出 */
   if (x_ <= ExitMinXBeforeLeave) {
     bool blocked[GridSize][GridSize];
     clearBlocked(blocked);
@@ -935,7 +1026,7 @@ void Nansho3Scene::runExitStraightToBlackLine()
   gMotors.setTargetHeading(y_abs);
   gMotors.run(ExitYStraightPower, ExitYStraightPower);
 
-  /* y>=6 → 0ms、それ未満は (6-y)*PerYMs。y=5 は 200ms（0.5秒未満） */
+  /* y>=5 → 0ms、それ未満は (5-y)*PerYMs */
   uint32_t black_ignore_ms = 0U;
   if (y_ < ExitYBlackIgnoreBaseY) {
     black_ignore_ms = static_cast<uint32_t>(ExitYBlackIgnoreBaseY - y_) *
@@ -1029,7 +1120,7 @@ void Nansho3Scene::runExitAfterRally()
   gMotors.setTargetHeading(y_abs);
   gMotors.run(ExitYStraightPower, ExitYStraightPower);
 
-  /* y>=6 → 0ms、それ未満は (6-y)*PerYMs。y=5 は 200ms（0.5秒未満） */
+  /* y>=5 → 0ms、それ未満は (5-y)*PerYMs */
   uint32_t black_ignore_ms = 0U;
   if (y_ < ExitYBlackIgnoreBaseY) {
     black_ignore_ms = static_cast<uint32_t>(ExitYBlackIgnoreBaseY - y_) *
@@ -1202,13 +1293,11 @@ void Nansho3Scene::initialRun()
     gMotors.decelToStop(Straight::DecelMs, Straight::DecelStepMs,
                         /*coast_end=*/true);
   }
-  dly_tsk(CoreTurnBeforeMs * 1000U);
 
   /* 2) 絶対 InitialTurnOffsetDeg（R=+90 / L=-90）+ HeadingOffsetDeg */
   const float turn_target =
       Gyro::wrapDeg180(InitialTurnOffsetDeg + HeadingOffsetDeg);
   turnToAbsolute(turn_target);
-  dly_tsk(CoreTurnAfterMs * 1000U);
 
   /* 3) 直進。目標は旋回と同じ */
   gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
@@ -1250,20 +1339,20 @@ void Nansho3Scene::run()
                         StraightBalanceIMax, StraightBalanceDeadbandDeg);
 
   /* 初期 QR・仮ゲート配置（当日公開パターンで差し替え）
-   * ETROBO_COURSE_L: 0=L / 1=R。開始は LR とも (2,2)。赤=Y連続, 青=X連続, 黄=Y連続。
-   * 同じ軸は1つ: Y連続 {{x},{y1,y2}} / X連続 {{x1,x2},{y}} */
+   * ETROBO_COURSE_L: 0=L / 1=R。開始は LR とも (1,1)。赤=Y連続, 青=X連続, 黄=Y連続。
+   * 同じ軸は1つ: Y連続 {{x},{y1,y2}} / X連続 {{x1,x2},{y}}。座標は 0..5。 */
   x_ = LapStartX;
   y_ = LapStartY;
 #if ETROBO_COURSE_L
-  /* Rコース（開始(2,2)が赤a。通過後に他端へ戻さない） */
-  const GateSeg red    = {{3}, {5, 6}}; /* Y連続 */
-  const GateSeg blue   = {{2, 3}, {2}}; /* X連続 */
+  /* Rコース（開始(1,1)が赤a。通過後に他端へ戻さない） */
+  const GateSeg red    = {{2}, {2, 3}}; /* Y連続 */
+  const GateSeg blue   = {{0, 1}, {4}}; /* X連続 */
   const GateSeg yellow = {{4}, {3, 4}}; /* Y連続 */
 #else
   /* Lコース */
-  const GateSeg red    = {{3}, {5, 6}}; /* Y連続 */
-  const GateSeg blue   = {{5, 6}, {3}}; /* X連続 */
-  const GateSeg yellow = {{5}, {4, 5}}; /* Y連続 */
+  const GateSeg red    = {{3}, {0, 1}}; /* Y連続 */
+  const GateSeg blue   = {{3, 4}, {4}}; /* X連続 */
+  const GateSeg yellow = {{2}, {1, 2}}; /* Y連続 */
 #endif
 
   facing_deg_            = 0.0f;

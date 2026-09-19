@@ -117,7 +117,7 @@ extern "C" {
  * ETROBO_COURSE_L を 1 で Rコース、0 で Lコース。
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_COURSE_L
-#define ETROBO_COURSE_L 1
+#define ETROBO_COURSE_L 0
 // #define ETROBO_COURSE_L 1
 #endif
 

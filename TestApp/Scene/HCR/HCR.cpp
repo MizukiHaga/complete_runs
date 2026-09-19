@@ -89,10 +89,9 @@ void HCR::catch_black_line()
 void HCR::LineTrace()
 {
   // catch_color_line();
-  gLineTracer.setBaseSpeed(100.0f, 100.0f);
-  gLineTracer.setPid(hcr_p,hcr_i,hcr_d,100.0f);
-  // gLineTracer.setPid(0.07f,0.0006f,0.52f, 100.0f);
-  gLineTracer.setScale(hcr_scale);
+  gLineTracer.setBaseSpeed(95.0f, 95.0f);
+  gLineTracer.setPid(0.08f,0.00025f,0.72f, 100.0f);
+  gLineTracer.setScale(18.0f);
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
@@ -127,8 +126,8 @@ void HCR::AllLineTrace()
   /* 周期 LT が動いたまま。ここで step() すると D が二重になりカーブ終端で飛ぶ */
   while (true) {
     if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
-      gLineTracer.setBaseSpeed(90.0f, 90.0f);
-      gLineTracer.setPid(0.06f,0.0008f,0.6f, 100.0f);//L = 0.062f,0.0006f,0.5f, 100.0f
+      gLineTracer.setBaseSpeed(50.0f, 50.0f);
+      gLineTracer.setPid(0.08f,0.0006f,0.5f, 100.0f);//L = 0.062f,0.0006f,0.5f, 100.0f
       gLineTracer.setScale(15.0f);
       while (true) {
         if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {

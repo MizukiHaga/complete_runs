@@ -101,13 +101,13 @@ private:
     R90 = 2,
   };
 
-  static constexpr int GridSize = 8;
+  static constexpr int GridSize = 6;
   static constexpr int FacingCount = 4;
   static constexpr int StateCount = GridSize * GridSize * FacingCount;
   static constexpr int MaxPathLen = 64;
   /* 各周回の開始 QR（初期位置と同じ） */
-  static constexpr int LapStartX = 2;
-  static constexpr int LapStartY = 2;
+  static constexpr int LapStartX = 1;
+  static constexpr int LapStartY = 1;
 
   /* 原子動作。stop_after なら CoreStraightDeg 枠で減速。連続は ContinueDeg */
   void driveOneCell(bool stop_after = true);
@@ -150,11 +150,16 @@ private:
   /* 指定位置から goal へ行く計画の先頭が Fwd か */
   bool planStartsWithFwd(int sx, int sy, int sfacing_i, QrPoint goal,
                          const bool blocked[GridSize][GridSize]) const;
-  /* 指定位置からゲート通過を始めたとき、最初の動作が Fwd か */
+  /* 指定位置からゲート通過を始めたとき、最初の動作が Fwd か。
+   * tgt_continue / tgt_continue_futures は、そのゲート自身が次周へつなぐときの
+   * 出口補正（黄→次周赤）に使う。 */
   bool passGateStartsWithFwd(int sx, int sy, int sfacing_i, GateSeg gate,
                              const GateSeg *past_gates, int past_count,
                              const GateSeg *future_gates,
-                             int future_count) const;
+                             int future_count,
+                             const GateSeg *tgt_continue_gate = nullptr,
+                             const GateSeg *tgt_continue_futures = nullptr,
+                             int tgt_continue_future_count = 0) const;
   /* 指定位置からゲートのどちらかの端へ、先頭が Fwd で届くか */
   bool planStartsWithFwdTowardGate(int sx, int sy, int sfacing_i, GateSeg gate,
                                    const GateSeg *block_gates,
@@ -189,16 +194,16 @@ private:
   static constexpr uint32_t StepMs = 1U;
 
   /* === 仮想 QR 格子 ==============================================
-   * 範囲: x,y = 0..7（外周に仮想座標を1列追加）
+   * 範囲: x,y = 0..5（6×6）
    * 論理方位 → 格子（L/R で左右が鏡）:
    *   L: 0°=+x / +90°=-y / ±180°=-x / -90°=+y
    *   R: 0°=+x / +90°=+y / ±180°=-x / -90°=-y
    * 絶対角 = snap(論理 + cardinal_offset_)。
    * LT reset 後は InitialTurnOffsetDeg。周回中のジャイロresetは行わない。
-   * 初期: 右上 QR = (2,2), facing=0° */
+   * 初期: (1,1), facing=0° */
   int   grid_[GridSize][GridSize] = {};
-  int   x_ = 2;
-  int   y_ = 2;
+  int   x_ = 1;
+  int   y_ = 1;
   float facing_deg_ = 0.0f;
   /* 論理 → 絶対。LT 後 InitialTurnOffsetDeg */
   float cardinal_offset_ = InitialTurnOffsetDeg;
@@ -223,8 +228,12 @@ private:
    * 1マス移動と連続の最後は CoreStraightDeg（枠内で減速）。
    * 連続 Fwd（減速なし）は CoreStraightContinueDeg。 */
   static constexpr int      CoreRunStraightPower = 75;
-  /* 減速して止まる 1マスの距離 [deg]（減速中に進む分を含む） */
-  static constexpr int32_t  CoreStraightDeg = 475;
+  /* 減速して止まる 1マスの距離 [deg]（減速中に進む分を含む）
+   * L/R は下の *R / *L を触る。 */
+  static constexpr int32_t  CoreStraightDegR = 465;
+  static constexpr int32_t  CoreStraightDegL = 465;
+  static constexpr int32_t  CoreStraightDeg =
+      ETROBO_COURSE_L ? CoreStraightDegR : CoreStraightDegL;
   /* 上のうち減速中に進むと見込む距離 [deg]。ここまで来たら減速に入る。
    * 行き過ぎるなら増やす、手前で止まるなら減らす。 */
   static constexpr int32_t  CoreStraightDecelDeg = 150;
@@ -233,7 +242,10 @@ private:
   /* 台形減速の 1 段 [ms]。大きいほど 1 ステップの減少幅が大きい（急減速） */
   static constexpr uint32_t CoreStraightDecelStepMs = 100U;
   /* 連続 Fwd（減速なし）1マスの距離 [deg]。マスを越えるなら減らす */
-  static constexpr int32_t  CoreStraightContinueDeg = 520;
+  static constexpr int32_t  CoreStraightContinueDegR = 510;
+  static constexpr int32_t  CoreStraightContinueDegL = 510;
+  static constexpr int32_t  CoreStraightContinueDeg =
+      ETROBO_COURSE_L ? CoreStraightContinueDegR : CoreStraightContinueDegL;
   /* ±90°（論理 +y/-y）の直進に足す距離 [deg]。Y が短いなら増やす */
   static constexpr int32_t  CoreStraightYExtraDeg = 0;
   /* 0°/±180°（論理 +x/-x）の直進に足す距離 [deg]。水平が短いなら増やす */
@@ -258,7 +270,10 @@ private:
   /* === initialRun: バック → 絶対±90°旋回 → 直進 === */
   static constexpr int      InitialBackPower     = 40;
   /* 減速中に進む分を含めたバック距離 [deg]。左右エンコーダの絶対値平均 */
-  static constexpr int32_t  InitialBackDeg       = 210;//R230
+  static constexpr int32_t  InitialBackDegR      = 240;
+  static constexpr int32_t  InitialBackDegL      = 200;
+  static constexpr int32_t  InitialBackDeg =
+      ETROBO_COURSE_L ? InitialBackDegR : InitialBackDegL;
   /* 上のうち減速中に進むと見込む距離 [deg] */
   static constexpr int32_t  InitialBackDecelDeg  = 155;
   static constexpr float    InitialBackBalanceKp   = 5.0f; 
@@ -270,15 +285,25 @@ private:
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   /* 目標角に足す固定量 [deg]。CW 正。右ずれなら負（左へ）。
    * 直進も旋回も、初期直進から周回中のマス移動まですべて同じ量。 */
-  static constexpr float    HeadingOffsetDeg     = -1.0f;//R -2.9
-  /* 左・右それぞれの旋回回数が TurnsPerHeadingAdd に達したときに目標角へ足す量
-   * [deg]（絶対値）。CW 正。逆向きが混ざっても数え直ししない。
-   * 左が多いと左へずれるので左 N 回で +（右へ戻す）、右 N 回で −。 */
-  static constexpr float    PerNTurnsHeadingAddDeg = 0.9f;//R1.4
-  static constexpr int      TurnsPerHeadingAdd     = 2;
+  static constexpr float    HeadingOffsetDegR    = -2.0f;
+  static constexpr float    HeadingOffsetDegL    = 0.9f;
+  static constexpr float    HeadingOffsetDeg =
+      ETROBO_COURSE_L ? HeadingOffsetDegR : HeadingOffsetDegL;
+  /* 左旋回 / 右旋回それぞれ、TurnsPerHeadingAdd 回ごとに目標角へ足す量 [deg]。
+   * CW 正。符号込みで入れる（左で右へ戻すなら正、右で左へ戻すなら負）。
+   * L コースと R コースも独立。逆向きが混ざっても数え直ししない。 */
+  static constexpr float    PerLeftTurnHeadingAddDegR  =  0.9f;
+  static constexpr float    PerRightTurnHeadingAddDegR = -0.5f;
+  static constexpr float    PerLeftTurnHeadingAddDegL  =  0.9f;
+  static constexpr float    PerRightTurnHeadingAddDegL = -0.5f;
+  static constexpr float    PerLeftTurnHeadingAddDeg =
+      ETROBO_COURSE_L ? PerLeftTurnHeadingAddDegR : PerLeftTurnHeadingAddDegL;
+  static constexpr float    PerRightTurnHeadingAddDeg =
+      ETROBO_COURSE_L ? PerRightTurnHeadingAddDegR : PerRightTurnHeadingAddDegL;
+  static constexpr int      TurnsPerHeadingAdd     = 1;
   static constexpr int      InitialStraightPower = 50;
   /* 減速中に進む分を含めた直進距離 [deg] */
-  static constexpr int32_t  InitialStraightDeg      = 650;
+  static constexpr int32_t  InitialStraightDeg      = 630;
   /* 上のうち減速中に進むと見込む距離 [deg] */
   static constexpr int32_t  InitialStraightDecelDeg = 100;
 
@@ -309,18 +334,18 @@ private:
 
   /* === 指定周回後の退出シーケンス === */
   /* x がこれ以下なら脱出前にこの x へ戻す（y は維持） */
-  static constexpr int      ExitMinXBeforeLeave      = 1;
-  static constexpr int      ExitReturnX              = 2;
+  static constexpr int      ExitMinXBeforeLeave      = 0;
+  static constexpr int      ExitReturnX              = 1;
   /* 論理 +y 方向へ向いてからラインまで直進（L=-90 / R=+90） */
   static constexpr float    ExitYLogicalHeadingDeg =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   static constexpr int      ExitYStraightPower       = 70;
   static constexpr uint32_t ExitYStraightMaxMs       = 8000U;
   /* 黒無視: +y 直進でラインへ向かうので、y が大きいほど近い。
-   * y>=6 は 0ms。y が 1 減るごとに ExitYBlackIgnorePerYMs 加算。
-   * y=5 は 200ms（0.5秒未満）。遠いほど長くする。 */
-  static constexpr int      ExitYBlackIgnoreBaseY    = 6;
-  static constexpr uint32_t ExitYBlackIgnorePerYMs   = 400U;
+   * y>=5 は 0ms。y が 1 減るごとに ExitYBlackIgnorePerYMs 加算。
+   * y=4 は 350ms。遠いほど長くする。 */
+  static constexpr int      ExitYBlackIgnoreBaseY    = 5;
+  static constexpr uint32_t ExitYBlackIgnorePerYMs   = 350U;
   static constexpr int32_t  ExitBlackReflectionMax   = 30;
   /* ラインつかみ後の旋回 → LT → 青/水色検知。
    * L と R を鏡像にせず、左右モータを独立に設定する。
@@ -341,7 +366,7 @@ private:
       ETROBO_COURSE_L ? ExitTurnRightPowerR : ExitTurnRightPowerL;
   static constexpr float    ExitTurnToleranceDeg = 4.0f;
   static constexpr uint32_t ExitTurnMaxMs        = 8000U;
-  static constexpr float    ExitSlowTracePower       = 50.0f;
+  static constexpr float    ExitSlowTracePower       = 70.0f;
   static constexpr float    ExitTraceKp              = 0.35f;
   static constexpr float    ExitTraceKi              = 0.01f;
   static constexpr float    ExitTraceKd              = 0.8f;
@@ -383,7 +408,7 @@ private:
 
   /* 絶対+90°後 → SKYBLUE まで LT */
   static constexpr float    ExitFinalTracePower      = 60.0f;
-  static constexpr uint32_t ExitFinalSkyblueIgnoreMs = 400U;
+  static constexpr uint32_t ExitFinalSkyblueIgnoreMs = 320U;
   static constexpr uint32_t ExitFinalTraceMaxMs      = 15000U;
 };
 
