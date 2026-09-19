@@ -90,9 +90,12 @@ public:
   /* パワー指令を止め、モータは惰性（coast）。stop() の set_power(0) は使わない。 */
   void coast();
 
-  /* 開始時の最短角だけを、経過角でその場旋回する（両輪逆符号ピボット）。
+  /* 開始時の目標差分を、経過角でその場旋回する（両輪逆符号ピボット）。
+   * 左右エンコーダの回転量差でパワーを補正し、|ΔL|≈|ΔR| の完全なその場旋回にする。
    * rem <= slow_approach_deg なら slow_power に落とす（行き過ぎ防止）。
-   * stop_early_deg: 残りがこの角以下で止める（慣性・カルマン遅れの行き過ぎ用）。 */
+   * stop_early_deg: 残りがこの角以下で止める（慣性・カルマン遅れの行き過ぎ用）。
+   * prefer_sign: 0=最短側、+1=CW 強制、-1=CCW 強制。
+   *   計画が L90/R90 なのに最短が逆向きになるのを防ぐときに使う。 */
   void turnToHeading(float target_heading,
                      float tolerance_deg = 4.0f,
                      int left_power = 40,
@@ -101,7 +104,8 @@ public:
                      float slow_approach_deg = 30.0f,
                      int slow_power = 33,
                      float stop_early_deg = 0.0f,
-                     bool coast_end = false);
+                     bool coast_end = false,
+                     int prefer_sign = 0);
 
   void pivotCW(int power)  { run( power, -power); }
   void pivotCCW(int power) { run(-power,  power); }
@@ -136,6 +140,12 @@ public:
 
 private:
   static constexpr uint32_t TurnStepMs = 1U;
+  /* その場旋回: 左右エンコーダ回転量を揃える P 補正
+   * （機械差で片輪だけ進むと並進成分が出るため） */
+  static constexpr float TurnEncBalanceKp       = 0.8f;
+  static constexpr int   TurnEncBalanceMaxCorr  = 30;
+  static constexpr int   TurnEncBalanceMinPower = 12;
+  static constexpr int32_t TurnEncBalanceDeadbandDeg = 2;
 
   static int clampMotorPower(int power);
   static int clampInt(int value, int min_value, int max_value);

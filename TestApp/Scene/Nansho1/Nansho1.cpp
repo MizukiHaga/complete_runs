@@ -155,7 +155,7 @@ void Nansho1Scene::beginBalancedStraight(int left_power, int right_power,
   if (UseHeadingCorrection) {
     gMotors.setBalancePid(PreWigwagBalanceKp, PreWigwagBalanceKi,
                           PreWigwagBalanceIntegralMax);
-    gMotors.setTargetHeading(target_heading);
+    gMotors.setTargetHeading(cruiseHeading(target_heading));
   }
   gMotors.run(left_power, right_power);
 }
@@ -164,6 +164,16 @@ void Nansho1Scene::endBalancedStraight()
 {
   gMotors.stop();
   sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
+}
+
+float Nansho1Scene::cruiseHeading(float logical_heading) const
+{
+  return Gyro::wrapDeg180(logical_heading + heading_add_);
+}
+
+void Nansho1Scene::bumpCruiseHeading()
+{
+  heading_add_ = Gyro::wrapDeg180(heading_add_ + PerCruiseHeadingAddDeg);
 }
 
 /* ---------------------------------------------------------------------
@@ -231,9 +241,11 @@ Nansho1Scene::wigwagScan(float amp_deg, int max_cycles, float *out_heading,
   const float front = front_heading;
 
   for (int cycle = 1; cycle <= max_cycles; ++cycle) {
+    bumpCruiseHeading();
+    const float aim = cruiseHeading(front);
 
     /* a) 側方を向く */
-    switch (rotateToHeadingWithScan(front + amp_deg, out_heading, scan_side,
+    switch (rotateToHeadingWithScan(aim + amp_deg, out_heading, scan_side,
                                     WigWagOutToleranceDeg)) {
       case ScanResult::SonicDetected:  return ScanResult::SonicDetected;
       case ScanResult::BlackDetected:  return ScanResult::BlackDetected;
@@ -241,7 +253,7 @@ Nansho1Scene::wigwagScan(float amp_deg, int max_cycles, float *out_heading,
     }
 
     /* b) 反対に旋回して正面へ向き直す */
-    switch (rotateToHeadingWithScan(front, out_heading, scan_side,
+    switch (rotateToHeadingWithScan(aim, out_heading, scan_side,
                                     WigWagReturnToleranceDeg)) {
       case ScanResult::SonicDetected:  return ScanResult::SonicDetected;
       case ScanResult::BlackDetected:  return ScanResult::BlackDetected;
@@ -312,7 +324,9 @@ bool Nansho1Scene::runWigwagScanPhases()
 Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
 {
   gGyro.reset(GyroResetOffsetDeg);
-  gMotors.setTargetHeading(0.0f);
+  heading_add_ = 0.0f;
+  bumpCruiseHeading();
+  gMotors.setTargetHeading(cruiseHeading(0.0f));
   gMotors.runBalancedEncoderFor(OppositeForwardPower, OppositeForwardPower,
                                 OppositeForwardFirstDeg, StepMs);
   dly_tsk(StepMs * 1000U);
@@ -321,8 +335,10 @@ Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
                 OppositeTurnPower, OppositeTurnPower);
   dly_tsk(StepMs * 1000U);
   gGyro.reset(GyroResetOffsetDeg);
+  heading_add_ = 0.0f;
 
-  gMotors.setTargetHeading(0.0f);
+  bumpCruiseHeading();
+  gMotors.setTargetHeading(cruiseHeading(0.0f));
   gMotors.runBalancedEncoderFor(OppositeForwardPower, OppositeForwardPower,
                                 OppositeForwardSecondDeg, StepMs);
   dly_tsk(StepMs * 1000U);
@@ -331,11 +347,14 @@ Nansho1Scene::ScanResult Nansho1Scene::readOppositeSide()
                 OppositeTurnPower, OppositeTurnPower);
   dly_tsk(StepMs * 1000U);
   gGyro.reset(GyroResetOffsetDeg);
+  heading_add_ = 0.0f;
 
-  gMotors.setTargetHeading(0.0f);
+  bumpCruiseHeading();
+  gMotors.setTargetHeading(cruiseHeading(0.0f));
   driveUntilGrayLine(0U, OppositeForwardPower, OppositeForwardPower,
                      ScanMaxMs);
   gGyro.reset(GyroResetOffsetDeg);
+  heading_add_ = 0.0f;
 
   return ScanResult::Completed;
 }
@@ -447,6 +466,8 @@ void Nansho1Scene::finishAfterDetect(ScanSide side, float heading_offset_deg)
     /* 迂回ルート: 反対側 ±90° → 直進 → 反対側 0° → 黒線まで直進 */
     turnToHeading(DetectWideTurnFirstDeg);
     dly_tsk(StepMs * 1000U);
+    bumpCruiseHeading();
+    gMotors.setTargetHeading(cruiseHeading(DetectWideTurnFirstDeg));
     gMotors.runForMs(LeftPower, RightPower, DetectMidForwardMs);
     dly_tsk(StepMs * 1000U);
 
@@ -655,7 +676,7 @@ void Nansho1Scene::run()
     gLineTracer.setEnabled(true);
     gLineTracer.setPid(BackTraceKp, BackTraceKi, BackTraceKd, BackTraceOutMax);
     gLineTracer.setScale(BackTraceScale);
-    gLineTracer.setEdgeFollow(false);  /* 右エッジ */
+    gLineTracer.setEdgeFollow(BackTraceEdgeFollow);
 
     /* ログ間引き用。走行の終了条件には使わない。 */
     uint32_t steps = 0U;
@@ -706,7 +727,9 @@ void Nansho1Scene::run()
   turnToHeading(PreWigwagTurnDeg);
   dly_tsk(StepMs * 1000U);
   gGyro.reset(GyroResetOffsetDeg);
+  heading_add_ = 0.0f;
   /* 指定時間だけ前進してから走査を始める（wigwag 直進と同じ共通処理）。 */
+  bumpCruiseHeading();
   beginBalancedStraight(LeftPower, RightPower, 0.0f);
   for (uint32_t elapsed_ms = 0U; elapsed_ms < ForwardBeforeScanMs;
        elapsed_ms += StepMs) {

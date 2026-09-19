@@ -82,8 +82,8 @@ void main_task(intptr_t unused)
 
 #if ETROBO_SCENE == 0
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
-  gHCR.run_hrc();
-  // gHCR.AllLineTrace();
+  // gHCR.run_hrc();
+  gHCR.AllLineTrace();
   act_tsk(NANSHO1_TASK);
 #elif ETROBO_SCENE == 1 || ETROBO_SCENE == 5
   act_tsk(NANSHO1_TASK);

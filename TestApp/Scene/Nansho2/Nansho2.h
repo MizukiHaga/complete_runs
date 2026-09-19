@@ -27,8 +27,10 @@ public:
    *  ② 青(SKYBLUE)検知後（分岐フラグでルート選択。センサ値は保持しない）
  *     黄: 少し直進 → 右旋回 → 時間制御直進 → ジャイロreset → 後退（黒または青検知まで）
  *     青: 黒LT → 青LT → 少し直進 → 右旋回 → 時間制御直進 → ジャイロreset → 後退（黒または青検知まで）
- *     赤: 黒LT → 青LT → 黒LT → 青LT → 少し直進 → 右旋回 → 時間制御直進 → ジャイロreset → 後退（黒または青検知まで）
- *     → 共通終端: 絶対角旋回(R=+90 / L=-90、左右モータ入替) → 低速LT → 白で停止 */
+ *     赤: 黒LT → 青LT → 黒LT → 青LT → 少し直進 → 右旋回 → 時間制御直進 → ジャイロreset
+ *         → 後退（エンコーダ距離） → その場旋回 → 後退（黒または青検知まで）
+ *         → 少し直進 → 絶対角旋回 → 低速LT → 白で停止
+ *     黄/青/赤 → 共通終端: 絶対角旋回(R=+90 / L=-90、左右モータ入替) → 低速LT → 白で停止 */
   void run();
 
   RouteBranch routeBranch() const { return route_branch_; }
@@ -54,17 +56,21 @@ private:
   void runYellowRouteAfterBlue();
   void runBlueRouteAfterBlue();
   void runRedRouteAfterBlue();
-  void runRouteFinalBackCaseRed();
 
   float runBlackBlueForwardTurnRight(int black_blue_pairs = 1);
   float runShortForwardTurnRight();
-  /* 旋回後の直進。終了条件はエンコーダ距離 [deg]（左右の平均）。 */
+  /* 旋回後の直進。終了条件はエンコーダ距離 [deg]（左右の平均）。
+   * kp 省略時は RouteFinalApproachBalance（遅い直進）。後退なら Back 側を渡す。 */
   void runStraightAfterTurn(float heading, int left_power, int right_power,
                             int32_t target_deg);
+  void runStraightAfterTurn(float heading, int left_power, int right_power,
+                            int32_t target_deg, float kp, float ki, float i_max);
   /* ボトル設置後: 旋回を挟まず、後退したままラインを検知するまで下がる。
-   * ignore_ms の間は判定しない（設置位置のラインを拾わないため）。 */
-  void runRouteFinalBack(float heading, int power, uint32_t ignore_ms);
-  void runAfterFinalStopTurnRightAndSlowTraceToWhite();
+   * ignore_ms の間は判定しない（設置位置のラインを拾わないため）。
+   * then_final=false なら終端旋回・LT は呼ばない。 */
+  void runRouteFinalBack(float heading, int power, uint32_t ignore_ms,
+                         bool then_final = true);
+  void runAfterFinalStopTurnRightAndSlowTraceToWhite(bool do_turn = true);
 
   void turnToHeading(float target_heading, float tolerance_deg,
                      int left_power, int right_power,
@@ -103,6 +109,7 @@ private:
   static constexpr uint32_t BackBeforeLowerMs    = 300U;  /* 後退時間 [ms] */
 
   /* === ⓪ アーム === */
+  static constexpr uint32_t ArmRaiseBeforeMs = 300U; /* 上げ前の待ち [ms] */
   static constexpr int      ArmRaisePower = 100;     /* 上げパワー */
   static constexpr int      ArmLowerPower = -100;  /* 下げパワー */
   static constexpr int32_t  ArmRaiseDeg   = 140;   /* 上げ角度 [deg] */
@@ -166,7 +173,7 @@ private:
   static constexpr int      AfterStraightToBlackRightPower = 100;    /* クルーズ右パワー */
   static constexpr int      AfterStraightSlowPower         = 50;     /* 減速後の維持パワー */
   static constexpr float    AfterStraightBalanceKp =
-      ETROBO_COURSE_L ? 7.0f : 9.0f;   /* 直進補正: P（R / L） */
+      ETROBO_COURSE_L ? 7.0f : 7.0f;   /* 直進補正: P（R / L） */
   static constexpr float    AfterStraightBalanceKi =
       ETROBO_COURSE_L ? 0.23f : 0.3f; /* 直進補正: I（R / L） */
   static constexpr float    AfterStraightBalanceIntegralMax =
@@ -186,15 +193,15 @@ private:
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   static constexpr float    AfterBlackLeftTurnToleranceDeg = 1.64f; /* 角度許容 [deg] */
   static constexpr int      AfterBlackLeftTurnLeftPower  =
-      ETROBO_COURSE_L ? 50 : 0;   /* R=左のみ / L=右のみ */
+      ETROBO_COURSE_L ? 70 : 0;   /* R=左のみ / L=右のみ */
   static constexpr int      AfterBlackLeftTurnRightPower =
-      ETROBO_COURSE_L ? 0 : 50;
+      ETROBO_COURSE_L ? 0 : 70;
   static constexpr int      AfterBlackTurnPreferSign =
       ETROBO_COURSE_L ? 1 : -1;  /* R=右旋回 / L=左旋回 */
 
   /* === ① 左向き旋回直後の低速LT（線に乗せる） === */
-  static constexpr float    PostBlackSlowTracePower  = 35.0f; /* 低速LT パワー */
-  static constexpr uint32_t PostBlackSlowTraceMs     = 600U;  /* 低速LT 時間 [ms] */
+  static constexpr float    PostBlackSlowTracePower  = 37.0f; /* 低速LT パワー */
+  static constexpr uint32_t PostBlackSlowTraceMs     = 300U;  /* 低速LT 時間 [ms] */
   static constexpr float    PostBlackSlowTraceKp     = 0.30f;
   static constexpr float    PostBlackSlowTraceKi     = 0.01f;
   static constexpr float    PostBlackSlowTraceKd     = 0.8f;
@@ -212,10 +219,41 @@ private:
   static constexpr bool     PostBlackTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* PostBlackTraceEdgeFollow: L=左エッジ, R=右エッジ */
 
-  /* === ② 黄/青/赤共通（右旋回後の直進） === */
+  /* === ② 黄/青/赤共通（右旋回後の遅い直進） === */
   static constexpr int      RouteFinalApproachLeftPower  = 50;    /* 右旋回後直進 左パワー */
   static constexpr int      RouteFinalApproachRightPower = 50;    /* 右旋回後直進 右パワー */
   static constexpr int32_t  RouteFinalApproachDeg        = 380;   /* 右旋回後の直進距離 [deg] */
+  /* ヨー角 PI（設置前の遅い直進）。R / L */
+  static constexpr float    RouteFinalApproachBalanceKpR = 3.0f;
+  static constexpr float    RouteFinalApproachBalanceKpL = 3.0f;
+  static constexpr float    RouteFinalApproachBalanceKiR = 0.01f;
+  static constexpr float    RouteFinalApproachBalanceKiL = 0.01f;
+  static constexpr float    RouteFinalApproachBalanceIntegralMaxR = 50.0f;
+  static constexpr float    RouteFinalApproachBalanceIntegralMaxL = 50.0f;
+  static constexpr float    RouteFinalApproachBalanceKp =
+      ETROBO_COURSE_L ? RouteFinalApproachBalanceKpR
+                      : RouteFinalApproachBalanceKpL;
+  static constexpr float    RouteFinalApproachBalanceKi =
+      ETROBO_COURSE_L ? RouteFinalApproachBalanceKiR
+                      : RouteFinalApproachBalanceKiL;
+  static constexpr float    RouteFinalApproachBalanceIntegralMax =
+      ETROBO_COURSE_L ? RouteFinalApproachBalanceIntegralMaxR
+                      : RouteFinalApproachBalanceIntegralMaxL;
+
+  /* ヨー角 PI（最後の後退。黄/青/赤のライン待ち後退と赤の1回目エンコーダ後退） */
+  static constexpr float    RouteFinalBackBalanceKpR = 7.0f;
+  static constexpr float    RouteFinalBackBalanceKpL = 7.0f;
+  static constexpr float    RouteFinalBackBalanceKiR = 0.23f;
+  static constexpr float    RouteFinalBackBalanceKiL = 0.3f;
+  static constexpr float    RouteFinalBackBalanceIntegralMaxR = 50.0f;
+  static constexpr float    RouteFinalBackBalanceIntegralMaxL = 50.0f;
+  static constexpr float    RouteFinalBackBalanceKp =
+      ETROBO_COURSE_L ? RouteFinalBackBalanceKpR : RouteFinalBackBalanceKpL;
+  static constexpr float    RouteFinalBackBalanceKi =
+      ETROBO_COURSE_L ? RouteFinalBackBalanceKiR : RouteFinalBackBalanceKiL;
+  static constexpr float    RouteFinalBackBalanceIntegralMax =
+      ETROBO_COURSE_L ? RouteFinalBackBalanceIntegralMaxR
+                      : RouteFinalBackBalanceIntegralMaxL;
   /* === ② 黄ルート（青①検知後） === */
   static constexpr int      YellowFinalBackPower        = 50;   /* 黄到達後の後退パワー */
   static constexpr uint32_t YellowFinalBackIgnoreMs     = 400U;
@@ -238,13 +276,31 @@ private:
   static constexpr uint32_t BlueFinalBackIgnoreMs             = 400U;
   /* 青③到達後、後退を始めてからライン判定を無視する時間 [ms] */
 
-  /* === ② 赤ルート（右旋回後） === */
-  static constexpr int      RedFinalBackPower                 = 50;   /* 赤到達後の後退パワー */
-  static constexpr uint32_t RedFinalBackIgnoreMs              = 400U;
-  static constexpr float RedFinalBackHeading = 0.0f;
-  /* 赤到達後、後退を始めてからライン判定を無視する時間 [ms] */
-  static constexpr float CaseRedTargetHeading = -70.0f;
-  static constexpr uint32_t CaseRedLtMaxMs = 200U;
+  /* === ② 赤ルート（設置後: エンコーダ後退 → その場旋回 → ラインまで後退 → 他分岐と同じ旋回+LT） === */
+  static constexpr int      RedFinalBackPower    = 50;    /* 後退パワー（1回目・2回目共通） */
+  /* 1回目後退の距離 [deg]。左右エンコーダの絶対値平均。360deg ≒ 176mm */
+  static constexpr int32_t  RedFirstBackDegR     = 130;
+  static constexpr int32_t  RedFirstBackDegL     = 130;
+  static constexpr int32_t  RedFirstBackDeg =
+      ETROBO_COURSE_L ? RedFirstBackDegR : RedFirstBackDegL;
+  static constexpr uint32_t RedFinalBackIgnoreMs = 200U;
+  /* 2回目後退の開始直後、ライン判定を無視する時間 [ms] */
+  /* 1回目後退後のその場旋回。絶対角 [deg]（reset 後 0° 基準、CW 正。左 = 負） */
+  static constexpr float    RedAfterBackTurnDegR = 50.0f;
+  static constexpr float    RedAfterBackTurnDegL = -50.0f;
+  static constexpr float    RedAfterBackTurnDeg =   
+      ETROBO_COURSE_L ? RedAfterBackTurnDegR : RedAfterBackTurnDegL;
+  static constexpr float    RedAfterBackTurnToleranceDeg = 4.0f;
+  static constexpr int      RedAfterBackTurnLeftPower    = 40;
+  static constexpr int      RedAfterBackTurnRightPower   = 40;
+  /* ラインつかみ後、終端旋回の前にほんの少し直進する距離 [deg]（360deg ≒ 176mm） */
+  static constexpr int      RedAfterLineForwardPower = 40;
+  static constexpr int32_t  RedAfterLineForwardDeg   = 50;
+  /* ラインつかみ後の終端旋回。黄/青の AfterFinalTurnDeg とは別に設定する */
+  static constexpr float    RedAfterFinalTurnDegR = 90.0f;
+  static constexpr float    RedAfterFinalTurnDegL = -90.0f;
+  static constexpr float    RedAfterFinalTurnDeg =
+      ETROBO_COURSE_L ? RedAfterFinalTurnDegR : RedAfterFinalTurnDegL;
 
   /* === ② 後退でライン検知（黄/青/赤共通） === */
   static constexpr int32_t  AfterFinalBackReflectionLineMax     = 30;
@@ -258,7 +314,7 @@ private:
    * 決まる。試合前にこの 6 個だけ調整する。 */
   /* R コース（ETROBO_COURSE_L が 1）: 右輪を止めた右ピボット */
   static constexpr float    AfterFinalTurnDegR        =  90.0f;
-  static constexpr int      AfterFinalTurnLeftPowerR  =  60;
+  static constexpr int      AfterFinalTurnLeftPowerR  =  70;
   static constexpr int      AfterFinalTurnRightPowerR =   0;
   /* L コース（ETROBO_COURSE_L が 0）: 左輪を止めた左ピボット */
   static constexpr float    AfterFinalTurnDegL        = -90.0f;
@@ -273,25 +329,28 @@ private:
   static constexpr int      AfterFinalTurnRightPower =
       ETROBO_COURSE_L ? AfterFinalTurnRightPowerR : AfterFinalTurnRightPowerL;
   static constexpr float    AfterFinalTurnToleranceDeg = 4.0f;
-  static constexpr float    FinalSlowTracePower             = 45.0f;
+  static constexpr float    FinalSlowTracePower             = 34.0f;
   static constexpr float    FinalSlowTraceKp                = 0.40f;
-  static constexpr float    FinalSlowTraceKi                = 0.01f;
+  static constexpr float    FinalSlowTraceKi                = 0.0001f;
   static constexpr float    FinalSlowTraceKd                = 0.8f;
   static constexpr float    FinalSlowTraceOutMax            = 100.0f;
   static constexpr float    FinalSlowTraceScale             = 1.0f;
+  /* 黄: 最終LTは先にこのパワー、その後 FinalSlowTracePower へ落とす */
+  static constexpr float    FinalYellowStartTracePower      = 45.0f;
+  static constexpr uint32_t FinalYellowStartTraceMs         = 500U;
   /* 赤ルート時の最終LT（従来の低速） */
-  static constexpr float    FinalRedSlowTracePower          = 70.0f;
-  static constexpr float    FinalRedSlowTraceKp             = 0.07f;
-  static constexpr float    FinalRedSlowTraceKi             = 0.006f;
-  static constexpr float    FinalRedSlowTraceKd             = 0.5f;
+  static constexpr float    FinalRedSlowTracePower          = 34.0f;
+  static constexpr float    FinalRedSlowTraceKp             = 0.4f;
+  static constexpr float    FinalRedSlowTraceKi             = 0.0001f;
+  static constexpr float    FinalRedSlowTraceKd             = 0.8f;
   static constexpr float    FinalRedSlowTraceOutMax         = 100.0f;
-  static constexpr float    FinalRedSlowTraceScale          = 15.0f;
+  static constexpr float    FinalRedSlowTraceScale          = 1.0f;
   static constexpr bool     FinalSlowTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* FinalSlowTraceEdgeFollow: L=左エッジ, R=右エッジ */
-  static constexpr uint32_t FinalSlowTraceWhiteIgnoreMs     = 500U;
+  static constexpr uint32_t FinalSlowTraceWhiteIgnoreMs     = 700U;
   /* FinalSlowTraceWhiteIgnoreMs: 最終旋回後LT開始直後、白判定を無視する時間 [ms] */
   /* 反射光がこの値以上なら白（ColorLAB::WhiteReflectionMin と同じ系統） */
-  static constexpr int32_t  FinalSlowTraceWhiteReflectionMin = 80;
+  static constexpr int32_t  FinalSlowTraceWhiteReflectionMin = 71;
 };
 
 #ifdef __cplusplus

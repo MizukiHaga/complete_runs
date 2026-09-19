@@ -89,34 +89,21 @@ void HCR::catch_black_line()
 void HCR::LineTrace()
 {
   // catch_color_line();
-  gLineTracer.setBaseSpeed(100.0f, 100.0f);
-  gLineTracer.setPid(hcr_p,hcr_i,hcr_d,100.0f);
-  // gLineTracer.setPid(0.07f,0.0006f,0.52f, 100.0f);
-  gLineTracer.setScale(hcr_scale);
+  gLineTracer.setBaseSpeed(95.0f, 95.0f);
+  gLineTracer.setPid(0.08f,0.00025f,0.72f, 100.0f);
+  gLineTracer.setScale(18.0f);
   // gLineTracer.setBaseSpeed(85.0f, 85.0f);
   // gLineTracer.setPid(0.068f,0.0006f,0.6f, 100.0f);
   // gLineTracer.setScale(15.0f);
-  /* L=右エッジ, R=左エッジ */
-  gLineTracer.setEdgeFollow(ETROBO_COURSE_L == 0);
+  /* L=右エッジ, R=左エッジ（ShortCutRun と同じ。==0 だと R が右エッジになり曲がり切れない） */
+  gLineTracer.setEdgeFollow(ETROBO_COURSE_L != 0);
   sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(3500 * 1000);
-  stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setEnabled(false);
   gGyro.reset();
-// gMotors.stop();
-// dly_tsk(2000 * 1000);
-
-  gLineTracer.setEnabled(true);
-  sta_cyc(LINE_TRACER_TASK_CYC);
   dly_tsk(300 * 1000);
-  stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setScale(hcr_scale_s);
-  gLineTracer.setPid(hcr_p_s,hcr_i,hcr_d,100.0f);
-  // gLineTracer.setScale(16.0f);
-  // gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
-  sta_cyc(LINE_TRACER_TASK_CYC);
+  gLineTracer.setScale(16.0f);
   dly_tsk(1000 * 1000);
-  stp_cyc(LINE_TRACER_TASK_CYC);
+  /* 周期 LT は止めない。カーブ終端で制御が途切れると右へ飛ぶ */
   
   
 
@@ -136,10 +123,11 @@ void HCR::LineTrace()
 void HCR::AllLineTrace()
 {
   LineTrace();
+  /* 周期 LT が動いたまま。ここで step() すると D が二重になりカーブ終端で飛ぶ */
   while (true) {
     if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
       gLineTracer.setBaseSpeed(50.0f, 50.0f);
-      gLineTracer.setPid(0.062f,0.0006f,0.5f, 100.0f);
+      gLineTracer.setPid(0.08f,0.0006f,0.5f, 100.0f);//L = 0.062f,0.0006f,0.5f, 100.0f
       gLineTracer.setScale(15.0f);
       while (true) {
         if (gColorLAB.is(COLOR_DETECT_BLACKLINE, true)) {
@@ -149,11 +137,9 @@ void HCR::AllLineTrace()
           dly_tsk(1000 * 1000);
           return;
         }
-        gLineTracer.step();
         dly_tsk(1 * 1000);
       }
     }
-    gLineTracer.step();
     dly_tsk(5 * 1000);
   }
 }
@@ -161,16 +147,8 @@ void HCR::AllLineTrace()
 void HCR::run_hrc()
 {
   LineTrace();
-  if (!ETROBO_COURSE_L) {
-    while (gGyro.heading() > hcr_90) {
-      gLineTracer.step();
-      dly_tsk(5 * 1000);
-    }
-  }else{
-    while (gGyro.heading() < hcr_90) {
-      gLineTracer.step();
-      dly_tsk(5 * 1000);
-    }
+  while (gGyro.heading() > -90.0f) {
+    dly_tsk(5 * 1000);
   }
   gLineTracer.setEnabled(false);
   if (!ETROBO_COURSE_L) {
