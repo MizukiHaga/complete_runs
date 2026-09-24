@@ -271,7 +271,7 @@ private:
   static constexpr int      InitialBackPower     = 40;
   /* 減速中に進む分を含めたバック距離 [deg]。左右エンコーダの絶対値平均 */
   static constexpr int32_t  InitialBackDegR      = 240;
-  static constexpr int32_t  InitialBackDegL      = 200;
+  static constexpr int32_t  InitialBackDegL      = 240;
   static constexpr int32_t  InitialBackDeg =
       ETROBO_COURSE_L ? InitialBackDegR : InitialBackDegL;
   /* 上のうち減速中に進むと見込む距離 [deg] */
@@ -294,8 +294,8 @@ private:
    * L コースと R コースも独立。逆向きが混ざっても数え直ししない。 */
   static constexpr float    PerLeftTurnHeadingAddDegR  =  0.9f;
   static constexpr float    PerRightTurnHeadingAddDegR = -0.5f;
-  static constexpr float    PerLeftTurnHeadingAddDegL  =  0.9f;
-  static constexpr float    PerRightTurnHeadingAddDegL = -0.5f;
+  static constexpr float    PerLeftTurnHeadingAddDegL  =  0.55f;
+  static constexpr float    PerRightTurnHeadingAddDegL = -0.4f;
   static constexpr float    PerLeftTurnHeadingAddDeg =
       ETROBO_COURSE_L ? PerLeftTurnHeadingAddDegR : PerLeftTurnHeadingAddDegL;
   static constexpr float    PerRightTurnHeadingAddDeg =

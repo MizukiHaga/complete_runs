@@ -117,7 +117,7 @@ extern "C" {
  * ETROBO_COURSE_L を 1 で Rコース、0 で Lコース。
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_COURSE_L
-#define ETROBO_COURSE_L 0
+#define ETROBO_COURSE_L 1
 // #define ETROBO_COURSE_L 1
 #endif
 
@@ -125,7 +125,7 @@ extern "C" {
  * ETROBO_SCENE:
  *   0: HCR → Nansho1 → Nansho2 → Nansho3（本番）
  *   1: Nansho1 のみ
- *   2: Nansho2 のみ
+ *   2: Nansho2 のみ22w
  *   3: HCR のみ
  *   4: Nansho3 のみ
  *   5: Nansho1 → Nansho2 → Nansho3（HCRなし）
