@@ -20,10 +20,13 @@ SPIKE-RT Hub の Nordic SPP (NUS互換) から IMU 角度行 (例: IMU_h,12.34) 
     --timeout <s>   スキャンタイムアウト秒 (デフォルト 20)
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import sys
 from datetime import datetime
+from typing import Optional
 
 from bleak import BleakClient, BleakScanner
 
@@ -99,7 +102,7 @@ async def list_devices(timeout: float) -> None:
         print(f"  {addr}  name={shown!r}{marker}")
 
 
-async def run(name_filter: str, address: str | None, timeout: float) -> None:
+async def run(name_filter: str, address: Optional[str], timeout: float) -> None:
     scan_kw = scanner_kwargs()
     device = None
 
