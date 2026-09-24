@@ -324,7 +324,7 @@ private:
    * -2 なら車体は 2° CW（右）。左へずらしたいなら正にする。
    * L と R は鏡像にせず、それぞれ独立に設定する。 */
   static constexpr float    GyroResetOffsetDegR = 1.2f;  /* R コース */
-  static constexpr float    GyroResetOffsetDegL = 1.2f;  /* L コース */
+  static constexpr float    GyroResetOffsetDegL = 2.0f;  /* L コース */
   /* 実際に使う値。ここは触らない。 */
   static constexpr float    GyroResetOffsetDeg =
       ETROBO_COURSE_L ? GyroResetOffsetDegR : GyroResetOffsetDegL;

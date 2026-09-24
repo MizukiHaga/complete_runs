@@ -5,10 +5,18 @@ SPIKE-RT Hub の Nordic SPP (NUS互換) から IMU 角度行 (例: IMU_h,12.34) 
     py -m pip install --user bleak
     py bt_recv.py
 
+使い方 (macOS):
+    python3 -m pip install --user bleak
+    python3 bt_recv.py --list
+    python3 bt_recv.py
+    python3 bt_recv.py --address <uuid>
+    Mac では BLE の識別子は MAC アドレスではなく UUID。
+    --list に出た address を --address に渡す。
+
 オプション:
     --list          周囲の BLE デバイスを 10 秒スキャンして一覧表示のみ行う
     --name <str>    ハブ名のフィルタ (デフォルト: "Pybricks Hub")
-    --address <mac> MAC アドレス直接指定 (例: AA:BB:CC:DD:EE:FF)
+    --address <id>  アドレス直接指定 (Windows: MAC / macOS: UUID)
     --timeout <s>   スキャンタイムアウト秒 (デフォルト 20)
 """
 
@@ -26,61 +34,113 @@ PYBRICKS_SERVICE_UUID = "c5f50001-8280-46da-89f4-6d8051e4aeef"
 NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # hub -> PC (notify)
 
-#デバイス一覧表示用の非同期関数定義。
+HUB_SERVICE_UUIDS = [PYBRICKS_SERVICE_UUID, NUS_SERVICE_UUID]
+
+
+def scanner_kwargs() -> dict:
+    """macOS は service_uuids 無しだと広告の name/UUID が None になる。"""
+    if sys.platform == "darwin":
+        return {"service_uuids": HUB_SERVICE_UUIDS}
+    return {}
+
+
+def device_name(d, adv=None) -> str:
+    name = getattr(d, "name", None) if d is not None else None
+    if not name and adv is not None:
+        name = getattr(adv, "local_name", None)
+    return name or ""
+
+
+def service_uuids_of(adv) -> list[str]:
+    if adv is None:
+        return []
+    raw = getattr(adv, "service_uuids", None) or []
+    out: list[str] = []
+    for u in raw:
+        if u is None:
+            continue
+        out.append(str(u).lower())
+    return out
+
+
+def is_hub_uuid(uuids: list[str]) -> bool:
+    want = {u.lower() for u in HUB_SERVICE_UUIDS}
+    return bool(want.intersection(uuids))
+
+
+# デバイス一覧表示用の非同期関数定義。
 async def list_devices(timeout: float) -> None:
     print(f"[list] scanning {timeout:.0f}s ...")
     # 見つかったデバイスの情報を格納する辞書
-    seen: dict[str, tuple[str | None, list[str]]] = {}
+    seen: dict[str, tuple[str, list[str]]] = {}
 
     # デバイスの情報を取得するコールバック関数
     def cb(d, adv):
-        # デバイスの情報を取得
-        seen[d.address] = (d.name or adv.local_name, list(adv.service_uuids or []))
+        if d is None:
+            return
+        addr = getattr(d, "address", None)
+        if not addr:
+            return
+        seen[addr] = (device_name(d, adv), service_uuids_of(adv))
 
-    scanner = BleakScanner(detection_callback=cb)
-    await scanner.start()
-    await asyncio.sleep(timeout)
-    await scanner.stop()
+    async with BleakScanner(detection_callback=cb, **scanner_kwargs()):
+        await asyncio.sleep(timeout)
 
     if not seen:
         print("[list] no BLE devices found")
+        if sys.platform == "darwin":
+            print("[list] macOS は Bluetooth 許可と、ハブが広告中かを確認してください")
         return
 
     print(f"[list] found {len(seen)} device(s):")
-    for addr, (name, uuids) in sorted(seen.items()):
-        marker = "  <-- hub?" if PYBRICKS_SERVICE_UUID in [u.lower() for u in uuids] else ""
-        print(f"  {addr}  name={name!r}{marker}")
+    for addr, (name, uuids) in sorted(seen.items(), key=lambda x: x[0]):
+        marker = "  <-- hub?" if is_hub_uuid(uuids) else ""
+        shown = name if name else "(no name)"
+        print(f"  {addr}  name={shown!r}{marker}")
+
+
 async def run(name_filter: str, address: str | None, timeout: float) -> None:
+    scan_kw = scanner_kwargs()
+    device = None
+
     if address:
         print(f"[scan] connecting directly to {address} ...")
-        device = await BleakScanner.find_device_by_address(address, timeout=timeout)
-    else:
-        print(f"[scan] searching for hub (name~={name_filter!r} or Pybricks service) ...")
+        device = await BleakScanner.find_device_by_address(
+            address, timeout=timeout, **scan_kw
+        )
+    if device is None:
+        print(f"[scan] searching for hub (name~={name_filter!r} or Pybricks/NUS service) ...")
 
-        #
         def match(d, adv):
-            name = (d.name or adv.local_name or "")
-            if name_filter and name.startswith(name_filter):
+            if d is None:
+                return False
+            name = device_name(d, adv)
+            if name_filter and name.lower().startswith(name_filter.lower()):
                 return True
-            uuids_lower = [u.lower() for u in (adv.service_uuids or [])]
-            if PYBRICKS_SERVICE_UUID in uuids_lower:
+            if is_hub_uuid(service_uuids_of(adv)):
                 return True
             return False
 
-        device = await BleakScanner.find_device_by_filter(match, timeout=timeout)
+        device = await BleakScanner.find_device_by_filter(
+            match, timeout=timeout, **scan_kw
+        )
 
     if device is None:
         print("[scan] not found. hub が広告中か確認してください (--list で周囲を確認可)")
+        if sys.platform == "darwin":
+            print("[scan] macOS では --list の UUID を --address に渡してください (MAC アドレスではない)")
         sys.exit(1)
 
-    print(f"[scan] found: {device.name!r} ({device.address})")
+    shown_name = device_name(device) or "(no name)"
+    print(f"[scan] found: {shown_name!r} ({device.address})")
 
-    #生バイトを一時保持
-    
+    # 生バイトを一時保持
     buffer = bytearray()
 
     def handle_notify(_sender, data: bytearray) -> None:
         nonlocal buffer
+        if data is None:
+            return
         buffer.extend(data)
         while b"\n" in buffer:
             line, _, buffer = buffer.partition(b"\n")

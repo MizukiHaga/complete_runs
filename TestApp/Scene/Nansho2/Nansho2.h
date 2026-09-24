@@ -330,7 +330,7 @@ private:
       ETROBO_COURSE_L ? AfterFinalTurnRightPowerR : AfterFinalTurnRightPowerL;
   static constexpr float    AfterFinalTurnToleranceDeg = 4.0f;
   static constexpr float    FinalSlowTracePower             = 34.0f;
-  static constexpr float    FinalSlowTraceKp                = 0.40f;
+  static constexpr float    FinalSlowTraceKp                = 0.20f;
   static constexpr float    FinalSlowTraceKi                = 0.0001f;
   static constexpr float    FinalSlowTraceKd                = 0.8f;
   static constexpr float    FinalSlowTraceOutMax            = 100.0f;
@@ -340,7 +340,7 @@ private:
   static constexpr uint32_t FinalYellowStartTraceMs         = 500U;
   /* 赤ルート時の最終LT（従来の低速） */
   static constexpr float    FinalRedSlowTracePower          = 34.0f;
-  static constexpr float    FinalRedSlowTraceKp             = 0.4f;
+  static constexpr float    FinalRedSlowTraceKp             = 0.20f;
   static constexpr float    FinalRedSlowTraceKi             = 0.0001f;
   static constexpr float    FinalRedSlowTraceKd             = 0.8f;
   static constexpr float    FinalRedSlowTraceOutMax         = 100.0f;
