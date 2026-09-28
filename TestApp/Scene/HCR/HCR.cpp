@@ -11,9 +11,11 @@
 extern "C" {
 #include <spike/pup/motor.h>
 #include <spike/hub/imu.h>
+#include <spike/hub/display.h>
 }
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 extern Straight gMotors;
@@ -86,6 +88,28 @@ void HCR::catch_black_line()
   }
 }
 
+void HCR::LineTraceRotation(float left_rotation,float right_rotation, float left_speed, float right_speed, float p, float i, float d, float scale)
+{
+  gMotors.resetRotationCount();
+  const float start_left = gMotors.leftRotationCount();
+  const float start_right = gMotors.rightRotationCount();
+  gLineTracer.setBaseSpeed(left_speed, right_speed);
+  gLineTracer.setPid(p,i,d,100.0f);
+  gLineTracer.setScale(scale);
+  while (true) {
+    gLineTracer.step();
+    const float moved_left = gMotors.leftRotationCount() - start_left;
+    const float moved_right = gMotors.rightRotationCount() - start_right;
+    if (moved_left >= left_rotation && moved_right >= right_rotation) {
+      gLineTracer.setEnabled(false);
+      gMotors.stop();
+      stp_cyc(LINE_TRACER_TASK_CYC);
+      dly_tsk(1 * 1000);
+      return;
+    }
+    dly_tsk(5 * 1000);
+  }
+}
 void HCR::LineTrace()
 {
   // catch_color_line();
@@ -111,19 +135,63 @@ void HCR::LineTrace()
   // gLineTracer.setPid(0.07f,0.0006f,0.5f, 100.0f);
   // gLineTracer.setScale(15.0f);
   // sta_cyc(LINE_TRACER_TASK_CYC);
-  // dly_tsk(4100 * 1000);
+  // dly_tsk(3500 * 1000);
   // stp_cyc(LINE_TRACER_TASK_CYC);
   // gLineTracer.setEnabled(false);
   // gGyro.reset();
   // gLineTracer.setEnabled(true);
+  // sta_cyc(LINE_TRACER_TASK_CYC);
+  // dly_tsk(300 * 1000);
+  // stp_cyc(LINE_TRACER_TASK_CYC);
+  // gLineTracer.setScale(hcr_scale_s);
+  // gLineTracer.setPid(hcr_p_s,hcr_i,hcr_d,100.0f);
+  // sta_cyc(LINE_TRACER_TASK_CYC);
+  // dly_tsk(1000 * 1000);
+  // stp_cyc(LINE_TRACER_TASK_CYC);
+  
+}
 
+void HCR::LineTraceRotationCheck(float duration_sec)
+{
+  if (duration_sec <= 0.0f) {
+    hub_display_char('E');
+    return;
+  }
 
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  gMotors.resetRotationCount();
+  gLineTracer.setEnabled(true);
+  gLineTracer.setBaseSpeed(100.0f, 100.0f);
+  gLineTracer.setPid(hcr_p_s, hcr_i, hcr_d, 100.0f);
+  gLineTracer.setScale(hcr_scale_s);
+  sta_cyc(LINE_TRACER_TASK_CYC);
+
+  const uint32_t total_us = (uint32_t)(duration_sec * 1000000.0f + 0.5f);
+  dly_tsk((RELTIM)total_us);
+
+  stp_cyc(LINE_TRACER_TASK_CYC);
+  gLineTracer.setEnabled(false);
+  gMotors.stop();
+
+  const int32_t right_deg = (int32_t)roundf(fabsf(gMotors.rightRotationCount()));
+  const int32_t left_deg = (int32_t)roundf(fabsf(gMotors.leftRotationCount()));
+  char result[32];
+  snprintf(result, sizeof(result), "R%ldL%ld ",
+           (long)right_deg, (long)left_deg);
+
+  for (size_t i = 0; result[i] != '\0'; ++i) {
+    hub_display_char(result[i]);
+    dly_tsk(500 * 1000);
+  }
+  hub_display_off();
 }
 
 void HCR::AllLineTrace()
 {
-  LineTrace();
-  /* 周期 LT が動いたまま。ここで step() すると D が二重になりカーブ終端で飛ぶ */
+  LineTraceRotation(3.0f, 3.0f, 100.0f, 100.0f, hcr_p_s,hcr_i,hcr_d, hcr_scale_s);
+
+  // LineTraceRotation(3.0f, 3.0f, 100.0f, 100.0f, 0.07f, 0.0006f, 0.5f, 100.0f);
+
   while (true) {
     if (gColorLAB.is(COLOR_DETECT_SKYBLUE, true)) {
       gLineTracer.setBaseSpeed(50.0f, 50.0f);
@@ -134,7 +202,7 @@ void HCR::AllLineTrace()
           gLineTracer.setEnabled(false);
           gMotors.stop();
           stp_cyc(LINE_TRACER_TASK_CYC);
-          dly_tsk(1000 * 1000);
+          dly_tsk(500 * 1000);
           return;
         }
         dly_tsk(1 * 1000);
@@ -146,95 +214,23 @@ void HCR::AllLineTrace()
 
 void HCR::run_hrc()
 {
-  LineTrace();
-  while (gGyro.heading() > -90.0f) {
-    dly_tsk(5 * 1000);
-  }
-  gLineTracer.setEnabled(false);
-  if (!ETROBO_COURSE_L) {
-    gMotors.run(90.0f, 100.0f);
-  } else {
-    gMotors.run(100.0f, 90.0f);
-  }
-  dly_tsk(320 * 1000);
-  if (!ETROBO_COURSE_L) {
-    while (gGyro.heading() > -175.0f) {
-      gMotors.run(77.0f, 100.0f);
-      dly_tsk(5 * 1000);
-    }
-  } else {
-    while (gGyro.heading() < 173.0f) {
-      gMotors.run(100.0f, 84.0f);
-      dly_tsk(5 * 1000);
-    }
-  }
-  gMotors.setTargetHeading(hcr_175);
-  // while(true){
-  //   if(ms > ignore_time){
-  //     if(gColorLAB.is(COLOR_DETECT_BLACK, true)){
-  //       gLineTracer.setEnabled(true);
-  //       gLineTracer.setScale(16.0f);
-  //       gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
-  //       sta_cyc(LINE_TRACER_TASK_CYC);
-  //       dly_tsk(2000 * 1000);
-  //       stp_cyc(LINE_TRACER_TASK_CYC);
-  //     }
-  //   }
-  //   gMotors.run(100.0f,100.0f);
-  //   ms++;
-  //   dly_tsk(1 * 1000);
-  // }
-  gLineTracer.setEnabled(false);
-  gMotors.stop();
-  dly_tsk(5000 * 1000);
-  if (!ETROBO_COURSE_L) {
-    gMotors.run(100.0f, 85.0f);
-    dly_tsk(830 * 1000);
-    gMotors.run(100.0f, 100.0f);
-    dly_tsk(310 * 1000);
-    gMotors.setTargetHeading(-180.0f);
-    gMotors.run(70.0f, 100.0f);
-    dly_tsk(500 * 1000);
-  } else {
-    gMotors.run(85.0f, 100.0f);
-    dly_tsk(830 * 1000);
-    // gMotors.run(100.0f, 100.0f);
-    // dly_tsk(900 * 1000);
-    // gMotors.setTargetHeading(180.0f);
-    // gMotors.run(100.0f, 70.0f);
-    // dly_tsk(600 * 1000);
-    
-    gMotors.setTargetHeading(targetHeading);
-    while(true){
-      if(ms > ignore_time){
-        while(true){  
-          if(gColorLAB.is(COLOR_DETECT_BLACK, true)){
-            gLineTracer.setEnabled(true);
-            gLineTracer.setScale(16.0f);
-            gLineTracer.setPid(0.067f,0.0006f,0.52f, 100.0f);
-            sta_cyc(LINE_TRACER_TASK_CYC);
-            dly_tsk(2000 * 1000);
-            stp_cyc(LINE_TRACER_TASK_CYC);
-            break;
-          }
-          gMotors.run(70.0f,70.0f);
-          ms++;
-          dly_tsk(1 * 1000);
-        }
-      }
-      gMotors.run(100.0f,100.0f);
-      ms++;
-      dly_tsk(1 * 1000);
-    }
+  float start_left = gMotors.leftRotationCount();
+  float start_right = gMotors.rightRotationCount();
 
+  float moved_left = gMotors.leftRotationCount() - start_left;
+  float moved_right = gMotors.rightRotationCount() - start_right;
+  gMotors.resetRotationCount();
+  if (moved_left == 0.0f || moved_right == 0.0f) {
+    gMotors.runForRotationsSameTime(100, 100, 3.0f, 3.0f);
   }
-  catch_black_line();
-  catch_blue_line();
-
-  /* Nansho1 へ渡す前に周期 LT を確実に停止する */
-  stp_cyc(LINE_TRACER_TASK_CYC);
-  gLineTracer.setEnabled(false);
   gMotors.stop();
+  dly_tsk(10000 * 1000);
+  // LineTrace();
+
+  // /* Nansho1 へ渡す前に周期 LT を確実に停止する */
+  // stp_cyc(LINE_TRACER_TASK_CYC);
+  // gLineTracer.setEnabled(false);
+  // gMotors.stop();
 }
 
 void HCR::SlowDown(float left_speed, float right_speed, float duration_sec, float target_speed)
