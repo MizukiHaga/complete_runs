@@ -123,7 +123,10 @@ void main_task(intptr_t unused)
   ReflectionSensor_SetOutput(bt_out);
   // sta_cyc(REFLECTION_SENSOR_TASK_CYC);
 
+  /* 直進 + 左右モータ値ログ。100ms 周期で MOT_L/MOT_R（エンコーダ deg）と
+   * MOT_Lp/MOT_Rp（パワー）を BLE へ出す。パワーは Morter.h。 */
   Morter_Configure(morter_left_motor_port, morter_right_motor_port);
+  Morter_SetOutput(bt_out);
   DistanceSensor_Init(bt_out, DISTANCE_SENSOR_PORT);
   Battery_Init(bt_out);
   SonicLight_Init(nullptr, SONIC_LIGHT_PORT);

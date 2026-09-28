@@ -8,7 +8,7 @@ extern "C" {
 /* タスク優先度 */
 #define MAIN_PRIORITY    5 /* メインタスク */
 #define ANGLE_PRIORITY     6 /* IMU 角度ログ */
-#define MORTER_PRIORITY    7 /* モーター（駆動の有無は Morter.h のマクロ） */
+#define MORTER_PRIORITY    7 /* モーター直進 + 左右値ログ */
 #define DISTANCE_PRIORITY  8 /* 距離センサログ */
 #define BATTERY_PRIORITY   9 /* バッテリー残量ログ */
 #define SONIC_LIGHT_PRIORITY 10 /* 超音波検知→ハブライト表示 */

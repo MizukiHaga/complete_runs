@@ -1345,14 +1345,14 @@ void Nansho3Scene::run()
   y_ = LapStartY;
 #if ETROBO_COURSE_L
   /* Rコース（開始(1,1)が赤a。通過後に他端へ戻さない） */
-  const GateSeg red    = {{4}, {3, 4}}; /* Y連続 */
-  const GateSeg blue   = {{2, 3}, {2}}; /* X連続 */
-  const GateSeg yellow = {{1}, {3, 4}}; /* Y連続 */
+  const GateSeg red    = {{1}, {0, 1}}; /* Y連続 */
+  const GateSeg blue   = {{4, 5}, {1}}; /* X連続 */
+  const GateSeg yellow = {{4}, {4, 5}}; /* Y連続 */
 #else
   /* Lコース */
-  const GateSeg red    = {{1}, {0, 1}}; /* Y連続 */
-  const GateSeg blue   = {{4, 5}, {4}}; /* X連続 */
-  const GateSeg yellow = {{4}, {0, 1}}; /* Y連続 */
+  const GateSeg red    = {{1}, {1, 2}}; /* Y連続 */
+  const GateSeg blue   = {{2, 3}, {2}}; /* X連続 */
+  const GateSeg yellow = {{3}, {3, 4}}; /* Y連続 */
 #endif
 
   facing_deg_            = 0.0f;

@@ -92,9 +92,9 @@ private:
 
   /* === ⓪ 開始LT（スカイブルー → 黒） === */
   static constexpr float    TracePower         = 33.0f;   /* LT 左右ベースパワー */
-  static constexpr float    InitialTraceKp     = 0.45f;   /* LT PID: P */
-  static constexpr float    InitialTraceKi     = 0.005f;   /* LT PID: I */
-  static constexpr float    InitialTraceKd     = 0.8f;    /* LT PID: D */
+  static constexpr float    InitialTraceKp     = 0.02f;   /* LT PID: P */
+  static constexpr float    InitialTraceKi     = 0.01f;   /* LT PID: I */
+  static constexpr float    InitialTraceKd     = 3.0f;    /* LT PID: D */
   static constexpr float    InitialTraceOutMax = 100.0f;  /* LT PID 出力上限 */
   static constexpr float    InitialTraceScale  = 1.0f;    /* HCR 後も自前 PID を維持 */
   static constexpr bool     InitialTraceEdgeFollow = (ETROBO_COURSE_L == 0);

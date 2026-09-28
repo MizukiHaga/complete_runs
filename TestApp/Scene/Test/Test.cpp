@@ -208,6 +208,76 @@ void TestScene::runNansho3DecelStraightTest()
   dly_tsk(StepMs * 1000U);
 }
 
+/* Nansho3 と同じ両輪ピボット。左右で許容・早め停止を切り替える */
+void TestScene::turnNansho3SpinOnce(float target, bool left)
+{
+  const float tol   = left ? Nansho3SpinLeftToleranceDeg
+                           : Nansho3SpinRightToleranceDeg;
+  const float extra = left ? Nansho3SpinLeftEarlyExtraDeg
+                           : Nansho3SpinRightEarlyExtraDeg;
+  const int   prefer = left ? -1 : 1;
+  gMotors.turnToHeading(target, tol, Nansho3SpinPower, Nansho3SpinPower,
+                        Nansho3SpinMaxMs, Nansho3SpinSlowApproachDeg,
+                        Nansho3SpinSlowPower,
+                        Nansho3SpinEarlyStopDeg + extra, /*coast_end=*/false,
+                        prefer);
+  gMotors.stop();
+}
+
+/* Nansho3 と同じ両輪ピボット。90° ごとに停止し、旋回方向の補正を積む */
+void TestScene::runNansho3SpinLoop()
+{
+  gGyro.reset();
+  gGyro.setKalmanNoise(Nansho3SpinProcessNoise, Nansho3SpinMeasNoise);
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  gLineTracer.setEnabled(false);
+  gMotors.stop();
+
+  static constexpr float kFacingDeg[4] = {0.0f, 90.0f, -180.0f, -90.0f};
+  const bool left = (TEST_TURN_LEFT != 0);
+  int   facing_i    = 0;
+  float heading_add = 0.0f;
+  int   turn_count  = 0;
+  const float per_add =
+      left ? Nansho3SpinPerLeftAddDeg : Nansho3SpinPerRightAddDeg;
+
+  while (1) {
+    dly_tsk(Nansho3SpinBeforeMs * 1000U);
+    facing_i = left ? (facing_i + 3) % 4 : (facing_i + 1) % 4;
+    const float target = Gyro::wrapDeg180(
+        kFacingDeg[facing_i] + Nansho3SpinHeadingOffsetDeg + heading_add);
+    turnNansho3SpinOnce(target, left);
+
+    ++turn_count;
+    if (turn_count >= Nansho3SpinTurnsPerAdd) {
+      turn_count  = 0;
+      heading_add = Gyro::wrapDeg180(heading_add + per_add);
+    }
+
+    if (Nansho3SpinAfterMs > 0U) {
+      dly_tsk(Nansho3SpinAfterMs * 1000U);
+    }
+  }
+}
+
+/* Nansho3 と同じ両輪ピボットを1回だけ。TEST_TURN_LEFT で左右 */
+void TestScene::runNansho3OnceTurn()
+{
+  gGyro.reset();
+  gGyro.setKalmanNoise(Nansho3SpinProcessNoise, Nansho3SpinMeasNoise);
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  gLineTracer.setEnabled(false);
+  gMotors.stop();
+
+  const bool  left    = (TEST_TURN_LEFT != 0);
+  const float logical = left ? -90.0f : 90.0f;
+  const float target  = Gyro::wrapDeg180(
+      logical + Nansho3SpinHeadingOffsetDeg);
+
+  dly_tsk(Nansho3SpinBeforeMs * 1000U);
+  turnNansho3SpinOnce(target, left);
+}
+
 /* Nansho1 と同じピボット旋回（経過角で終了、ジャイロ reset はしない） */
 void TestScene::turnToHeading(float target_heading, float tolerance_deg)
 {
@@ -328,6 +398,10 @@ void TestScene::run()
   runNansho3StraightTest();
 #elif ETROBO_SCENE == 12
   runNansho3DecelStraightTest();
+#elif ETROBO_SCENE == 14
+  runNansho3SpinLoop();
+#elif ETROBO_SCENE == 15
+  runNansho3OnceTurn();
 #else
   runLineTraceUntilSkyblueThenStraight();
 #endif
