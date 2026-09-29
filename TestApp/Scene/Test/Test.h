@@ -143,7 +143,7 @@ private:
    * CoreTurn* と同じ数値。14 は1回ずつ止めて繰り返す。15 は1回だけ。
    * 左右は app.h の TEST_TURN_LEFT。許容角・早め停止・加算は左右独立。 === */
   static constexpr int      Nansho3SpinPower            = 40;
-  static constexpr float    Nansho3SpinLeftToleranceDeg  = 4.0f;
+  static constexpr float    Nansho3SpinLeftToleranceDeg  = 5.0f;
   static constexpr float    Nansho3SpinRightToleranceDeg = 4.0f;
   static constexpr float    Nansho3SpinSlowApproachDeg  = 30.0f;
   static constexpr int      Nansho3SpinSlowPower        = 40;

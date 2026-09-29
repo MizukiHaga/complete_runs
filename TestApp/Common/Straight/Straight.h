@@ -17,8 +17,9 @@
  *    gMotors.setTargetHeading(0.0f);   // 任意: 目標角を明示指定
  *    gMotors.setBalancePid(0.35f, 0.01f);
  *    gMotors.run(50, 50);
+ *    gMotors.run(50, 50, 720);  // 左右エンコーダ平均 720° で停止（ヨー補正あり）
  *    gMotors.stop();
- *    gMotors.runFor(50, 50, 720);  // 左右モータ各 720° 回転で停止
+ *    gMotors.runFor(50, 50, 720);  // エンコーダ終了・ヨー補正なし
  */
 
 #ifndef TESTAPP_STRAIGHT_H_
@@ -73,7 +74,9 @@ public:
   /* エンコーダ未到達時の安全打ち切り [ms]（距離制御には使わない） */
   static constexpr uint32_t EncoderRunMaxMs    = 5000U;
 
-  void run(int left_power, int right_power);
+  /* encoder_deg>0 なら、開始時点からの左右エンコーダ平均 [deg] で終了して stop。
+   * 0 以下は指令だけ出して戻る（従来どおり）。ヨー補正は掛けたまま。 */
+  void run(int left_power, int right_power, int32_t encoder_deg = 0);
   void stop();
   /* 左右モータのエンコーダ [deg] で直進／ピボットを終了する。 */
   void runFor(int left_power, int right_power, int32_t target_deg);

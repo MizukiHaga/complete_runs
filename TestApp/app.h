@@ -141,7 +141,7 @@ extern "C" {
  *   15: Test のみ（Nansho3 と同じその場旋回を1回だけ。TEST_TURN_LEFT で左右）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 15
+#define ETROBO_SCENE 4
 #endif
 
 /* シーン14・15の旋回方向。1=左(CCW -90°) 0=右(CW +90°) */

@@ -318,8 +318,10 @@ private:
   /* === 旋回（両輪ピボット） === */
   static constexpr int      CoreTurnPower           = 40;
   /* 開始時に |目標−h| がこれ以下なら旋回しない。
-   * 0 以外だと、その角のずれを着いたことにして次の基準になる */
-  static constexpr float    CoreTurnToleranceDeg    = 4.0f;
+   * 0 以外だと、その角のずれを着いたことにして次の基準になる。
+   * 左(CCW) / 右(CW) で独立。 */
+  static constexpr float    CoreTurnLeftToleranceDeg  = 4.0f;
+  static constexpr float    CoreTurnRightToleranceDeg = 4.0f;
   static constexpr float    CoreTurnSlowApproachDeg = 30.0f;
   static constexpr int      CoreTurnSlowPower       = 33;
   static constexpr uint32_t CoreTurnMaxMs           = 8000U;

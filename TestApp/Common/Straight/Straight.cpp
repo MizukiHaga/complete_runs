@@ -447,13 +447,30 @@ void Straight::configure(pbio_port_id_t left_motor_port,
   resetCorrection();
 }
 
-void Straight::run(int left_power, int right_power)
+void Straight::run(int left_power, int right_power, int32_t encoder_deg)
 {
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
   correction_enabled_ = true;
   applyWithCorrection(left_power, right_power);
+
+  if (encoder_deg <= 0) {
+    return;
+  }
+
+  const int32_t left_base  = leftEncoderCount();
+  const int32_t right_base = rightEncoderCount();
+  uint32_t elapsed_ms = 0U;
+  while (elapsed_ms < MaxDurationMs) {
+    if (traveledDegFrom(left_base, right_base) >= encoder_deg) {
+      break;
+    }
+    tickCorrection();
+    dly_tsk(EncoderStepMs * 1000U);
+    elapsed_ms += EncoderStepMs;
+  }
+  stop();
 }
 
 void Straight::stop()

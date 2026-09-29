@@ -230,8 +230,19 @@ void Nansho3Scene::turnToAbsolute(float target_heading, float extra_early_deg,
   if (early < 0.0f) {
     early = 0.0f;
   }
-  gMotors.turnToHeading(target_heading, CoreTurnToleranceDeg, CoreTurnPower,
-                        CoreTurnPower, CoreTurnMaxMs, CoreTurnSlowApproachDeg,
+  float tol;
+  if (prefer_sign < 0) {
+    tol = CoreTurnLeftToleranceDeg;
+  } else if (prefer_sign > 0) {
+    tol = CoreTurnRightToleranceDeg;
+  } else {
+    const float delta =
+        Gyro::wrapDeg180(target_heading - gGyro.heading());
+    tol = (delta < 0.0f) ? CoreTurnLeftToleranceDeg
+                         : CoreTurnRightToleranceDeg;
+  }
+  gMotors.turnToHeading(target_heading, tol, CoreTurnPower, CoreTurnPower,
+                        CoreTurnMaxMs, CoreTurnSlowApproachDeg,
                         CoreTurnSlowPower, early, /*coast_end=*/true,
                         prefer_sign);
 
@@ -1345,9 +1356,9 @@ void Nansho3Scene::run()
   y_ = LapStartY;
 #if ETROBO_COURSE_L
   /* Rコース（開始(1,1)が赤a。通過後に他端へ戻さない） */
-  const GateSeg red    = {{1}, {0, 1}}; /* Y連続 */
-  const GateSeg blue   = {{4, 5}, {1}}; /* X連続 */
-  const GateSeg yellow = {{4}, {4, 5}}; /* Y連続 */
+  const GateSeg red    = {{3}, {3, 4}}; /* Y連続 */
+  const GateSeg blue   = {{0, 1}, {1}}; /* X連続 */
+  const GateSeg yellow = {{1}, {2, 3}}; /* Y連続 */
 #else
   /* Lコース */
   const GateSeg red    = {{1}, {1, 2}}; /* Y連続 */
