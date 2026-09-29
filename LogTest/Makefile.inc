@@ -39,4 +39,4 @@ INCLUDES += \
 	-I$(mkfile_path)Viewcmd/MagneticSensor\
 	-I$(mkfile_path)ViewLight\
 	-I$(mkfile_path)ViewLight/Sonic\
-	-I$(mkfile_path)ViewLight/ColorHsv\
+	-I$(mkfile_path)ViewLight/ColorHsv

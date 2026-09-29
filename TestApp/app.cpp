@@ -102,10 +102,10 @@ void main_task(intptr_t unused)
   act_tsk(NANSHO3_TASK);
 #elif ETROBO_SCENE == 6
   act_tsk(TEST_TASK);
-#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 9 || ETROBO_SCENE == 10 || ETROBO_SCENE == 11 || ETROBO_SCENE == 12
+#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 9 || ETROBO_SCENE == 10 || ETROBO_SCENE == 11 || ETROBO_SCENE == 12 || ETROBO_SCENE == 14 || ETROBO_SCENE == 15
   act_tsk(TEST_TASK);
 #else
-#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 or 13"
+#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 or 15"
 #endif
   ext_tsk();
 }

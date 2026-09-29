@@ -1,4 +1,3 @@
-
 #ifndef TESTAPP_MORTER_H_
 #define TESTAPP_MORTER_H_
 
@@ -6,26 +5,21 @@
 extern "C" {
 #endif
 
-
 #include <kernel.h>
 #include <pbio/port.h>
 #include <stdio.h>
 
-/*
- * 周期タスクでモータへ出力指令 (pup_motor_set_power) を書き込むか。
- * 0: 指令なし（角度ログのみ向き）。1: 左右パワーを毎周期セット。
- */
+/* 周期タスクで左右同じパワーを出して直進するか。0 なら指令なし（ログのみ）。 */
 #ifndef MORTER_ENABLE_DRIVE
-#define MORTER_ENABLE_DRIVE  (0)
+#define MORTER_ENABLE_DRIVE  (1)
 #endif
 
-/*
- * MORTER_ENABLE_DRIVE が 1 のときのモータ出力 (-100〜100)。
- */
-#define MORTER_LEFT_POWER   (100)
-#define MORTER_RIGHT_POWER  (100)
+/* 直進時のモータ出力 (-100〜100)。左右同じ値にする。 */
+#define MORTER_LEFT_POWER   (50)
+#define MORTER_RIGHT_POWER  (50)
 
 void Morter_Configure(pbio_port_id_t left_motor_port, pbio_port_id_t right_motor_port);
+void Morter_SetOutput(FILE *fp);
 void morter_task(intptr_t unused);
 
 #ifdef __cplusplus

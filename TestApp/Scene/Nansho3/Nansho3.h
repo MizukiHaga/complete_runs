@@ -255,9 +255,9 @@ private:
 
   /* === testInitialTrace: 低速LT → 反射光白でジャイロreset === */
   static constexpr float    InitialSlowTracePower  = 30.0f;
-  static constexpr float    InitialSlowTraceKp     = 0.30f;
+  static constexpr float    InitialSlowTraceKp     = 0.2f;
   static constexpr float    InitialSlowTraceKi     = 0.01f;
-  static constexpr float    InitialSlowTraceKd     = 0.8f;
+  static constexpr float    InitialSlowTraceKd     = 3.0f;
   static constexpr float    InitialSlowTraceOutMax = 100.0f;
   static constexpr float    InitialSlowTraceScale  = 1.0f;
   static constexpr bool     InitialSlowTraceEdgeFollow =
@@ -286,16 +286,16 @@ private:
   /* 目標角に足す固定量 [deg]。CW 正。右ずれなら負（左へ）。
    * 直進も旋回も、初期直進から周回中のマス移動まですべて同じ量。 */
   static constexpr float    HeadingOffsetDegR    = -2.0f;
-  static constexpr float    HeadingOffsetDegL    = 0.9f;
+  static constexpr float    HeadingOffsetDegL    = 0.0f;
   static constexpr float    HeadingOffsetDeg =
       ETROBO_COURSE_L ? HeadingOffsetDegR : HeadingOffsetDegL;
   /* 左旋回 / 右旋回それぞれ、TurnsPerHeadingAdd 回ごとに目標角へ足す量 [deg]。
    * CW 正。符号込みで入れる（左で右へ戻すなら正、右で左へ戻すなら負）。
    * L コースと R コースも独立。逆向きが混ざっても数え直ししない。 */
   static constexpr float    PerLeftTurnHeadingAddDegR  =  0.9f;
-  static constexpr float    PerRightTurnHeadingAddDegR = -0.5f;
-  static constexpr float    PerLeftTurnHeadingAddDegL  =  0.55f;
-  static constexpr float    PerRightTurnHeadingAddDegL = -0.4f;
+  static constexpr float    PerRightTurnHeadingAddDegR = -1.0f;
+  static constexpr float    PerLeftTurnHeadingAddDegL  = -1.0f;
+  static constexpr float    PerRightTurnHeadingAddDegL = -1.0f;
   static constexpr float    PerLeftTurnHeadingAddDeg =
       ETROBO_COURSE_L ? PerLeftTurnHeadingAddDegR : PerLeftTurnHeadingAddDegL;
   static constexpr float    PerRightTurnHeadingAddDeg =
@@ -318,8 +318,10 @@ private:
   /* === 旋回（両輪ピボット） === */
   static constexpr int      CoreTurnPower           = 40;
   /* 開始時に |目標−h| がこれ以下なら旋回しない。
-   * 0 以外だと、その角のずれを着いたことにして次の基準になる */
-  static constexpr float    CoreTurnToleranceDeg    = 4.0f;
+   * 0 以外だと、その角のずれを着いたことにして次の基準になる。
+   * 左(CCW) / 右(CW) で独立。 */
+  static constexpr float    CoreTurnLeftToleranceDeg  = 4.0f;
+  static constexpr float    CoreTurnRightToleranceDeg = 4.0f;
   static constexpr float    CoreTurnSlowApproachDeg = 30.0f;
   static constexpr int      CoreTurnSlowPower       = 33;
   static constexpr uint32_t CoreTurnMaxMs           = 8000U;
@@ -328,7 +330,7 @@ private:
   /* 経過角打ち切りをこの角手前で止める（慣性＋h 遅れの行き過ぎ） */
   static constexpr float    CoreTurnEarlyStopDeg    = 3.0f;
   /* 左旋回だけさらに手前で止める（CCW 行き過ぎが積み上がる対策） */
-  static constexpr float    CoreTurnLeftEarlyExtraDeg = 6.0f;
+  static constexpr float    CoreTurnLeftEarlyExtraDeg = 2.8f;
   /* 旋回完了後、直進に入る前の待ち [ms]（0=待ちなし） */
   static constexpr uint32_t CoreTurnAfterMs         = 0U;
 
