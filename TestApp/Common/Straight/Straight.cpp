@@ -646,13 +646,13 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
     return;
   }
 
-  /* 開始時の目標差分を固定し、経過角で打ち切る。
+  /* 絶対目標まで回す。経過角は積まない。
    * prefer_sign=0 なら最短側。±1 ならその向きに強制し、必要なら遠回りする。
    * 残りが slow_approach_deg 以内なら低速（行き過ぎ防止）。
    * その場旋回は両輪逆符号（L+/R− または L−/R+）。
    * 左右のエンコーダ回転量が揃うようパワーを補正する。 */
-  float prev = gGyro.heading();
-  const float delta = Gyro::wrapDeg180(target_heading - prev);
+  const float start = gGyro.heading();
+  const float delta = Gyro::wrapDeg180(target_heading - start);
   if (fabsf(delta) <= tolerance_deg) {
     if (coast_end) {
       coast();
@@ -684,14 +684,7 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
     turn_dir = (delta > 0.0f) ? 1.0f : -1.0f;
     need     = fabsf(delta);
   }
-  float       traveled = 0.0f;
-  float       early    = stop_early_deg;
-  if (early < 0.0f) {
-    early = 0.0f;
-  }
-  if (early > need) {
-    early = 0.0f;
-  }
+  const float early = stop_early_deg;
 
   const int32_t enc_l0 = tachoDeg(left_);
   const int32_t enc_r0 = tachoDeg(right_);
@@ -702,10 +695,18 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < max_ms) {
     const float h = gGyro.heading();
-    traveled += turn_dir * Gyro::wrapDeg180(h - prev);
-    prev = h;
-
-    const float rem = need - traveled;
+    /* 絶対目標までの残り。旋回方向に見て、通り過ぎると負 */
+    const float err = Gyro::wrapDeg180(target_heading - h);
+    float rem = (turn_dir > 0.0f) ? err : -err;
+    if (need > 180.0f) {
+      float rem360 = rem;
+      if (rem360 < 0.0f) {
+        rem360 += 360.0f;
+      }
+      if (rem360 > 180.0f) {
+        rem = rem360;
+      }
+    }
     if (rem <= early) {
       break;
     }

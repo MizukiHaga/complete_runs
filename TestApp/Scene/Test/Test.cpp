@@ -11,11 +11,45 @@
 #include "Common/Straight/Straight.h"
 #include "Gyro.h"
 
+#include <serial/newlib.h>
+#include <serial/serial.h>
+#include <syssvc/serial.h>
+
 extern ColorLAB   gColorLAB;
 extern Gyro       gGyro;
 extern Straight   gMotors;
 extern LineTracer gLineTracer;
 extern TestScene  gTest;
+
+/* LogTest と同じ BLE CSV。Viewcmd は SIO_BLUETOOTH を読む */
+static FILE *s_bt_out = nullptr;
+
+static void openBtLog()
+{
+  if (s_bt_out != nullptr) {
+    return;
+  }
+  serial_opn_por(SIO_BLUETOOTH_PORTID);
+  s_bt_out = serial_open_newlib_file(SIO_BLUETOOTH_PORTID);
+}
+
+static int32_t absEncoderDelta(int32_t now, int32_t base)
+{
+  const int32_t d = now - base;
+  return (d < 0) ? -d : d;
+}
+
+static void emitTurnEncodersOnce(int32_t left_abs_deg, int32_t right_abs_deg)
+{
+  openBtLog();
+  if (s_bt_out != nullptr) {
+    fprintf(s_bt_out, "MOT_L,%d,MOT_R,%d,MOT_Lp,%d,MOT_Rp,%d\n",
+            (int)left_abs_deg, (int)right_abs_deg, 0, 0);
+    fflush(s_bt_out);
+  }
+  printf("MOT_L,%d,MOT_R,%d,MOT_Lp,%d,MOT_Rp,%d\n",
+         (int)left_abs_deg, (int)right_abs_deg, 0, 0);
+}
 
 static void runBalancedStraightFor(int left_power, int right_power,
                                  float target_heading, float kp, float ki,
@@ -35,6 +69,11 @@ static void runBalancedStraightFor(int left_power, int right_power,
   }
 
   gMotors.stop();
+}
+
+void TestScene::setKalmanGain()
+{
+  gGyro.setKalmanNoise(KalmanGainProcessNoise, KalmanGainMeasNoise);
 }
 
 void TestScene::logGyroKalman(const char *label)
@@ -139,11 +178,11 @@ void TestScene::runStraightOnly()
 void TestScene::runStraightOnlyTest()
 {
   gGyro.reset();
-  gGyro.setKalmanNoise(StraightTestProcessNoise, StraightTestMeasNoise);
+  setKalmanGain();
   gMotors.setBalancePid(StraightTestBalanceKp, StraightTestBalanceKi);
 
   printf("Straight test Q=%d R=%d ms=%u decel=%u\n",
-         (int)StraightTestProcessNoise, (int)StraightTestMeasNoise,
+         (int)KalmanGainProcessNoise, (int)KalmanGainMeasNoise,
          (unsigned)StraightTestMs, (unsigned)StraightTestDecelMs);
 
   runBalancedStraightWithDecelAndLog(
@@ -158,7 +197,7 @@ void TestScene::runStraightOnlyTest()
 void TestScene::runNansho3StraightTest()
 {
   gGyro.reset();
-  gGyro.setKalmanNoise(Nansho3StraightProcessNoise, Nansho3StraightMeasNoise);
+  setKalmanGain();
   /* 周期補正は目標確定＋run のあと。先に回すと掴み直し競合の余地がある */
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
 
@@ -184,7 +223,7 @@ void TestScene::runNansho3StraightTest()
 void TestScene::runNansho3DecelStraightTest()
 {
   gGyro.reset();
-  gGyro.setKalmanNoise(Nansho3DecelProcessNoise, Nansho3DecelMeasNoise);
+  setKalmanGain();
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
 
   gMotors.setHeadingCorrection(true);
@@ -211,48 +250,40 @@ void TestScene::runNansho3DecelStraightTest()
 /* Nansho3 と同じ両輪ピボット。左右で許容・早め停止を切り替える */
 void TestScene::turnNansho3SpinOnce(float target, bool left)
 {
-  const float tol   = left ? Nansho3SpinLeftToleranceDeg
-                           : Nansho3SpinRightToleranceDeg;
   const float extra = left ? Nansho3SpinLeftEarlyExtraDeg
                            : Nansho3SpinRightEarlyExtraDeg;
   const int   prefer = left ? -1 : 1;
-  gMotors.turnToHeading(target, tol, Nansho3SpinPower, Nansho3SpinPower,
-                        Nansho3SpinMaxMs, Nansho3SpinSlowApproachDeg,
-                        Nansho3SpinSlowPower,
+  gMotors.turnToHeading(target, /*tolerance_deg=*/0.0f, Nansho3SpinPower,
+                        Nansho3SpinPower, Nansho3SpinMaxMs,
+                        Nansho3SpinSlowApproachDeg, Nansho3SpinSlowPower,
                         Nansho3SpinEarlyStopDeg + extra, /*coast_end=*/false,
                         prefer);
   gMotors.stop();
 }
 
-/* Nansho3 と同じ両輪ピボット。90° ごとに停止し、旋回方向の補正を積む */
+/* Nansho3 と同じ両輪ピボット。90° 刻みの絶対角へ回す */
 void TestScene::runNansho3SpinLoop()
 {
   gGyro.reset();
-  gGyro.setKalmanNoise(Nansho3SpinProcessNoise, Nansho3SpinMeasNoise);
+  setKalmanGain();
+  openBtLog();
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gLineTracer.setEnabled(false);
   gMotors.stop();
 
   static constexpr float kFacingDeg[4] = {0.0f, 90.0f, -180.0f, -90.0f};
   const bool left = (TEST_TURN_LEFT != 0);
-  int   facing_i    = 0;
-  float heading_add = 0.0f;
-  int   turn_count  = 0;
-  const float per_add =
-      left ? Nansho3SpinPerLeftAddDeg : Nansho3SpinPerRightAddDeg;
+  int facing_i = 0;
 
   while (1) {
     dly_tsk(Nansho3SpinBeforeMs * 1000U);
     facing_i = left ? (facing_i + 3) % 4 : (facing_i + 1) % 4;
-    const float target = Gyro::wrapDeg180(
-        kFacingDeg[facing_i] + Nansho3SpinHeadingOffsetDeg + heading_add);
-    turnNansho3SpinOnce(target, left);
-
-    ++turn_count;
-    if (turn_count >= Nansho3SpinTurnsPerAdd) {
-      turn_count  = 0;
-      heading_add = Gyro::wrapDeg180(heading_add + per_add);
-    }
+    const int32_t l0 = gMotors.leftEncoderCount();
+    const int32_t r0 = gMotors.rightEncoderCount();
+    turnNansho3SpinOnce(kFacingDeg[facing_i], left);
+    emitTurnEncodersOnce(
+        absEncoderDelta(gMotors.leftEncoderCount(), l0),
+        absEncoderDelta(gMotors.rightEncoderCount(), r0));
 
     if (Nansho3SpinAfterMs > 0U) {
       dly_tsk(Nansho3SpinAfterMs * 1000U);
@@ -264,18 +295,23 @@ void TestScene::runNansho3SpinLoop()
 void TestScene::runNansho3OnceTurn()
 {
   gGyro.reset();
-  gGyro.setKalmanNoise(Nansho3SpinProcessNoise, Nansho3SpinMeasNoise);
+  setKalmanGain();
+  openBtLog();
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gLineTracer.setEnabled(false);
   gMotors.stop();
 
   const bool  left    = (TEST_TURN_LEFT != 0);
   const float logical = left ? -90.0f : 90.0f;
-  const float target  = Gyro::wrapDeg180(
-      logical + Nansho3SpinHeadingOffsetDeg);
+  const float target  = Gyro::wrapDeg180(logical);
 
   dly_tsk(Nansho3SpinBeforeMs * 1000U);
+  const int32_t l0 = gMotors.leftEncoderCount();
+  const int32_t r0 = gMotors.rightEncoderCount();
   turnNansho3SpinOnce(target, left);
+  emitTurnEncodersOnce(
+      absEncoderDelta(gMotors.leftEncoderCount(), l0),
+      absEncoderDelta(gMotors.rightEncoderCount(), r0));
 }
 
 /* Nansho1 と同じピボット旋回（経過角で終了、ジャイロ reset はしない） */
@@ -357,11 +393,11 @@ void TestScene::runSquareLoop()
 void TestScene::runKalmanPingPongLoop()
 {
   gGyro.reset();
-  gGyro.setKalmanNoise(KalmanTestProcessNoise, KalmanTestMeasNoise);
+  setKalmanGain();
   gMotors.setBalancePid(KalmanBalanceKp, KalmanBalanceKi);
 
-  printf("Kalman test Q=%d R=%d\n", (int)KalmanTestProcessNoise,
-         (int)KalmanTestMeasNoise);
+  printf("Kalman test Q=%d R=%d\n", (int)KalmanGainProcessNoise,
+         (int)KalmanGainMeasNoise);
 
   const float target_heading = 0.0f;
   while (1) {

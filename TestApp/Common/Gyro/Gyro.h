@@ -4,8 +4,8 @@
  *  hub_imu_* の C API はこのモジュールに閉じ込めて、
  *  他のモジュール (Nansho など) からは Gyro クラスのメソッドだけを呼ぶ。
  *
- *  heading() は角速度で予測し、hub の方位角で補正する 1 次元カルマンフィルタ
- *  を通した推定値を返す。
+ *  heading() は左右エンコーダ差でヨーを予測し、hub 方位角で補正する
+ *  1 次元カルマンフィルタの推定値を返す。
  *
  *  使い方:
  *    Gyro gGyro;
@@ -26,13 +26,19 @@
 class Gyro {
 public:
   /* プロセスノイズ Q [deg^2/s] と観測ノイズ R [deg^2] の既定値。
-   * Q↑ / R↓: hub 方位に追従（旋回は速い、直進で観測ドリフトに引っ張られやすい）
-   * Q↓ / R↑: 角速度予測を信頼（直進が安定、旋回で遅れやすい）
+   * Q↑ / R↓: hub 方位に追従（旋回は速い、直進で IMU ドリフトに引っ張られやすい）
+   * Q↓ / R↑: エンコーダ予測を信頼（直進が安定、スリップで遅れやすい）
    * Nansho3 は Scene 側の KalmanProcessNoise / KalmanMeasNoise で上書きする。 */
   static constexpr float DefaultKalmanProcessNoise = 4.0f;
   static constexpr float DefaultKalmanMeasNoise    = 100.0f;
   /* ハブの後傾 [deg]。未設定だと 3D heading が直進中に流れる。LogTest と同じ。 */
   static constexpr float TiltDeg = 51.0f;
+  /* エンコーダ差 → 車体ヨー [deg]。θ = EncYawScale*(r/b)*(ΔL−ΔR)、CW 正。
+   * 幾何は 90°その場で片輪 180°。実測 172〜178（中心 175）を系統として載せる。 */
+  static constexpr float WheelDiameterMm = 56.0f;
+  static constexpr float TrackWidthMm    = 112.0f;
+  static constexpr float Pivot90WheelDegIdeal     = 180.0f;
+  static constexpr float Pivot90WheelDegMeasured  = 175.0f;
 
   void init();
   bool isReady() const;
@@ -70,9 +76,13 @@ private:
    * 0.001 だと dt が 1000 倍になり、旋回中の予測が数十°跳び即終了する。 */
   static constexpr float kSystimToSec = 1.0e-6f;
   static constexpr float kMaxKalmanDtSec = 0.2f;
+  static constexpr float kEncYawPerMotorDeg =
+      ((WheelDiameterMm * 0.5f) / TrackWidthMm) *
+      (Pivot90WheelDegIdeal / Pivot90WheelDegMeasured);
 
-  float readYawRateDegPerSec() const;
+  float encoderYawDeltaDeg() const;
   void updateKalman() const;
+  void snapshotEncoders() const;
 
   float kf_q_ = DefaultKalmanProcessNoise;
   float kf_r_ = DefaultKalmanMeasNoise;
@@ -85,6 +95,8 @@ private:
   mutable float  kf_variance_ = DefaultKalmanMeasNoise;
   mutable bool   kf_ready_    = false;
   mutable uint64_t kf_last_tim_ = 0U;
+  mutable int32_t kf_enc_left_  = 0;
+  mutable int32_t kf_enc_right_ = 0;
 };
 
 #endif  // TESTAPP_GYRO_H_

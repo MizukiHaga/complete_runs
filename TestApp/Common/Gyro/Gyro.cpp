@@ -4,11 +4,12 @@
  *  ハードウェア依存の API (hub_imu_*) はすべてこのファイル内に閉じ込めている。
  *
  *  1 次元カルマンフィルタ:
- *    予測: θ += ω_yaw * dt        (ω_yaw = -angv.z, CW 正)
+ *    予測: θ += EncYawScale * (r/b) * (ΔL − ΔR)   系統込みエンコーダ差、CW 正
  *    観測: hub_imu_get_heading()
  */
 
 #include "Gyro.h"
+#include "Straight.h"
 
 #include <math.h>
 
@@ -16,6 +17,8 @@ extern "C" {
 #include <kernel.h>
 #include <spike/hub/imu.h>
 }
+
+extern Straight gMotors;
 
 static constexpr uint32_t kReadyPollMs = 10U;
 
@@ -45,24 +48,36 @@ void Gyro::setKalmanNoise(float process_noise_deg2_per_s,
   }
 }
 
+void Gyro::snapshotEncoders() const
+{
+  kf_enc_left_  = gMotors.leftEncoderCount();
+  kf_enc_right_ = gMotors.rightEncoderCount();
+}
+
 void Gyro::reset(float offset_deg)
 {
   hub_imu_reset_heading();
   heading_offset_ = offset_deg;
   kf_angle_    = 0.0f;
   kf_variance_ = kf_r_;
+  snapshotEncoders();
   SYSTIM now     = 0U;
   get_tim(&now);
   kf_last_tim_ = (uint64_t)now;
   kf_ready_    = true;
 }
 
-float Gyro::readYawRateDegPerSec() const
+float Gyro::encoderYawDeltaDeg() const
 {
-  float angv[3] = {0.0f, 0.0f, 0.0f};
-  hub_imu_get_angular_velocity(angv);
-  /* pybricks: heading は CW 正、heading_rate = -angv.z */
-  return -angv[2];
+  const int32_t left  = gMotors.leftEncoderCount();
+  const int32_t right = gMotors.rightEncoderCount();
+  const int32_t dL    = left  - kf_enc_left_;
+  const int32_t dR    = right - kf_enc_right_;
+  kf_enc_left_  = left;
+  kf_enc_right_ = right;
+  /* 前進で左右とも増加。CW ピボットは L+ / R− → ΔL−ΔR > 0
+   * kEncYawPerMotorDeg に 180/175 の系統スケールを含む */
+  return kEncYawPerMotorDeg * static_cast<float>(dL - dR);
 }
 
 void Gyro::updateKalman() const
@@ -71,8 +86,9 @@ void Gyro::updateKalman() const
   get_tim(&now);
 
   if (!kf_ready_) {
-    kf_angle_    = hub_imu_get_heading();
+    kf_angle_    = 0.0f;
     kf_variance_ = kf_r_;
+    snapshotEncoders();
     kf_last_tim_ = (uint64_t)now;
     kf_ready_    = true;
     return;
@@ -80,25 +96,28 @@ void Gyro::updateKalman() const
 
   float dt_s =
       (float)((int64_t)now - (int64_t)kf_last_tim_) * kSystimToSec;
-  if (dt_s <= 0.0f) {
-    return;
+  if (dt_s < 0.0f) {
+    dt_s = 0.0f;
   }
   if (dt_s > kMaxKalmanDtSec) {
     dt_s = kMaxKalmanDtSec;
   }
 
-  const float yaw_rate = readYawRateDegPerSec();
+  const float enc_yaw = encoderYawDeltaDeg();
 
-  /* 予測 */
-  kf_angle_ += yaw_rate * dt_s;
+  /* 予測（エンコーダ差。発進加速度がヨーに漏れない） */
+  kf_angle_ += enc_yaw;
   kf_variance_ += kf_q_ * dt_s;
 
-  /* 更新 */
+  /* 更新（ハブ方位） */
   const float measurement = hub_imu_get_heading();
   const float innovation  = wrapDeg180(measurement - kf_angle_);
-  const float gain        = kf_variance_ / (kf_variance_ + kf_r_);
-  kf_angle_ += gain * innovation;
-  kf_variance_ *= (1.0f - gain);
+  const float r           = kf_r_;
+  if (r > 0.0f) {
+    const float gain = kf_variance_ / (kf_variance_ + r);
+    kf_angle_ += gain * innovation;
+    kf_variance_ *= (1.0f - gain);
+  }
 
   kf_last_tim_ = (uint64_t)now;
 }

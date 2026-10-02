@@ -140,9 +140,9 @@ void Nansho3Scene::beepError() const
 
 float Nansho3Scene::absoluteCardinalDeg(float logical_facing_deg) const
 {
-  /* 90° 刻み + 固定補正 + 旋回 N 回ごとに足した量。旋回も直進も同じ */
+  /* 90° 刻み + 直進 PI 用の今回補正。旋回目標には載せない */
   return Gyro::wrapDeg180(snapTo90(logical_facing_deg + cardinal_offset_) +
-                          HeadingOffsetDeg + heading_add_);
+                          heading_add_);
 }
 
 float Nansho3Scene::straightTargetDeg(float logical_facing_deg) const
@@ -227,22 +227,8 @@ void Nansho3Scene::turnToAbsolute(float target_heading, float extra_early_deg,
   gGyro.setKalmanNoise(KalmanTurnProcessNoise, KalmanTurnMeasNoise);
 
   float early = CoreTurnEarlyStopDeg + extra_early_deg;
-  if (early < 0.0f) {
-    early = 0.0f;
-  }
-  float tol;
-  if (prefer_sign < 0) {
-    tol = CoreTurnLeftToleranceDeg;
-  } else if (prefer_sign > 0) {
-    tol = CoreTurnRightToleranceDeg;
-  } else {
-    const float delta =
-        Gyro::wrapDeg180(target_heading - gGyro.heading());
-    tol = (delta < 0.0f) ? CoreTurnLeftToleranceDeg
-                         : CoreTurnRightToleranceDeg;
-  }
-  gMotors.turnToHeading(target_heading, tol, CoreTurnPower, CoreTurnPower,
-                        CoreTurnMaxMs, CoreTurnSlowApproachDeg,
+  gMotors.turnToHeading(target_heading, /*tolerance_deg=*/0.0f, CoreTurnPower,
+                        CoreTurnPower, CoreTurnMaxMs, CoreTurnSlowApproachDeg,
                         CoreTurnSlowPower, early, /*coast_end=*/true,
                         prefer_sign);
 
@@ -310,20 +296,27 @@ void Nansho3Scene::turnByAction(MoveAction action)
   const int prefer_sign = (action == MoveAction::L90) ? -1 : 1;
   facing_deg_ =
       facingDegFromIndex(facingIndex(facing_deg_ + offset));
-  const float target = absoluteCardinalDeg(facing_deg_);
+  /* 旋回目標は 90° 刻みの絶対角。heading_add_ は直進 PI だけ */
+  const float target =
+      Gyro::wrapDeg180(snapTo90(facing_deg_ + cardinal_offset_));
   const float extra_early =
-      (action == MoveAction::L90) ? CoreTurnLeftEarlyExtraDeg : 0.0f;
+      (action == MoveAction::L90) ? CoreTurnLeftEarlyExtraDeg
+                                  : CoreTurnRightEarlyExtraDeg;
   turnToAbsolute(target, extra_early, prefer_sign);
+  /* Extra と Per* は積まない。今回の旋回でかけた分だけを目標に載せる */
+  const float extra_offset =
+      -static_cast<float>(prefer_sign) * extra_early;
+  heading_add_ = extra_offset;
   gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
   dly_tsk(CoreTurnAfterMs * 1000U);
 
-  /* 左・右を別カウント。N 回ごとに、その向き用の補正を目標角へ足す */
+  /* 左・右を別カウント。N 回ごとに、その向き用の補正で置き換える */
   if (action == MoveAction::L90) {
     ++left_turn_count_;
     if (left_turn_count_ >= TurnsPerHeadingAdd) {
       left_turn_count_ = 0;
       heading_add_ =
-          Gyro::wrapDeg180(heading_add_ + PerLeftTurnHeadingAddDeg);
+          Gyro::wrapDeg180(extra_offset + PerLeftTurnHeadingAddDeg);
       gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
     }
   } else {
@@ -331,7 +324,7 @@ void Nansho3Scene::turnByAction(MoveAction action)
     if (right_turn_count_ >= TurnsPerHeadingAdd) {
       right_turn_count_ = 0;
       heading_add_ =
-          Gyro::wrapDeg180(heading_add_ + PerRightTurnHeadingAddDeg);
+          Gyro::wrapDeg180(extra_offset + PerRightTurnHeadingAddDeg);
       gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
     }
   }
@@ -1288,7 +1281,7 @@ void Nansho3Scene::initialRun()
 {
   gLineTracer.setEnabled(false);
 
-  /* 1) バック（reset 後の絶対 0°。Offset は最初の旋回後の直進だけ） */
+  /* 1) バック（reset 後の絶対 0°） */
   gMotors.setBalancePid(InitialBackBalanceKp, InitialBackBalanceKi,
                         InitialBackBalanceIMax);
   gMotors.setTargetHeading(0.0f);
@@ -1305,15 +1298,20 @@ void Nansho3Scene::initialRun()
                         /*coast_end=*/true);
   }
 
-  /* 2) 絶対 InitialTurnOffsetDeg（R=+90 / L=-90）+ HeadingOffsetDeg */
-  const float turn_target =
-      Gyro::wrapDeg180(InitialTurnOffsetDeg + HeadingOffsetDeg);
-  turnToAbsolute(turn_target);
+  /* 2) Nansho2 直後の最初の旋回（R=+90 CW / L=-90 CCW）。Extra を目標にも残す */
+  const float turn_target = Gyro::wrapDeg180(InitialTurnOffsetDeg);
+  const int   init_prefer = (InitialTurnOffsetDeg >= 0.0f) ? 1 : -1;
+  const float init_extra  = (init_prefer > 0) ? CoreTurnRightEarlyExtraDeg
+                                              : CoreTurnLeftEarlyExtraDeg;
+  turnToAbsolute(turn_target, init_extra, init_prefer);
 
-  /* 3) 直進。目標は旋回と同じ */
+  /* 3) 直進。ヨー PI の目標は Extra 分ずらした角 */
+  gMotors.setHeadingCorrection(true);
   gMotors.setBalancePid(StraightBalanceKp, StraightBalanceKi,
-                        StraightBalanceIMax, StraightBalanceDeadbandDeg);
-  gMotors.setTargetHeading(turn_target);
+                        InitialStraightBalanceIMax,
+                        InitialStraightBalanceDeadbandDeg);
+  gMotors.setTargetHeading(
+      Gyro::wrapDeg180(turn_target - static_cast<float>(init_prefer) * init_extra));
   {
     const int32_t enc_left_base  = gMotors.leftEncoderCount();
     const int32_t enc_right_base = gMotors.rightEncoderCount();
@@ -1356,9 +1354,9 @@ void Nansho3Scene::run()
   y_ = LapStartY;
 #if ETROBO_COURSE_L
   /* Rコース（開始(1,1)が赤a。通過後に他端へ戻さない） */
-  const GateSeg red    = {{3}, {3, 4}}; /* Y連続 */
-  const GateSeg blue   = {{0, 1}, {1}}; /* X連続 */
-  const GateSeg yellow = {{1}, {2, 3}}; /* Y連続 */
+  const GateSeg red    = {{1}, {2, 3}}; /* Y連続 */
+  const GateSeg blue   = {{2, 3}, {1}}; /* X連続 */
+  const GateSeg yellow = {{1}, {1, 2}}; /* Y連続 */
 #else
   /* Lコース */
   const GateSeg red    = {{1}, {1, 2}}; /* Y連続 */
