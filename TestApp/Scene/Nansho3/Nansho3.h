@@ -61,8 +61,9 @@ public:
    * SCENE 4/13 では呼ぶ */
   void testInitialTrace();
 
-  /* バック → 絶対-90°旋回 → 直進（ジャイロresetしない） */
-  void initialRun();
+  /* バック → 絶対±90°旋回 → 直進（ジャイロresetしない）。
+   * continue_after なら減速停止せず、次の Fwd マスへ走りつなぐ */
+  void initialRun(bool continue_after = false);
 
   /* 赤→青→黄の1周回（各ゲートは座標2点。通過は1マスずつ）。
    * continue_to_next_lap なら黄のあと止めず、次周の赤へ Fwd でつなぐ。 */
@@ -83,12 +84,6 @@ public:
 
   /* ETラリー周回数（課題ポイント最大は3周） */
   static constexpr int RallyLapCount = 3;
-  /* 旋回中: Q↑R↓。エンコーダ予測よりハブ方位に追従し、打ち切り遅れを防ぐ */
-  static constexpr float KalmanTurnProcessNoise = 0.0f;
-  static constexpr float KalmanTurnMeasNoise    = 0.0f;
-  /* 直進中（Test シーン10と同じ）。Q↓R↑ ならエンコーダ差を信頼 */
-  static constexpr float KalmanProcessNoise = 0.0f;
-  static constexpr float KalmanMeasNoise    = 0.0f;
 
 private:
   enum class MoveAction : uint8_t {
@@ -105,11 +100,23 @@ private:
   static constexpr int LapStartX = 1;
   static constexpr int LapStartY = 1;
 
-  /* 原子動作。stop_after なら CoreStraightDeg 枠で減速。連続は ContinueDeg */
+  /* 原子動作。stop_after なら S字加速→クルーズ→S字減速（いずれもエンコーダ）。
+   * 加速は停止からの走り出しのみ。連続 Fwd の途中マスは加速しない。 */
   void driveOneCell(bool stop_after = true);
   /* 走り出しの 0 点から target_deg 進むまで待つ（モータは止めない）。 */
   static void cruiseUntilDeg(int32_t left_base, int32_t right_base,
                              int32_t target_deg);
+  /* 停止からの直進: 1D レート方位で S字加速 → cruise_power */
+  void accelToCruise(int32_t left_base, int32_t right_base, int32_t accel_deg,
+                     int cruise_power);
+  /* エンコーダ total_deg まで S字減速して coast。停止位置固定用。
+   * 停滞/上限は安全抜け（固まったまま旋回へ行けないのを防ぐ）。 */
+  void decelToStopByEncoder(int32_t left_base, int32_t right_base,
+                            int32_t total_deg, int cruise_power,
+                            int32_t decel_deg);
+  /* S字加速ランプ: from→to（左右同パワー） */
+  void rampStraightPower(int32_t left_base, int32_t right_base, int32_t dist_deg,
+                         int from_power, int to_power);
   void turnByAction(MoveAction action);
   /* 90° 刻みへその場旋回（追い込みなし）。
    * prefer_sign: 0=最短、+1=CW、-1=CCW（BFS の L90/R90 どおりに回すとき） */
@@ -172,11 +179,6 @@ private:
   static void clearBlocked(bool blocked[GridSize][GridSize]);
   static void blockPoint(bool blocked[GridSize][GridSize], QrPoint p,
                          QrPoint except_goal);
-  static void blockGate(bool blocked[GridSize][GridSize], GateSeg g,
-                        QrPoint except_goal);
-  static void blockFutures(bool blocked[GridSize][GridSize],
-                           const GateSeg *future_gates, int future_count,
-                           QrPoint except_goal);
 
   static float snapTo90(float heading_deg);
   static int   facingIndex(float heading_deg);
@@ -203,7 +205,7 @@ private:
   float facing_deg_ = 0.0f;
   /* 論理 → 絶対。LT 後 InitialTurnOffsetDeg */
   float cardinal_offset_ = InitialTurnOffsetDeg;
-  /* 旋回の類型で置く Heading 補正 [deg]。積まず、今回の分だけ */
+  /* 直進 PI 用の Per* 補正 [deg]。EarlyStop 分は載せない。積まず今回分だけ */
   float heading_add_ = 0.0f;
   /* 左旋回の回数。TurnsPerHeadingAdd で今回の左補正に置き換えて 0 に戻す */
   int   left_turn_count_ = 0;
@@ -221,6 +223,8 @@ private:
   /* === 直進 ===
    * 1マスの長さはエンコーダ距離で決める。距離は左右エンコーダ [deg] の平均で、
    * 車輪 56mm なら 360deg ≒ 176mm（約 0.49mm/deg）。
+   * 停止からの直進は S字（加速→クルーズ→減速）。終了はいずれもエンコーダ。
+   * 連続 Fwd の途中は加速しない。
    * 1マス移動と連続の最後は CoreStraightDeg（枠内で減速）。
    * 連続 Fwd（減速なし）は CoreStraightContinueDeg。 */
   static constexpr int      CoreRunStraightPower = 75;
@@ -230,12 +234,20 @@ private:
   static constexpr int32_t  CoreStraightDegL = 465;
   static constexpr int32_t  CoreStraightDeg =
       ETROBO_COURSE_L ? CoreStraightDegR : CoreStraightDegL;
-  /* 上のうち減速中に進むと見込む距離 [deg]。ここまで来たら減速に入る。
-   * 行き過ぎるなら増やす、手前で止まるなら減らす。 */
+  /* 上のうち減速中に進む距離 [deg]。ここまで来たら減速に入る。
+   * 行き過ぎるなら増やす、手前で止まるなら減らす。終了はエンコーダ。 */
   static constexpr int32_t  CoreStraightDecelDeg = 150;
-  /* 停止する直進の終端でパワーを落とす時間（尾が浮かないように） */
-  static constexpr uint32_t CoreStraightDecelMs = 400U;
-  /* 台形減速の 1 段 [ms]。大きいほど 1 ステップの減少幅が大きい（急減速） */
+  /* 停止からの走り出し加速に使う距離 [deg]。飛び出し（ヨーの跳ね）を抑える。
+   * 終了はエンコーダ。短いマスではクルーズ距離までに縮める。 */
+  static constexpr int      CoreStraightAccelStartPower = 33;
+  static constexpr int32_t  CoreStraightAccelDeg        = 150;
+  /* エンコーダ減速中の最低パワー。小さすぎると進まず停止位置に届かない */
+  static constexpr int      CoreStraightDecelMinPower = 33;
+  /* エンコーダ減速の安全抜け（本終了は total_deg） */
+  static constexpr uint32_t CoreStraightDecelStallMs = 250U;
+  static constexpr uint32_t CoreStraightDecelMaxMs   = 2500U;
+  /* 中断時など距離枠がない減速だけ時間 */
+  static constexpr uint32_t CoreStraightDecelMs     = 400U;
   static constexpr uint32_t CoreStraightDecelStepMs = 100U;
   /* 連続 Fwd（減速なし）1マスの距離 [deg]。マスを越えるなら減らす */
   static constexpr int32_t  CoreStraightContinueDegR = 510;
@@ -265,13 +277,11 @@ private:
 
   /* === initialRun: バック → 絶対±90°旋回 → 直進 === */
   static constexpr int      InitialBackPower     = 40;
-  /* 減速中に進む分を含めたバック距離 [deg]。左右エンコーダの絶対値平均 */
-  static constexpr int32_t  InitialBackDegR      = 240;
-  static constexpr int32_t  InitialBackDegL      = 240;
+  /* 一定パワーで進むバック距離 [deg]。左右エンコーダの絶対値平均 */
+  static constexpr int32_t  InitialBackDegR      = 220;
+  static constexpr int32_t  InitialBackDegL      = 220;
   static constexpr int32_t  InitialBackDeg =
       ETROBO_COURSE_L ? InitialBackDegR : InitialBackDegL;
-  /* 上のうち減速中に進むと見込む距離 [deg] */
-  static constexpr int32_t  InitialBackDecelDeg  = 155;
   static constexpr float    InitialBackBalanceKp   = 5.0f; 
   static constexpr float    InitialBackBalanceKi   = 0.1f;
   static constexpr float    InitialBackBalanceIMax = 50.0f;
@@ -280,9 +290,9 @@ private:
   static constexpr float    InitialTurnOffsetDeg =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   /* 左旋回 / 右旋回それぞれ、TurnsPerHeadingAdd 回ごとに目標角へ載せる量 [deg]。
-   * 前回分は捨て、今回の向きの補正だけ使う。CW 正。 */
-  static constexpr float    PerLeftTurnHeadingAddDeg  =  0.9f;
-  static constexpr float    PerRightTurnHeadingAddDeg = -0.9f;
+   * 前回分は捨て、今回の向きの補正だけ使う。CW 正。Test 旋回と同じ。 */
+  static constexpr float    PerLeftTurnHeadingAddDeg  =  0.8f;
+  static constexpr float    PerRightTurnHeadingAddDeg = 0.85f;
   static constexpr int      TurnsPerHeadingAdd     = 1;
   static constexpr int      InitialStraightPower = 50;
   /* 減速中に進む分を含めた直進距離 [deg] */
@@ -292,27 +302,25 @@ private:
   static constexpr float    InitialStraightBalanceIMax       = 18.0f;
   static constexpr float    InitialStraightBalanceDeadbandDeg = 0.8f;
 
-  /* 直進ヨー角 PI 補正（Test シーン10と同じ。Initial* には使わない）
-   * I は定常バイアス用。大きく長く残すと水平・垂直とも trim がばらつく。 */
+  /* 直進ヨー角 PI。直進中は Gyro::setRateHeading(true) の 1D レート積分を使う。 */
   static constexpr float StraightBalanceKp         = 1.5f;
-  static constexpr float StraightBalanceKi         = 0.03f;
+  static constexpr float StraightBalanceKi         = 0.06f;
   static constexpr float StraightBalanceIMax       = 50.0f;
-  /* Test10 は deadband なし（setBalancePid(kp, ki) と同じ） */
   static constexpr float StraightBalanceDeadbandDeg = 0.0f;
 
-  /* === 旋回（両輪ピボット） === */
-  static constexpr int      CoreTurnPower           = 40;
+  /* === 旋回（両輪ピボット。Test Nansho3Spin* と同じ） === */
+  static constexpr int      CoreTurnPower           = 45;
   static constexpr float    CoreTurnSlowApproachDeg = 30.0f;
-  static constexpr int      CoreTurnSlowPower       = 40;
+  static constexpr int      CoreTurnSlowPower       = 33;
   static constexpr uint32_t CoreTurnMaxMs           = 8000U;
   /* 停止してから旋回を始めるまでの待ち [ms] */
   static constexpr uint32_t CoreTurnBeforeMs        = 200U;
   /* 経過角打ち切りをこの角手前で止める（慣性＋h 遅れの行き過ぎ） */
   static constexpr float    CoreTurnEarlyStopDeg    = 3.0f;
   /* 左/右だけさらに手前で止める [deg]。負なら目標より奥まで回す。
-   * 直進 PI の目標からも同じ量ずらす（残さないと 90° に戻される） */
-  static constexpr float    CoreTurnLeftEarlyExtraDeg  = 3.0f;
-  static constexpr float    CoreTurnRightEarlyExtraDeg = 1.7f;
+   * 止めどころの調整のみ。直進 PI 目標には載せない。 */
+  static constexpr float    CoreTurnLeftEarlyExtraDeg  = -1.0f;
+  static constexpr float    CoreTurnRightEarlyExtraDeg = -1.0f;
   /* 旋回完了後、直進に入る前の待ち [ms]（0=待ちなし） */
   static constexpr uint32_t CoreTurnAfterMs         = 0U;
 

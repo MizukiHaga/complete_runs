@@ -70,6 +70,11 @@ public:
    * stop() とは別（stop 中の出力抑止は correction_enabled_ 側）。 */
   void setHeadingCorrection(bool enabled);
 
+  /* true: 1:1 直進の補正をヨー角ではなく左右エンコーダ差にする。
+   * 誤差 = 進行方向の (左進み − 右進み) [deg]。左が進みすぎなら左を弱くする。
+   * ゲインは setBalancePid の Kp/Ki。false のときは従来のヨー PI。 */
+  void setEncoderStraightBalance(bool enabled);
+
   static constexpr uint32_t EncoderStepMs      = 5U;
   /* エンコーダ未到達時の安全打ち切り [ms]（距離制御には使わない） */
   static constexpr uint32_t EncoderRunMaxMs    = 5000U;
@@ -112,6 +117,16 @@ public:
                      bool coast_end = false,
                      int prefer_sign = 0);
 
+  /* 左右エンコーダ回転量の平均 [deg] でその場旋回を終了する（IMU は見ない）。
+   * 車体 90° はトレッド≒車輪径なら約 180。左右 enc 同調 P は turnToHeading と同じ。 */
+  void turnByEncoder(int32_t target_deg, bool left,
+                     int left_power = 40, int right_power = 40,
+                     uint32_t max_ms = 3000U,
+                     int32_t slow_approach_deg = 60,
+                     int slow_power = 33,
+                     int32_t stop_early_deg = 0,
+                     bool coast_end = false);
+
   void pivotCW(int power)  { run( power, -power); }
   void pivotCCW(int power) { run(-power,  power); }
   void pivotTowardDiff(int power, float diff_deg) {
@@ -147,10 +162,13 @@ private:
   static constexpr uint32_t TurnStepMs = 1U;
   /* その場旋回: 左右エンコーダ回転量を揃える P 補正
    * （機械差で片輪だけ進むと並進成分が出るため） */
-  static constexpr float TurnEncBalanceKp       = 6.5f;
+  static constexpr float TurnEncBalanceKp       = 2.5f;
   static constexpr int   TurnEncBalanceMaxCorr  = 30;
   static constexpr int   TurnEncBalanceMinPower = 12;
-  static constexpr int32_t TurnEncBalanceDeadbandDeg = 2;
+  static constexpr int32_t TurnEncBalanceDeadbandDeg = 0;
+  /* 左輪が強い機械差。旋回中の左パワーから常に引く（大きいほど左を弱める）。
+   * P は差が出てから切るので、左が先に進む癖はこれで先に殺す。 */
+  static constexpr int TurnLeftPowerTrim = 7;
 
   static int clampMotorPower(int power);
   static int clampInt(int value, int min_value, int max_value);
@@ -159,6 +177,8 @@ private:
   static bool isSameStraightPower(int left_power, int right_power);
   static int32_t absEncoderDeg(int32_t count);
   static bool wheelEncoderReached(int32_t count, int power, int32_t target_deg);
+  /* 旋回左右マグニチュード。enc_diff = |ΔL|-|ΔR|。左 trim 込み */
+  static void turnWheelMags(int base, int32_t enc_diff, int *l_mag, int *r_mag);
 
   void setPowerRaw(int left_power, int right_power);
   void applyWithCorrection(int left_power, int right_power);
@@ -181,7 +201,10 @@ private:
   bool    cmd_initialized_  = false;
   bool    correction_enabled_ = true;
   bool    heading_correction_ = true;
+  bool    encoder_straight_   = false;
   bool    correction_debug_   = false;
+  int32_t enc_bal_left_       = 0;
+  int32_t enc_bal_right_      = 0;
   bool    manual_target_heading_ = false;
   uint8_t correction_debug_div_ = 0;
   float   kp_               = DefaultBalanceKp;

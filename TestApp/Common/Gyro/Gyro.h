@@ -4,14 +4,11 @@
  *  hub_imu_* の C API はこのモジュールに閉じ込めて、
  *  他のモジュール (Nansho など) からは Gyro クラスのメソッドだけを呼ぶ。
  *
- *  heading() は左右エンコーダ差でヨーを予測し、hub 方位角で補正する
- *  1 次元カルマンフィルタの推定値を返す。
- *
  *  使い方:
  *    Gyro gGyro;
  *    gGyro.init();                       // app.cpp の起動時に 1 回 (IMU 初期化 + 準備完了待ち)
  *    gGyro.reset();                      // シーン開始時など、現在向きを 0 にする
- *    const float h = gGyro.heading();    // 現在ヨー角 [deg]（カルマン推定）
+ *    const float h = gGyro.heading();    // 現在ヨー角 [deg]
  *    if (gGyro.reached(target, 5.0f)) {  // |target - heading| <= 5 deg ?
  *      ...
  *    }
@@ -25,20 +22,8 @@
 
 class Gyro {
 public:
-  /* プロセスノイズ Q [deg^2/s] と観測ノイズ R [deg^2] の既定値。
-   * Q↑ / R↓: hub 方位に追従（旋回は速い、直進で IMU ドリフトに引っ張られやすい）
-   * Q↓ / R↑: エンコーダ予測を信頼（直進が安定、スリップで遅れやすい）
-   * Nansho3 は Scene 側の KalmanProcessNoise / KalmanMeasNoise で上書きする。 */
-  static constexpr float DefaultKalmanProcessNoise = 4.0f;
-  static constexpr float DefaultKalmanMeasNoise    = 100.0f;
   /* ハブの後傾 [deg]。未設定だと 3D heading が直進中に流れる。LogTest と同じ。 */
   static constexpr float TiltDeg = 51.0f;
-  /* エンコーダ差 → 車体ヨー [deg]。θ = EncYawScale*(r/b)*(ΔL−ΔR)、CW 正。
-   * 幾何は 90°その場で片輪 180°。実測 172〜178（中心 175）を系統として載せる。 */
-  static constexpr float WheelDiameterMm = 56.0f;
-  static constexpr float TrackWidthMm    = 112.0f;
-  static constexpr float Pivot90WheelDegIdeal     = 180.0f;
-  static constexpr float Pivot90WheelDegMeasured  = 175.0f;
 
   void init();
   bool isReady() const;
@@ -49,14 +34,15 @@ public:
    * 例: offset_deg = -2 なら、目標 0° の直進で車体は 2° CW（右）へ向く。 */
   void reset(float offset_deg = 0.0f);
 
-  /* カルマンフィルタのノイズ係数を変更する（実行時チューニング用）。 */
-  void setKalmanNoise(float process_noise_deg2_per_s,
-                      float measurement_noise_deg2);
+  /* 直進用: true でヨーレート積分 (1D)、false で 3D 融合方位。
+   * 切替時は heading() が連続になるよう offset を合わせる。 */
+  void setRateHeading(bool enable);
+  bool rateHeading() const { return rate_heading_; }
 
-  /* 現在ヨー角 [deg]。連続値 (アンラップ済み) のカルマン推定値。 */
+  /* 現在ヨー角 [deg]。選択中ソース + reset/切替の下駄。 */
   float heading() const;
 
-  /* hub_imu_get_heading() の生値 [deg]（デバッグ・比較用）。 */
+  /* 選択中ソースの生値 [deg]（下駄なし）。 */
   float rawHeading() const;
 
   /* target_heading との差分 [deg]。短い側 ([-180, 180]) に折り畳んで返す。
@@ -72,31 +58,8 @@ public:
   static float wrapDeg180(float diff);
 
 private:
-  /* ASP3 の SYSTIM / get_tim() はマイクロ秒（dly_tsk と同じ）。
-   * 0.001 だと dt が 1000 倍になり、旋回中の予測が数十°跳び即終了する。 */
-  static constexpr float kSystimToSec = 1.0e-6f;
-  static constexpr float kMaxKalmanDtSec = 0.2f;
-  static constexpr float kEncYawPerMotorDeg =
-      ((WheelDiameterMm * 0.5f) / TrackWidthMm) *
-      (Pivot90WheelDegIdeal / Pivot90WheelDegMeasured);
-
-  float encoderYawDeltaDeg() const;
-  void updateKalman() const;
-  void snapshotEncoders() const;
-
-  float kf_q_ = DefaultKalmanProcessNoise;
-  float kf_r_ = DefaultKalmanMeasNoise;
-
-  /* reset(offset_deg) で載せる下駄 [deg]。heading() にだけ足す。
-   * カルマンの内部状態は 0 基準のままなので、観測で消えることはない。 */
   float heading_offset_ = 0.0f;
-
-  mutable float  kf_angle_    = 0.0f;
-  mutable float  kf_variance_ = DefaultKalmanMeasNoise;
-  mutable bool   kf_ready_    = false;
-  mutable uint64_t kf_last_tim_ = 0U;
-  mutable int32_t kf_enc_left_  = 0;
-  mutable int32_t kf_enc_right_ = 0;
+  bool  rate_heading_   = false;
 };
 
 #endif  // TESTAPP_GYRO_H_

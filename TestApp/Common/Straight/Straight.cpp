@@ -85,6 +85,29 @@ int32_t Straight::absEncoderDeg(int32_t count)
   return (count < 0) ? -count : count;
 }
 
+void Straight::turnWheelMags(int base, int32_t enc_diff, int *l_mag, int *r_mag)
+{
+  int l = base;
+  int r = base;
+  if (enc_diff > TurnEncBalanceDeadbandDeg) {
+    const int corr = clampInt(
+        static_cast<int>(TurnEncBalanceKp *
+                         static_cast<float>(enc_diff - TurnEncBalanceDeadbandDeg)),
+        0, TurnEncBalanceMaxCorr);
+    l = clampInt(base - corr, TurnEncBalanceMinPower, base);
+  } else if (enc_diff < -TurnEncBalanceDeadbandDeg) {
+    const int corr = clampInt(
+        static_cast<int>(TurnEncBalanceKp *
+                         static_cast<float>(-enc_diff - TurnEncBalanceDeadbandDeg)),
+        0, TurnEncBalanceMaxCorr);
+    r = clampInt(base - corr, TurnEncBalanceMinPower, base);
+  }
+  /* 左輪が先に進む機械差。P の前から左を弱める */
+  l = clampInt(l - TurnLeftPowerTrim, TurnEncBalanceMinPower, base);
+  *l_mag = l;
+  *r_mag = r;
+}
+
 bool Straight::wheelEncoderReached(int32_t count, int power, int32_t target_deg)
 {
   const int32_t target = absEncoderDeg(target_deg);
@@ -148,6 +171,19 @@ void Straight::setHeadingCorrection(bool enabled)
   heading_correction_ = enabled;
   if (!enabled) {
     integral_ = 0.0f;
+  }
+}
+
+void Straight::setEncoderStraightBalance(bool enabled)
+{
+  if (enabled == encoder_straight_) {
+    return;
+  }
+  encoder_straight_ = enabled;
+  integral_         = 0.0f;
+  if (enabled && left_ != nullptr && right_ != nullptr) {
+    enc_bal_left_  = tachoDeg(left_);
+    enc_bal_right_ = tachoDeg(right_);
   }
 }
 
@@ -233,6 +269,10 @@ void Straight::applyWithCorrection(int left_power, int right_power)
        * 走り出しのヨーずれを目標にすると、ずれた向きのまま直進する。
        * 目標は setTargetHeading() か、既定の target_heading_(0°) を使う。 */
       integral_ = 0.0f;
+      if (encoder_straight_) {
+        enc_bal_left_  = tachoDeg(left_);
+        enc_bal_right_ = tachoDeg(right_);
+      }
       /* ピボット等 → 直進へ切替時は raw のみ。1:1 直進なら PI へ続行。 */
       if (!straight_cmd) {
         setPowerRaw(left_power, right_power);
@@ -241,7 +281,19 @@ void Straight::applyWithCorrection(int left_power, int right_power)
     }
   }
 
-  float error = Gyro::wrapDeg180(gGyro.heading() - target_heading_);
+  float error = 0.0f;
+  int   travel_sign = 1;
+  if (encoder_straight_) {
+    /* 進行方向の左右進み差。左が多いと正 → 左を弱める */
+    travel_sign = (left_power >= 0) ? 1 : -1;
+    const int32_t tL =
+        travel_sign * (tachoDeg(left_) - enc_bal_left_);
+    const int32_t tR =
+        travel_sign * (tachoDeg(right_) - enc_bal_right_);
+    error = static_cast<float>(tL - tR);
+  } else {
+    error = Gyro::wrapDeg180(gGyro.heading() - target_heading_);
+  }
 
   /* 不感帯: ジャイロの微小揺れで trim を出し続けない。
    * 帯内では I を減衰させ、補正がマスをまたいで長く残らないようにする。 */
@@ -262,9 +314,16 @@ void Straight::applyWithCorrection(int left_power, int right_power)
   const int dL = diff / 2;
   const int dR = diff - dL;  /* |diff|==1 のとき片側に ±1 が残る */
 
-  /* error>0（右ずれ）→ 左旋回: 前進は L弱/R強、後退は L強/R弱（同じ式で負パワーが効く） */
-  const int out_left  = clampMotorPower(left_power - dL);
-  const int out_right = clampMotorPower(right_power + dR);
+  /* ヨー: error>0（右ずれ）→ 左旋回。前進は L弱/R強、後退は同じ式で負パワーが効く。
+   * エンコーダ: 左が進みすぎ → 進行方向の左マグを落とす（後退は符号を反転）。 */
+  const int out_left =
+      encoder_straight_
+          ? clampMotorPower(left_power - travel_sign * dL)
+          : clampMotorPower(left_power - dL);
+  const int out_right =
+      encoder_straight_
+          ? clampMotorPower(right_power + travel_sign * dR)
+          : clampMotorPower(right_power + dR);
 
   if (correction_debug_) {
     if (++correction_debug_div_ >= 10U) {
@@ -728,28 +787,14 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
       base = TurnEncBalanceMinPower;
     }
 
-    /* |ΔL| と |ΔR| を揃える。進みすぎた側のパワーを落とす */
+    /* |ΔL| と |ΔR| を揃える。進みすぎた側のパワーを落とす。左は常に trim */
     const int32_t l_abs =
         absEncoderDeg(tachoDeg(left_) - enc_l0);
     const int32_t r_abs =
         absEncoderDeg(tachoDeg(right_) - enc_r0);
-    const int32_t enc_diff = l_abs - r_abs;
-
-    int l_mag = base;
-    int r_mag = base;
-    if (enc_diff > TurnEncBalanceDeadbandDeg) {
-      const int corr = clampInt(
-          static_cast<int>(TurnEncBalanceKp *
-                           static_cast<float>(enc_diff - TurnEncBalanceDeadbandDeg)),
-          0, TurnEncBalanceMaxCorr);
-      l_mag = clampInt(base - corr, TurnEncBalanceMinPower, base);
-    } else if (enc_diff < -TurnEncBalanceDeadbandDeg) {
-      const int corr = clampInt(
-          static_cast<int>(TurnEncBalanceKp *
-                           static_cast<float>(-enc_diff - TurnEncBalanceDeadbandDeg)),
-          0, TurnEncBalanceMaxCorr);
-      r_mag = clampInt(base - corr, TurnEncBalanceMinPower, base);
-    }
+    int l_mag = 0;
+    int r_mag = 0;
+    turnWheelMags(base, l_abs - r_abs, &l_mag, &r_mag);
 
     if (turn_dir > 0.0f) {
       run(l_mag, -r_mag);
@@ -763,6 +808,82 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
 
   heading_correction_ = prev_heading_correction;
 
+  if (coast_end) {
+    coast();
+  } else {
+    stop();
+  }
+  dly_tsk(TurnStepMs * 1000U);
+}
+
+void Straight::turnByEncoder(int32_t target_deg, bool left, int left_power,
+                             int right_power, uint32_t max_ms,
+                             int32_t slow_approach_deg, int slow_power,
+                             int32_t stop_early_deg, bool coast_end)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+
+  const int32_t need = absEncoderDeg(target_deg);
+  if (need <= 0) {
+    if (coast_end) {
+      coast();
+    } else {
+      stop();
+    }
+    return;
+  }
+
+  const float   turn_dir = left ? -1.0f : 1.0f;
+  const int32_t early    = stop_early_deg;
+  const int32_t enc_l0   = tachoDeg(left_);
+  const int32_t enc_r0   = tachoDeg(right_);
+  const bool    prev_heading_correction = heading_correction_;
+  heading_correction_ = false;
+
+  uint32_t elapsed_ms = 0U;
+  while (elapsed_ms < max_ms) {
+    const int32_t l_abs = absEncoderDeg(tachoDeg(left_) - enc_l0);
+    const int32_t r_abs = absEncoderDeg(tachoDeg(right_) - enc_r0);
+    const int32_t rem   = need - ((l_abs + r_abs) / 2);
+    if (rem <= early) {
+      break;
+    }
+
+    int base = left_power;
+    if (right_power < base) {
+      base = right_power;
+    }
+    if (base < 0) {
+      base = -base;
+    }
+    if (slow_approach_deg > 0 && rem <= slow_approach_deg) {
+      base = slow_power;
+      if (base < 0) {
+        base = -base;
+      }
+    }
+    if (base < TurnEncBalanceMinPower) {
+      base = TurnEncBalanceMinPower;
+    }
+
+    const int32_t enc_diff = l_abs - r_abs;
+    int l_mag = 0;
+    int r_mag = 0;
+    turnWheelMags(base, enc_diff, &l_mag, &r_mag);
+
+    if (turn_dir > 0.0f) {
+      run(l_mag, -r_mag);
+    } else {
+      run(-l_mag, r_mag);
+    }
+
+    dly_tsk(TurnStepMs * 1000U);
+    elapsed_ms += TurnStepMs;
+  }
+
+  heading_correction_ = prev_heading_correction;
   if (coast_end) {
     coast();
   } else {
