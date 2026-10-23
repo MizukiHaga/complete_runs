@@ -125,7 +125,7 @@ extern "C" {
  * ETROBO_SCENE:
  *   0: HCR → Nansho1 → Nansho2 → Nansho3（本番）
  *   1: Nansho1 のみ
- *   2: Nansho2 のみ22w
+ *   2: Nansho2 のみ
  *   3: HCR のみ
  *   4: Nansho3 のみ
  *   5: Nansho1 → Nansho2 → Nansho3（HCRなし）
@@ -136,14 +136,26 @@ extern "C" {
  *   14: Test のみ（その場旋回ループ。Nansho3SpinStopOnEncoder で IMU/エンコーダ切り替え）
  *   15: Test のみ（その場旋回1回。同上。TEST_TURN_LEFT で左右）
  *   16: Test のみ（その場旋回を左右ランダムに繰り返し。止め方は 14 と同じ）
+ *   17: Test のみ（直進と90°旋回で四角走行。TEST_TURN_LEFT で左右）
+ *   18: Nansho3KYOKU（事前曲線計画＋Pure Pursuit。Settings.h参照）
+ *   19: Test のみ（Nansho3 initial: 白検知LT→停止・reset→バック→旋回→直進停止）
+ *   20: Test のみ（通常直進をTEST_STRAIGHT_CELLSマス分。座標更新なし）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 14
+#define ETROBO_SCENE 4
 #endif
 
 /* シーン14・15の旋回方向。1=左(CCW -90°) 0=右(CW +90°) */
 #ifndef TEST_TURN_LEFT
 #define TEST_TURN_LEFT 0
+#endif
+
+/* シーン20の直進マス数。途中は止めず、最後のマスで減速停止する。 */
+#ifndef TEST_STRAIGHT_CELLS
+#define TEST_STRAIGHT_CELLS 2
+#endif
+#if TEST_STRAIGHT_CELLS < 1 || TEST_STRAIGHT_CELLS > 3
+#error "TEST_STRAIGHT_CELLS must be 1, 2 or 3"
 #endif
 
 /* タスク優先度 */
@@ -189,6 +201,7 @@ extern void tracer_task(intptr_t exinf);
 extern void Nansho1Task(intptr_t exinf);
 extern void Nansho2Task(intptr_t exinf);
 extern void Nansho3Task(intptr_t exinf);
+extern void Nansho3KYOKUTask(intptr_t exinf);
 extern void TestTask(intptr_t exinf);
 extern void StraightBalanceTask(intptr_t exinf);
 

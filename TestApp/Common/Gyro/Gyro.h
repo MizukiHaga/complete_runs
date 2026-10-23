@@ -42,6 +42,9 @@ public:
   /* 現在ヨー角 [deg]。選択中ソース + reset/切替の下駄。 */
   float heading() const;
 
+  /* 実測による角度補正 [deg]。reset/ソース切替の連続性も維持する。 */
+  void addHeadingCorrection(float delta_deg) { heading_offset_ += delta_deg; }
+
   /* 選択中ソースの生値 [deg]（下駄なし）。 */
   float rawHeading() const;
 

@@ -64,10 +64,15 @@ public:
   /* バック → 絶対±90°旋回 → 直進（ジャイロresetしない）。
    * continue_after なら減速停止せず、次の Fwd マスへ走りつなぐ */
   void initialRun(bool continue_after = false);
+  /* Test用: 白検知LTから初期直進の停止まで、本番と同じ処理を実行。 */
+  void runInitialTest();
+  /* 座標を更新せず、通常直進と同じ制御で1〜3マス分を走行する。 */
+  void runStraightCellsTest(int cells);
 
   /* 赤→青→黄の1周回（各ゲートは座標2点。通過は1マスずつ）。
-   * continue_to_next_lap なら黄のあと止めず、次周の赤へ Fwd でつなぐ。 */
-  void runRallyLap(GateSeg red, GateSeg blue, GateSeg yellow,
+   * continue_to_next_lap なら黄のあと止めず、次周の赤へ Fwd でつなぐ。
+   * 経路不成立時は停止して false を返し、次の色へ進めない。 */
+  bool runRallyLap(GateSeg red, GateSeg blue, GateSeg yellow,
                    bool continue_to_next_lap = false);
 
   /* 次周回の準備: 向き直し・ジャイロ reset・停止はしない。
@@ -83,7 +88,7 @@ public:
   void runExitStraightToBlackLine();
 
   /* ETラリー周回数（課題ポイント最大は3周） */
-  static constexpr int RallyLapCount = 3;
+  static constexpr int RallyLapCount = 6;
 
 private:
   enum class MoveAction : uint8_t {
@@ -96,6 +101,15 @@ private:
   static constexpr int FacingCount = 4;
   static constexpr int StateCount = GridSize * GridSize * FacingCount;
   static constexpr int MaxPathLen = 64;
+  /* 点の立入禁止と、ゲート端点間の通過禁止を分ける。
+   * 共有端点には立ち入れるが、順番外のゲート辺は双方向に通らない。 */
+  struct RouteBlocks {
+    bool cells[GridSize][GridSize];
+    GateSeg edges[3];
+    int edge_count = 0;
+  };
+  static void blockGates(RouteBlocks &blocked, const GateSeg *gates, int count);
+  static bool blocksStep(const RouteBlocks &blocked, int x, int y, int nx, int ny);
   /* 各周回の開始 QR（初期位置と同じ） */
   static constexpr int LapStartX = 1;
   static constexpr int LapStartY = 1;
@@ -103,9 +117,10 @@ private:
   /* 原子動作。stop_after なら S字加速→クルーズ→S字減速（いずれもエンコーダ）。
    * 加速は停止からの走り出しのみ。連続 Fwd の途中マスは加速しない。 */
   void driveOneCell(bool stop_after = true);
+  void driveCellDistance(bool stop_after);
   /* 走り出しの 0 点から target_deg 進むまで待つ（モータは止めない）。 */
-  static void cruiseUntilDeg(int32_t left_base, int32_t right_base,
-                             int32_t target_deg);
+  void cruiseUntilDeg(int32_t left_base, int32_t right_base,
+                      int32_t target_deg);
   /* 停止からの直進: 1D レート方位で S字加速 → cruise_power */
   void accelToCruise(int32_t left_base, int32_t right_base, int32_t accel_deg,
                      int cruise_power);
@@ -118,30 +133,43 @@ private:
   void rampStraightPower(int32_t left_base, int32_t right_base, int32_t dist_deg,
                          int from_power, int to_power);
   void turnByAction(MoveAction action);
+  /* initial / 周回の共通旋回。論理方位の更新は呼び出し側で行う。 */
+  void turnCoreToAbsolute(float target_heading, int prefer_sign);
   /* 90° 刻みへその場旋回（追い込みなし）。
-   * prefer_sign: 0=最短、+1=CW、-1=CCW（BFS の L90/R90 どおりに回すとき） */
+   * prefer_sign: 0=最短、+1=CW、-1=CCW（BFS の L90/R90 どおりに回すとき）
+   * log_turn: EnableTurnLog が true のとき、false を渡すと出力を抑止。 */
   void turnToAbsolute(float target_heading, float extra_early_deg = 0.0f,
-                      int prefer_sign = 0);
+                      int prefer_sign = 0, bool log_turn = true);
+  void logAfterTurn(int32_t left_abs_deg, int32_t right_abs_deg,
+                    float heading_rel_deg, bool left, float turn_target_deg);
+  /* 停止指令直前に撮った経過時間・生ジャイロ累積角・エンコーダ角・補正後方位。 */
+  void logStopInstant();
+  /* 補正前生角・補正後方位・目標角・補正後左右パワー。
+   * use_motor_target なら Straight の直進目標、そうでなければ target_deg。 */
+  void logDriveControl(const char *phase, bool use_motor_target = true,
+                       float target_deg = 0.0f);
+  /* EnableTurnLog / EnableStraightLog が true のとき、BLE 接続まで待ってから動く。
+   * 未接続のまま fprintf/fflush すると制御ループが止まり、バックが止まらない。 */
+  void waitLogConnected();
   /* 脱出シーケンス用: ExitTurnLeft/RightPower で目標角まで旋回 */
   void turnExitOneWheel(float target_heading);
   /* 停止 → 現在向きを 0° にし cardinal_offset_ を更新。
    * 1 周ごとの reset は行わない方針なので、現在は未使用。 */
-  void resetGyroForLap();
   /* ゲート通過後（ジャイロresetによる停止はしない） */
   void onGatePassed();
 
-  /* 次目標へ向き付き最短で移動（BFS）。blocked は通行禁止マス。
+  /* 次目標へ向き付き最短で移動（BFS）。blocked は禁止マスと禁止ゲート辺。
    * stop_at_end=false なら最終直進後も停止せず、次の goTo へ連続走行可能。 */
-  void goTo(QrPoint goal, const bool blocked[GridSize][GridSize],
+  bool goTo(QrPoint goal, const RouteBlocks &blocked,
             bool stop_at_end = true);
   int  bfsCost(int sx, int sy, int sfacing_i, int gx, int gy,
-               const bool blocked[GridSize][GridSize],
+               const RouteBlocks &blocked,
                int *out_facing_i) const;
   int  bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
-               const bool blocked[GridSize][GridSize], MoveAction *out_actions,
+               const RouteBlocks &blocked, MoveAction *out_actions,
                int max_actions, int *out_facing_i) const;
 
-  void passGateShortest(GateSeg gate, const GateSeg *past_gates,
+  bool passGateShortest(GateSeg gate, const GateSeg *past_gates,
                         int past_count, const GateSeg *future_gates,
                         int future_count,
                         const GateSeg *continue_gate = nullptr,
@@ -149,10 +177,10 @@ private:
                         int continue_future_count = 0);
   /* (sx,sy,sf) からゲート両端の近い方 */
   QrPoint nearerGateEnd(GateSeg gate, int sx, int sy, int sfacing_i,
-                        const bool blocked[GridSize][GridSize]) const;
+                        const RouteBlocks &blocked) const;
   /* 指定位置から goal へ行く計画の先頭が Fwd か */
   bool planStartsWithFwd(int sx, int sy, int sfacing_i, QrPoint goal,
-                         const bool blocked[GridSize][GridSize]) const;
+                         const RouteBlocks &blocked) const;
   /* 指定位置からゲート通過を始めたとき、最初の動作が Fwd か。
    * tgt_continue / tgt_continue_futures は、そのゲート自身が次周へつなぐときの
    * 出口補正（黄→次周赤）に使う。 */
@@ -176,8 +204,8 @@ private:
   /* 直進 PI の目標。旋回目標と同じ値 */
   float straightTargetDeg(float logical_facing_deg) const;
 
-  static void clearBlocked(bool blocked[GridSize][GridSize]);
-  static void blockPoint(bool blocked[GridSize][GridSize], QrPoint p,
+  static void clearBlocked(RouteBlocks &blocked);
+  static void blockPoint(RouteBlocks &blocked, QrPoint p,
                          QrPoint except_goal);
 
   static float snapTo90(float heading_deg);
@@ -205,12 +233,8 @@ private:
   float facing_deg_ = 0.0f;
   /* 論理 → 絶対。LT 後 InitialTurnOffsetDeg */
   float cardinal_offset_ = InitialTurnOffsetDeg;
-  /* 直進 PI 用の Per* 補正 [deg]。EarlyStop 分は載せない。積まず今回分だけ */
+  /* 直進 PI 用。直前の旋回方向の相対角平均補正 [deg] */
   float heading_add_ = 0.0f;
-  /* 左旋回の回数。TurnsPerHeadingAdd で今回の左補正に置き換えて 0 に戻す */
-  int   left_turn_count_ = 0;
-  /* 右旋回の回数。TurnsPerHeadingAdd で今回の右補正に置き換えて 0 に戻す */
-  int   right_turn_count_ = 0;
   /* 連続直進中は目標角・積分を触らない */
   bool straight_running_ = false;
   /* 前回ジャイロ reset からのゲート通過数（参考用） */
@@ -227,11 +251,11 @@ private:
    * 連続 Fwd の途中は加速しない。
    * 1マス移動と連続の最後は CoreStraightDeg（枠内で減速）。
    * 連続 Fwd（減速なし）は CoreStraightContinueDeg。 */
-  static constexpr int      CoreRunStraightPower = 75;
+  static constexpr int      CoreRunStraightPower = 100;
   /* 減速して止まる 1マスの距離 [deg]（減速中に進む分を含む）
    * L/R は下の *R / *L を触る。 */
-  static constexpr int32_t  CoreStraightDegR = 465;
-  static constexpr int32_t  CoreStraightDegL = 465;
+  static constexpr int32_t  CoreStraightDegR = 475;
+  static constexpr int32_t  CoreStraightDegL = 475;
   static constexpr int32_t  CoreStraightDeg =
       ETROBO_COURSE_L ? CoreStraightDegR : CoreStraightDegL;
   /* 上のうち減速中に進む距離 [deg]。ここまで来たら減速に入る。
@@ -239,10 +263,10 @@ private:
   static constexpr int32_t  CoreStraightDecelDeg = 150;
   /* 停止からの走り出し加速に使う距離 [deg]。飛び出し（ヨーの跳ね）を抑える。
    * 終了はエンコーダ。短いマスではクルーズ距離までに縮める。 */
-  static constexpr int      CoreStraightAccelStartPower = 33;
+  static constexpr int      CoreStraightAccelStartPower = 40;
   static constexpr int32_t  CoreStraightAccelDeg        = 150;
   /* エンコーダ減速中の最低パワー。小さすぎると進まず停止位置に届かない */
-  static constexpr int      CoreStraightDecelMinPower = 33;
+  static constexpr int      CoreStraightDecelMinPower = 40;
   /* エンコーダ減速の安全抜け（本終了は total_deg） */
   static constexpr uint32_t CoreStraightDecelStallMs = 250U;
   static constexpr uint32_t CoreStraightDecelMaxMs   = 2500U;
@@ -250,8 +274,8 @@ private:
   static constexpr uint32_t CoreStraightDecelMs     = 400U;
   static constexpr uint32_t CoreStraightDecelStepMs = 100U;
   /* 連続 Fwd（減速なし）1マスの距離 [deg]。マスを越えるなら減らす */
-  static constexpr int32_t  CoreStraightContinueDegR = 510;
-  static constexpr int32_t  CoreStraightContinueDegL = 510;
+  static constexpr int32_t  CoreStraightContinueDegR = 530;
+  static constexpr int32_t  CoreStraightContinueDegL = 530;
   static constexpr int32_t  CoreStraightContinueDeg =
       ETROBO_COURSE_L ? CoreStraightContinueDegR : CoreStraightContinueDegL;
   /* ±90°（論理 +y/-y）の直進に足す距離 [deg]。Y が短いなら増やす */
@@ -274,12 +298,14 @@ private:
   static constexpr uint32_t InitialSlowTraceMaxMs         = 15000U;
   /* 反射光がこの値以上なら白（ColorLAB::WhiteReflectionMin と同じ系統） */
   static constexpr int32_t  InitialSlowTraceWhiteReflectionMin = 65;
+  /* 白検知後、停止時の揺れが落ち着いてからジャイロをリセットする。 */
+  static constexpr uint32_t InitialSlowTraceStopSettleMs = 100U;
 
   /* === initialRun: バック → 絶対±90°旋回 → 直進 === */
   static constexpr int      InitialBackPower     = 40;
   /* 一定パワーで進むバック距離 [deg]。左右エンコーダの絶対値平均 */
-  static constexpr int32_t  InitialBackDegR      = 220;
-  static constexpr int32_t  InitialBackDegL      = 220;
+  static constexpr int32_t  InitialBackDegR      = 160;
+  static constexpr int32_t  InitialBackDegL      = 160;
   static constexpr int32_t  InitialBackDeg =
       ETROBO_COURSE_L ? InitialBackDegR : InitialBackDegL;
   static constexpr float    InitialBackBalanceKp   = 5.0f; 
@@ -289,14 +315,9 @@ private:
    * 初期値でもある。R と L で向きが逆。 */
   static constexpr float    InitialTurnOffsetDeg =
       ETROBO_COURSE_L ? 90.0f : -90.0f;
-  /* 左旋回 / 右旋回それぞれ、TurnsPerHeadingAdd 回ごとに目標角へ載せる量 [deg]。
-   * 前回分は捨て、今回の向きの補正だけ使う。CW 正。Test 旋回と同じ。 */
-  static constexpr float    PerLeftTurnHeadingAddDeg  =  0.8f;
-  static constexpr float    PerRightTurnHeadingAddDeg = 0.85f;
-  static constexpr int      TurnsPerHeadingAdd     = 1;
   static constexpr int      InitialStraightPower = 50;
   /* 減速中に進む分を含めた直進距離 [deg] */
-  static constexpr int32_t  InitialStraightDeg      = 650;
+  static constexpr int32_t  InitialStraightDeg      = 630;
   /* 上のうち減速中に進むと見込む距離 [deg] */
   static constexpr int32_t  InitialStraightDecelDeg = 100;
   static constexpr float    InitialStraightBalanceIMax       = 18.0f;
@@ -309,9 +330,9 @@ private:
   static constexpr float StraightBalanceDeadbandDeg = 0.0f;
 
   /* === 旋回（両輪ピボット。Test Nansho3Spin* と同じ） === */
-  static constexpr int      CoreTurnPower           = 45;
+  static constexpr int      CoreTurnPower           = 80;
   static constexpr float    CoreTurnSlowApproachDeg = 30.0f;
-  static constexpr int      CoreTurnSlowPower       = 33;
+  static constexpr int      CoreTurnSlowPower       = 40;
   static constexpr uint32_t CoreTurnMaxMs           = 8000U;
   /* 停止してから旋回を始めるまでの待ち [ms] */
   static constexpr uint32_t CoreTurnBeforeMs        = 200U;
@@ -321,8 +342,14 @@ private:
    * 止めどころの調整のみ。直進 PI 目標には載せない。 */
   static constexpr float    CoreTurnLeftEarlyExtraDeg  = -1.0f;
   static constexpr float    CoreTurnRightEarlyExtraDeg = -1.0f;
+  /* 動的補正の設定は Common/Gyro/TurnDrift.h を参照。 */
   /* 旋回完了後、直進に入る前の待ち [ms]（0=待ちなし） */
   static constexpr uint32_t CoreTurnAfterMs         = 0U;
+  /* true で初回を含む両輪旋回を Test と同じ形式で出す。false で出さない。 */
+  static constexpr bool     EnableTurnLog           = false;
+  /* true で直進中に IMU_raw / IMU_h / TGT / MOT_Lp/Rp を周期出力する。 */
+  static constexpr bool     EnableStraightLog       = false;
+  static constexpr uint32_t StraightLogIntervalMs   = 200U;
 
   /* === 指定周回後の退出シーケンス === */
   /* x がこれ以下なら脱出前にこの x へ戻す（y は維持） */
