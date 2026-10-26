@@ -583,24 +583,24 @@ void TestScene::run()
   gLineTracer.setEnabled(false);
   gMotors.stop();
 
-#if ETROBO_SCENE == 7
+#if TEST_CASE == 7
   runStraightTest();
-#elif ETROBO_SCENE == 8
+#elif TEST_CASE == 8
   runEncoderStraightTest();
-#elif ETROBO_SCENE == 14
+#elif TEST_CASE == 14
   runNansho3SpinLoop();
-#elif ETROBO_SCENE == 15
+#elif TEST_CASE == 15
   runNansho3OnceTurn();
-#elif ETROBO_SCENE == 16
+#elif TEST_CASE == 16
   runRandomSpinLoop();
-#elif ETROBO_SCENE == 17
+#elif TEST_CASE == 17
   runSquareTest();
-#elif ETROBO_SCENE == 19
+#elif TEST_CASE == 19
   gNansho3.runInitialTest();
-#elif ETROBO_SCENE == 20
+#elif TEST_CASE == 20
   gNansho3.runStraightCellsTest(TEST_STRAIGHT_CELLS);
 #else
-  /* SCENE 6: LT → 直進 → Nansho1〜3 */
+  /* TEST_CASE 6: LT → 直進 → Nansho1〜3 */
   runLineTraceUntilSkyblueThenStraight();
 #endif
 }
@@ -610,7 +610,7 @@ extern "C" void TestTask(intptr_t exinf)
   (void)exinf;
   gTest.run();
 
-#if ETROBO_SCENE == 6
+#if TEST_CASE == 6
   gMotors.stop();
   gLineTracer.setEnabled(false);
   dly_tsk(50 * 1000U);

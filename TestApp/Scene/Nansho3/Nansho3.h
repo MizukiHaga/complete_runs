@@ -58,7 +58,7 @@ public:
 
   /* 単体起動用: 低速LT → 反射光で白検知して停止 → ジャイロreset
    * 通し(ETROBO_SCENE 0/5/6)では呼ばず、initialRun（バック）から開始する
-   * SCENE 4/13 では呼ぶ */
+   * SCENE 4 では呼ぶ */
   void testInitialTrace();
 
   /* バック → 絶対±90°旋回 → 直進（ジャイロresetしない）。
@@ -254,8 +254,8 @@ private:
   static constexpr int      CoreRunStraightPower = 100;
   /* 減速して止まる 1マスの距離 [deg]（減速中に進む分を含む）
    * L/R は下の *R / *L を触る。 */
-  static constexpr int32_t  CoreStraightDegR = 495;
-  static constexpr int32_t  CoreStraightDegL = 495;
+  static constexpr int32_t  CoreStraightDegR = 485;
+  static constexpr int32_t  CoreStraightDegL = 485;
   static constexpr int32_t  CoreStraightDeg =
       ETROBO_COURSE_L ? CoreStraightDegR : CoreStraightDegL;
   /* 上のうち減速中に進む距離 [deg]。ここまで来たら減速に入る。
@@ -274,8 +274,8 @@ private:
   static constexpr uint32_t CoreStraightDecelMs     = 400U;
   static constexpr uint32_t CoreStraightDecelStepMs = 100U;
   /* 連続 Fwd（減速なし）1マスの距離 [deg]。マスを越えるなら減らす */
-  static constexpr int32_t  CoreStraightContinueDegR = 535;
-  static constexpr int32_t  CoreStraightContinueDegL = 535;
+  static constexpr int32_t  CoreStraightContinueDegR = 525;
+  static constexpr int32_t  CoreStraightContinueDegL = 525;
   static constexpr int32_t  CoreStraightContinueDeg =
       ETROBO_COURSE_L ? CoreStraightContinueDegR : CoreStraightContinueDegL;
   /* ±90°（論理 +y/-y）の直進に足す距離 [deg]。Y が短いなら増やす */

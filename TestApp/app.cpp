@@ -10,6 +10,7 @@
 #include "Nansho3.h"
 #include "Nansho3KYOKU.h"
 #include "Test.h"
+#include "FixedRun.h"
 #include "Arm.h"
 #include "ColorHSV.h"
 #include "ColorLAB.h"
@@ -100,18 +101,16 @@ void main_task(intptr_t unused)
 #elif ETROBO_SCENE == 3
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
   gHCR.run_hrc();
-#elif ETROBO_SCENE == 4 || ETROBO_SCENE == 13
+#elif ETROBO_SCENE == 4
   act_tsk(NANSHO3_TASK);
-#elif ETROBO_SCENE == 18
-  act_tsk(NANSHO3KYOKU_TASK);
 #elif ETROBO_SCENE == 6
   act_tsk(TEST_TASK);
-#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 14 || \
-    ETROBO_SCENE == 15 || ETROBO_SCENE == 16 || ETROBO_SCENE == 17 || \
-    ETROBO_SCENE == 19 || ETROBO_SCENE == 20
-  act_tsk(TEST_TASK);
+#elif ETROBO_SCENE == 7
+  act_tsk(NANSHO3KYOKU_TASK);
+#elif ETROBO_SCENE == 8 || ETROBO_SCENE == 9
+  act_tsk(FIXEDRUN_TASK);
 #else
-#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18, 19 or 20"
+#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8 or 9"
 #endif
   ext_tsk();
 }
@@ -133,5 +132,19 @@ extern "C" void StraightBalanceTask(intptr_t exinf)
 {
   (void)exinf;
   gMotors.tickCorrection();
+  ext_tsk();
+}
+
+/* FixedRun は L/R・完成/短縮で入口が分かれるが、カーネルタスクは1つ。
+ * CRE_TSK が4つあるとスタックだけで SRAM を食う。 */
+extern "C" void FixedRunTask(intptr_t exinf)
+{
+  (void)exinf;
+#if ETROBO_SCENE == 9
+  FixedRunShort scene;
+#else
+  FixedRunComplete scene;
+#endif
+  scene.run();
   ext_tsk();
 }

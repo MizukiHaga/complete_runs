@@ -534,20 +534,24 @@ void Straight::configure(pbio_port_id_t left_motor_port,
   resetCorrection();
 }
 
-void Straight::run(int left_power, int right_power, int32_t encoder_deg)
+void Straight::run(int left_power, int right_power, int32_t encoder_deg,
+                   bool stop_end)
 {
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
   correction_enabled_ = true;
+
+  /* 走り出しの移動量も含めるため、指令の前に基準を取る。 */
+  const int32_t left_base  = leftEncoderCount();
+  const int32_t right_base = rightEncoderCount();
+
   applyWithCorrection(left_power, right_power);
 
   if (encoder_deg <= 0) {
     return;
   }
 
-  const int32_t left_base  = leftEncoderCount();
-  const int32_t right_base = rightEncoderCount();
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < MaxDurationMs) {
     if (traveledDegFrom(left_base, right_base) >= encoder_deg) {
@@ -557,7 +561,10 @@ void Straight::run(int left_power, int right_power, int32_t encoder_deg)
     dly_tsk(EncoderStepMs * 1000U);
     elapsed_ms += EncoderStepMs;
   }
-  stop();
+
+  if (stop_end) {
+    stop();
+  }
 }
 
 void Straight::stop()
@@ -1152,4 +1159,78 @@ void Straight::turnByEncoder(int32_t target_deg, bool left, int left_power,
     stop();
   }
   dly_tsk(TurnStepMs * 1000U);
+}
+
+void Straight::curveToHeading(float target_heading, int outer_power,
+                              int inner_power, uint32_t max_ms,
+                              float exit_accel_deg, int prefer_sign,
+                              bool stop_end)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+
+  correction_enabled_ = true;
+  const bool prev_heading_correction = heading_correction_;
+  heading_correction_ = false;
+
+  float current = gGyro.heading();
+  const float delta = Gyro::wrapDeg180(target_heading - current);
+
+  float turn_dir;
+  if (prefer_sign > 0) {
+    turn_dir = 1.0f;
+  } else if (prefer_sign < 0) {
+    turn_dir = -1.0f;
+  } else {
+    turn_dir = (delta >= 0.0f) ? 1.0f : -1.0f;
+  }
+
+  float need;
+  if (turn_dir * delta >= 0.0f) {
+    need = fabsf(delta);
+  } else {
+    need = 360.0f - fabsf(delta);
+  }
+
+  float traveled = 0.0f;
+  float previous = current;
+  uint32_t elapsed_ms = 0U;
+
+  while (elapsed_ms < max_ms) {
+    current = gGyro.heading();
+    traveled += turn_dir * Gyro::wrapDeg180(current - previous);
+    previous = current;
+    const float remaining = need - traveled;
+    if (remaining <= 2.0f) {
+      break;
+    }
+
+    int outer = outer_power;
+    int inner = inner_power;
+    if (exit_accel_deg > 0.0f && remaining <= exit_accel_deg) {
+      float ratio = (exit_accel_deg - remaining) / exit_accel_deg;
+      ratio = clampFloat(ratio, 0.0f, 1.0f);
+      outer = outer_power +
+              static_cast<int>(roundf((100 - outer_power) * ratio));
+      inner = inner_power +
+              static_cast<int>(roundf((100 - inner_power) * ratio));
+    }
+
+    outer = clampMotorPower(outer);
+    inner = clampMotorPower(inner);
+    if (turn_dir > 0.0f) {
+      applyWithCorrection(outer, inner);
+    } else {
+      applyWithCorrection(inner, outer);
+    }
+
+    dly_tsk(TurnStepMs * 1000U);
+    elapsed_ms += TurnStepMs;
+  }
+
+  heading_correction_ = prev_heading_correction;
+  if (stop_end) {
+    stop();
+  }
 }

@@ -61,6 +61,11 @@ APPL_CXXOBJS += Test.o
 APPL_DIRS    += $(mkfile_path)Scene/Test
 INCLUDES     += -I$(mkfile_path)Scene/Test
 
+# === Scene: FixedRun =====================================
+APPL_CXXOBJS += FixedRunComplete.o FixedRunShort.o
+APPL_DIRS    += $(mkfile_path)Scene/FixedRun
+INCLUDES     += -I$(mkfile_path)Scene/FixedRun
+
 # === Continuous curve / Pure Pursuit scene ===
 APPL_CXXOBJS += Nansho3KYOKU.o Path.o
 APPL_DIRS += $(mkfile_path)Scene/Nansho3KYOKU
