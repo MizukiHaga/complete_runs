@@ -105,9 +105,6 @@ public:
                        float left_rotations, float right_rotations);
   void runForRotationsSameTime(int left_power, int right_power,
                                float left_rotations, float right_rotations);
-  void resetRotationCount();
-  float leftRotationCount() const;
-  float rightRotationCount() const;
   /* 指定時間 [ms] 走行して台形減速停止（後退など時間制御向け）。
    * decel_ms: 終端でパワーを線形に落とす時間。省略時は DecelMs。
    * step_ms: 減速の更新間隔。大きいほど 1 段の減少幅が大きい。 */
