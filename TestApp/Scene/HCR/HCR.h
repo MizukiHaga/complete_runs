@@ -15,6 +15,7 @@ public:
   /* LR は app.h の ETROBO_COURSE_L で切り替え（Nansho1/2/3 と同様）。 */
   void run_hrc();
   void ShortCutRun();
+  void LineTrace();
   void LineTraceRotation(float left_rotation, float right_rotation, float left_speed, float right_speed, float p, float i, float d, float scale);
   void LineTraceRotationCheck(float duration_sec);
   void AllLineTrace();
