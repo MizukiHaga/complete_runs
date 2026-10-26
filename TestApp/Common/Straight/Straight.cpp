@@ -10,7 +10,6 @@
 
 #include <math.h>
 #include <stdio.h>
-#include <spike/hub/speaker.h>
 
 /* pup_motor_get_count() は pbio のサーボ更新ループが動いているときしか値を返さない。
  * set_power (dcmotor duty) を呼ぶとサーボが親から切り離されて更新ループが止まり、
@@ -23,8 +22,9 @@ extern Straight gMotors;
 extern Gyro     gGyro;
 
 /* 回転センサの角度 [deg]。取得できなければ 0。 */
-static int32_t tachoDeg(pup_motor_t *motor)
+static int32_t tachoDeg(pup_motor_t *motor, bool *valid = nullptr)
 {
+  if (valid != nullptr) *valid = false;
   if (motor == nullptr) {
     return 0;
   }
@@ -32,6 +32,7 @@ static int32_t tachoDeg(pup_motor_t *motor)
   if (pbio_tacho_get_angle(motor->tacho, &angle) != PBIO_SUCCESS) {
     return 0;
   }
+  if (valid != nullptr) *valid = true;
   return (angle.rotations * 360) + (angle.millidegrees / 1000);
 }
 
@@ -728,7 +729,7 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
     return;
   }
 
-  /* 絶対目標まで回す。経過角は積まない。
+  /* 絶対目標まで、開始基準の累積旋回角で回す。
    * prefer_sign=0 なら最短側。±1 ならその向きに強制し、必要なら遠回りする。
    * 残りが slow_approach_deg 以内なら低速（行き過ぎ防止）。
    * その場旋回は両輪逆符号（L+/R− または L−/R+）。
@@ -769,8 +770,11 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   }
   const float early = stop_early_deg;
 
-  const int32_t enc_l0 = tachoDeg(left_);
-  const int32_t enc_r0 = tachoDeg(right_);
+  bool left_valid = false;
+  bool right_valid = false;
+  const int32_t enc_l0 = tachoDeg(left_, &left_valid);
+  const int32_t enc_r0 = tachoDeg(right_, &right_valid);
+  bool encoder_valid = left_valid && right_valid;
   const bool    prev_heading_correction = heading_correction_;
   /* 旋回中は直進ヨー補正を掛けない（ピボット指令を崩さない） */
   heading_correction_ = false;
@@ -779,47 +783,41 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   (void)get_tim(&turn_start); // TOPPERS システム時刻は us
   float previous_raw = gGyro.rawHeading();
   float gyro_traveled = 0.0f;
-  // 平均エンコーダが180°に達した最初のサンプルを固定する。
-  // ジャイロ角と経過時間も同じ時点で保存し、停止後に一度だけ適用する。
-  bool drift_sample_ready = false;
-  float drift_gyro = 0.0f;
-  float drift_left = 0.0f;
-  float drift_right = 0.0f;
-  float drift_elapsed = 0.0f;
-  const auto capture_drift_sample = [&]() {
-    if (!encoder_drift_correction || !TurnDriftConfig::Enabled ||
-        drift_sample_ready) return;
-    const float l = static_cast<float>(absEncoderDeg(tachoDeg(left_) - enc_l0));
-    const float r = static_cast<float>(absEncoderDeg(tachoDeg(right_) - enc_r0));
-    if (0.5f * (l + r) < TurnDriftConfig::SampleEncoderDeg) return;
-    SYSTIM now = 0;
-    (void)get_tim(&now);
-    drift_gyro = gyro_traveled;
-    drift_left = l;
-    drift_right = r;
-    drift_elapsed = static_cast<float>(now - turn_start) * 1.0e-6f;
-    drift_sample_ready = true;
+  const bool fusion_enabled = encoder_drift_correction && TurnDriftConfig::Enabled;
+  float enc_left = 0.0f;
+  float enc_right = 0.0f;
+  bool direction_valid = true;
+  uint32_t sample_ms = 0U;
+  const auto read_turn_encoders = [&]() {
+    bool lv = false;
+    bool rv = false;
+    const int32_t l = tachoDeg(left_, &lv) - enc_l0;
+    const int32_t r = tachoDeg(right_, &rv) - enc_r0;
+    // 取得失敗は即時無効。逆方向の小さな揺れは別判定で許容する。
+    encoder_valid = encoder_valid && lv && rv;
+    direction_valid = turn_dir * l >= -TurnDriftConfig::ReverseWheelToleranceDeg &&
+                      turn_dir * r <= TurnDriftConfig::ReverseWheelToleranceDeg;
+    SYSTIM sample_time = 0;
+    (void)get_tim(&sample_time);
+    sample_ms = static_cast<uint32_t>((sample_time - turn_start) / 1000U);
+    enc_left = static_cast<float>(absEncoderDeg(l));
+    enc_right = static_cast<float>(absEncoderDeg(r));
   };
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < max_ms) {
     const float raw = gGyro.rawHeading();
+    if (!isfinite(raw) || !isfinite(previous_raw)) break;
     // 周期差だけ wrap し、累積角は wrap しない（180°を超えても保持）。
     gyro_traveled += Gyro::wrapDeg180(raw - previous_raw);
     previous_raw = raw;
-    capture_drift_sample();
-    const float h = gGyro.heading();
-    /* 絶対目標までの残り。旋回方向に見て、通り過ぎると負 */
-    const float err = Gyro::wrapDeg180(target_heading - h);
-    float rem = (turn_dir > 0.0f) ? err : -err;
-    if (need > 180.0f) {
-      float rem360 = rem;
-      if (rem360 < 0.0f) {
-        rem360 += 360.0f;
-      }
-      if (rem360 > 180.0f) {
-        rem = rem360;
-      }
-    }
+    read_turn_encoders();
+    const float correction = fusion_enabled
+        ? turn_drift_.estimate(gyro_traveled, enc_left, enc_right, turn_dir,
+                               encoder_valid, sample_ms, direction_valid)
+        : 0.0f;
+    const float fused_angle = gyro_traveled + correction;
+    // 方向付きの累積角で残りを求め、180°越え・目標通過も連続に扱う。
+    const float rem = need - turn_dir * fused_angle;
     if (rem <= early) {
       break;
     }
@@ -871,52 +869,31 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   } else {
     stop();
   }
-  if (encoder_drift_correction && TurnDriftConfig::Enabled) {
-    // 惰性を含む最終角を取得。方式切替前に同じジャイロで測定する。
+  if (fusion_enabled) {
+    // 惰性を含む最終角を同じ式で融合し、方位へ一度だけ反映する。
     for (uint32_t waited = 0; waited < TurnDriftConfig::SettleMs; ++waited) {
       dly_tsk(1000U);
       const float raw = gGyro.rawHeading();
+      if (!isfinite(raw) || !isfinite(previous_raw)) {
+        encoder_valid = false;
+        break;
+      }
       gyro_traveled += Gyro::wrapDeg180(raw - previous_raw);
       previous_raw = raw;
-      capture_drift_sample();
+      read_turn_encoders();
+      turn_drift_.estimate(gyro_traveled, enc_left, enc_right, turn_dir,
+                               encoder_valid, sample_ms, direction_valid);
     }
-    if (drift_sample_ready) {
-      gGyro.addHeadingCorrection(turn_drift_.update(
-          drift_gyro, drift_left, drift_right, drift_elapsed, turn_dir));
-      // 発音APIは待機を伴うため、サンプル到達は旋回停止後に通知する。
-      // 補正の採否とは独立に、180°到達を1旋回につき1回知らせる。
-      hub_speaker_play_tone(1500, 50);
-    }
-    // 融合後の方位で目標へ寄せてから返す。大きな誤差や本旋回の
-    // タイムアウト時は追い旋回しない。診断値・学習サンプルは本旋回を保持。
-    const float align_error = Gyro::wrapDeg180(target_heading - gGyro.heading());
-    if (turn_drift_.status() == TurnDrift::Accepted && elapsed_ms < max_ms &&
-        isfinite(align_error) &&
-        fabsf(align_error) > TurnDriftConfig::AlignToleranceDeg &&
-        fabsf(align_error) <= TurnDriftConfig::AlignMaxErrorDeg) {
-      const float align_dir = (align_error > 0.0f) ? 1.0f : -1.0f;
-      const int32_t align_l0 = tachoDeg(left_);
-      const int32_t align_r0 = tachoDeg(right_);
-      heading_correction_ = false;
-      for (uint32_t ms = 0; ms < TurnDriftConfig::AlignMaxMs; ms += TurnStepMs) {
-        const float error = Gyro::wrapDeg180(target_heading - gGyro.heading());
-        // 目標を越えたら終了し、左右への切り返しを繰り返さない。
-        if (!isfinite(error) || align_dir * error <= TurnDriftConfig::AlignToleranceDeg ||
-            fabsf(error) > TurnDriftConfig::AlignMaxErrorDeg) break;
-        int l_mag = 0;
-        int r_mag = 0;
-        turnWheelMags(TurnDriftConfig::AlignPower,
-                      absEncoderDeg(tachoDeg(left_) - align_l0) -
-                      absEncoderDeg(tachoDeg(right_) - align_r0), &l_mag, &r_mag);
-        if (align_dir > 0.0f) run(l_mag, -r_mag);
-        else run(-l_mag, r_mag);
-        dly_tsk(TurnStepMs * 1000U);
-      }
-      // 微調整後はブレーキを掛け、惰性が落ち着いてから走行へ進む。
-      stop();
-      dly_tsk(TurnDriftConfig::AlignSettleMs * 1000U);
-      if (coast_end) coast();
-      heading_correction_ = prev_heading_correction;
+    SYSTIM now = 0;
+    (void)get_tim(&now);
+    const float correction = turn_drift_.update(
+        gyro_traveled, enc_left, enc_right,
+        static_cast<float>(now - turn_start) * 1.0e-6f, turn_dir,
+        encoder_valid, direction_valid);
+    const float fused_heading = start + gyro_traveled + correction;
+    const float current_heading = gGyro.heading();
+    if (isfinite(fused_heading) && isfinite(current_heading)) {
+      gGyro.addHeadingCorrection(Gyro::wrapDeg180(fused_heading - current_heading));
     }
   }
   dly_tsk(TurnStepMs * 1000U);

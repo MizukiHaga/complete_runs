@@ -254,8 +254,8 @@ private:
   static constexpr int      CoreRunStraightPower = 100;
   /* 減速して止まる 1マスの距離 [deg]（減速中に進む分を含む）
    * L/R は下の *R / *L を触る。 */
-  static constexpr int32_t  CoreStraightDegR = 475;
-  static constexpr int32_t  CoreStraightDegL = 475;
+  static constexpr int32_t  CoreStraightDegR = 495;
+  static constexpr int32_t  CoreStraightDegL = 495;
   static constexpr int32_t  CoreStraightDeg =
       ETROBO_COURSE_L ? CoreStraightDegR : CoreStraightDegL;
   /* 上のうち減速中に進む距離 [deg]。ここまで来たら減速に入る。
@@ -274,8 +274,8 @@ private:
   static constexpr uint32_t CoreStraightDecelMs     = 400U;
   static constexpr uint32_t CoreStraightDecelStepMs = 100U;
   /* 連続 Fwd（減速なし）1マスの距離 [deg]。マスを越えるなら減らす */
-  static constexpr int32_t  CoreStraightContinueDegR = 530;
-  static constexpr int32_t  CoreStraightContinueDegL = 530;
+  static constexpr int32_t  CoreStraightContinueDegR = 535;
+  static constexpr int32_t  CoreStraightContinueDegL = 535;
   static constexpr int32_t  CoreStraightContinueDeg =
       ETROBO_COURSE_L ? CoreStraightContinueDegR : CoreStraightContinueDegL;
   /* ±90°（論理 +y/-y）の直進に足す距離 [deg]。Y が短いなら増やす */
@@ -304,8 +304,8 @@ private:
   /* === initialRun: バック → 絶対±90°旋回 → 直進 === */
   static constexpr int      InitialBackPower     = 40;
   /* 一定パワーで進むバック距離 [deg]。左右エンコーダの絶対値平均 */
-  static constexpr int32_t  InitialBackDegR      = 160;
-  static constexpr int32_t  InitialBackDegL      = 160;
+  static constexpr int32_t  InitialBackDegR      = 150;
+  static constexpr int32_t  InitialBackDegL      = 150;
   static constexpr int32_t  InitialBackDeg =
       ETROBO_COURSE_L ? InitialBackDegR : InitialBackDegL;
   static constexpr float    InitialBackBalanceKp   = 5.0f; 
