@@ -8,6 +8,7 @@
 #include "Nansho1.h"
 #include "Nansho2.h"
 #include "Nansho3.h"
+#include "Nansho3KYOKU.h"
 #include "Test.h"
 #include "Arm.h"
 #include "ColorHSV.h"
@@ -41,6 +42,7 @@ Nansho1Scene gNansho1;
 /* === Scene: Member B === */
 Nansho2Scene gNansho2;
 Nansho3Scene gNansho3;
+Nansho3KYOKUScene gNansho3KYOKU;
 
 /* === Scene: Test === */
 TestScene gTest;
@@ -100,12 +102,16 @@ void main_task(intptr_t unused)
   gHCR.run_hrc();
 #elif ETROBO_SCENE == 4 || ETROBO_SCENE == 13
   act_tsk(NANSHO3_TASK);
+#elif ETROBO_SCENE == 18
+  act_tsk(NANSHO3KYOKU_TASK);
 #elif ETROBO_SCENE == 6
   act_tsk(TEST_TASK);
-#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 9 || ETROBO_SCENE == 10 || ETROBO_SCENE == 11 || ETROBO_SCENE == 12 || ETROBO_SCENE == 14 || ETROBO_SCENE == 15
+#elif ETROBO_SCENE == 7 || ETROBO_SCENE == 8 || ETROBO_SCENE == 14 || \
+    ETROBO_SCENE == 15 || ETROBO_SCENE == 16 || ETROBO_SCENE == 17 || \
+    ETROBO_SCENE == 19 || ETROBO_SCENE == 20
   act_tsk(TEST_TASK);
 #else
-#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 or 15"
+#error "ETROBO_SCENE must be 0, 1, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18, 19 or 20"
 #endif
   ext_tsk();
 }

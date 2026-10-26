@@ -25,6 +25,8 @@
 #ifndef TESTAPP_STRAIGHT_H_
 #define TESTAPP_STRAIGHT_H_
 
+#include "TurnDrift.h"
+
 #include <pbio/port.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -56,6 +58,10 @@ public:
    * 未指定時は 0°（run 開始時の現在角は使わない）。
    * stop() / coast() でも目標は残る。捨てるときは resetCorrection()。 */
   void setTargetHeading(float heading_deg);
+  float targetHeading() const { return target_heading_; }
+  /* 直進 PI / 旋回エンコーダ補正後に最後に出した左右パワー（停止で 0 にしない）。 */
+  int lastAppliedLeftPower() const { return last_out_left_; }
+  int lastAppliedRightPower() const { return last_out_right_; }
 
   /* ヨー角 PI ゲインを実行時に変更する。設定時に積分項をリセット。
    * i_max: 積分項クランプ上限 [deg] (省略時 BalanceIntegralMax)。
@@ -69,6 +75,11 @@ public:
   /* ヨー角 PI 直進補正の有効/無効。false なら 1:1 直進も open-loop。
    * stop() とは別（stop 中の出力抑止は correction_enabled_ 側）。 */
   void setHeadingCorrection(bool enabled);
+
+  /* true: 1:1 直進の補正をヨー角ではなく左右エンコーダ差にする。
+   * 誤差 = 進行方向の (左進み − 右進み) [deg]。左が進みすぎなら左を弱くする。
+   * ゲインは setBalancePid の Kp/Ki。false のときは従来のヨー PI。 */
+  void setEncoderStraightBalance(bool enabled);
 
   static constexpr uint32_t EncoderStepMs      = 5U;
   /* エンコーダ未到達時の安全打ち切り [ms]（距離制御には使わない） */
@@ -99,11 +110,14 @@ public:
   /* パワー指令を止め、モータは惰性（coast）。stop() の set_power(0) は使わない。 */
   void coast();
 
-  /* 開始時の目標差分を、経過角でその場旋回する（両輪逆符号ピボット）。
+  /* 絶対目標角までその場旋回する（両輪逆符号ピボット）。
+   * 目標は 90° 刻みなど呼び出し側の固定値。経過角は積まない。
    * 左右エンコーダの回転量差でパワーを補正し、|ΔL|≈|ΔR| の完全なその場旋回にする。
    * rem <= slow_approach_deg なら slow_power に落とす（行き過ぎ防止）。
-   * stop_early_deg: 残りがこの角以下で止める（慣性・カルマン遅れの行き過ぎ用）。
+   * stop_early_deg: 目標までの残りがこの角以下で止める（慣性の行き過ぎ用）。
+   *   負なら目標を通り過ぎてから止める。
    * prefer_sign: 0=最短側、+1=CW 強制、-1=CCW 強制。
+   * encoder_drift_correction: TurnDrift.h の設定で停止後に信頼度で重み付けした方位補正。
    *   計画が L90/R90 なのに最短が逆向きになるのを防ぐときに使う。 */
   void turnToHeading(float target_heading,
                      float tolerance_deg = 4.0f,
@@ -114,7 +128,29 @@ public:
                      int slow_power = 33,
                      float stop_early_deg = 0.0f,
                      bool coast_end = false,
-                     int prefer_sign = 0);
+                     int prefer_sign = 0,
+                     bool encoder_drift_correction = false);
+
+  float turnDriftCorrectionDeg() const { return turn_drift_.total(); }
+  float turnDriftRate() const { return turn_drift_.rate(); }
+  const TurnDrift &turnDriftDiagnostics() const { return turn_drift_; }
+
+  /* 旋回の停止指令直前スナップショット（coast/stop を出す直前）。 */
+  uint32_t lastTurnElapsedMs() const { return last_turn_elapsed_ms_; }
+  float lastTurnGyroAccDeg() const { return last_turn_gyro_acc_deg_; }
+  int32_t lastTurnEncLeftAbsDeg() const { return last_turn_enc_left_abs_; }
+  int32_t lastTurnEncRightAbsDeg() const { return last_turn_enc_right_abs_; }
+  float lastTurnHeadingDeg() const { return last_turn_heading_deg_; }
+
+  /* 左右エンコーダ回転量の平均 [deg] でその場旋回を終了する（IMU は見ない）。
+   * 車体 90° はトレッド≒車輪径なら約 180。左右 enc 同調 P は turnToHeading と同じ。 */
+  void turnByEncoder(int32_t target_deg, bool left,
+                     int left_power = 40, int right_power = 40,
+                     uint32_t max_ms = 3000U,
+                     int32_t slow_approach_deg = 60,
+                     int slow_power = 33,
+                     int32_t stop_early_deg = 0,
+                     bool coast_end = false);
 
   void pivotCW(int power)  { run( power, -power); }
   void pivotCCW(int power) { run(-power,  power); }
@@ -151,13 +187,17 @@ public:
                              int32_t target_deg, uint32_t step_ms);
 
 private:
+  TurnDrift turn_drift_;
   static constexpr uint32_t TurnStepMs = 1U;
   /* その場旋回: 左右エンコーダ回転量を揃える P 補正
    * （機械差で片輪だけ進むと並進成分が出るため） */
-  static constexpr float TurnEncBalanceKp       = 0.8f;
+  static constexpr float TurnEncBalanceKp       = 2.5f;
   static constexpr int   TurnEncBalanceMaxCorr  = 30;
   static constexpr int   TurnEncBalanceMinPower = 12;
-  static constexpr int32_t TurnEncBalanceDeadbandDeg = 2;
+  static constexpr int32_t TurnEncBalanceDeadbandDeg = 0;
+  /* 左輪が強い機械差。旋回中の左パワーから常に引く（大きいほど左を弱める）。
+   * P は差が出てから切るので、左が先に進む癖はこれで先に殺す。 */
+  static constexpr int TurnLeftPowerTrim = 7;
 
   static int clampMotorPower(int power);
   static int clampInt(int value, int min_value, int max_value);
@@ -166,15 +206,16 @@ private:
   static bool isSameStraightPower(int left_power, int right_power);
   static int32_t absEncoderDeg(int32_t count);
   static bool wheelEncoderReached(int32_t count, int power, int32_t target_deg);
+  /* 旋回左右マグニチュード。enc_diff = |ΔL|-|ΔR|。左 trim 込み */
+  static void turnWheelMags(int base, int32_t enc_diff, int *l_mag, int *r_mag);
 
   void setPowerRaw(int left_power, int right_power);
   void applyWithCorrection(int left_power, int right_power);
   void resetCorrection();
   void syncStoppedState();
   bool encoderReached(int left_power, int right_power, int32_t target_deg);
-  void runForEachSynchronized(int left_power, int right_power,
-                              int32_t left_target_deg,
-                              int32_t right_target_deg);
+  void captureTurnStopSnapshot(uint32_t elapsed_ms, float gyro_acc,
+                               int32_t left_abs, int32_t right_abs);
 
   pup_motor_t *left_ = nullptr;
   pup_motor_t *right_ = nullptr;
@@ -188,16 +229,27 @@ private:
   float   integral_         = 0.0f;
   int     last_cmd_left_    = 0;
   int     last_cmd_right_   = 0;
+  int     last_out_left_    = 0;
+  int     last_out_right_   = 0;
   bool    cmd_initialized_  = false;
   bool    correction_enabled_ = true;
   bool    heading_correction_ = true;
+  bool    encoder_straight_   = false;
   bool    correction_debug_   = false;
+  int32_t enc_bal_left_       = 0;
+  int32_t enc_bal_right_      = 0;
   bool    manual_target_heading_ = false;
   uint8_t correction_debug_div_ = 0;
   float   kp_               = DefaultBalanceKp;
   float   ki_               = DefaultBalanceKi;
   float   i_max_            = BalanceIntegralMax;
   float   deadband_deg_     = 0.0f;
+
+  uint32_t last_turn_elapsed_ms_   = 0U;
+  float    last_turn_gyro_acc_deg_ = 0.0f;
+  int32_t  last_turn_enc_left_abs_  = 0;
+  int32_t  last_turn_enc_right_abs_ = 0;
+  float    last_turn_heading_deg_  = 0.0f;
 };
 
 #endif  // TESTAPP_STRAIGHT_H_

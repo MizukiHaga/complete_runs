@@ -125,20 +125,21 @@ extern "C" {
  * ETROBO_SCENE:
  *   0: HCR → Nansho1 → Nansho2 → Nansho3（本番）
  *   1: Nansho1 のみ
- *   2: Nansho2 のみ22w
+ *   2: Nansho2 のみ
  *   3: HCR のみ
  *   4: Nansho3 のみ
  *   5: Nansho1 → Nansho2 → Nansho3（HCRなし）
- *   6: Test → Nansho1 → Nansho2 → Nansho3（LT前段つき）
- *   7: Test のみ（時間制御直進テスト。0°・ヨー補正）
- *   8: Test のみ（直進＋90°旋回の四角走行ループ）
- *   9: Test のみ（前後往復・カルマン確認・台形減速）
- *   10: Test のみ（直進のみ・0°・ヨー補正・台形減速・カルマンログ）
- *   11: Test のみ（Nansho3 直進と同じパワー・PI・0°・減速なし）
- *   12: Test のみ（直進だけ。Nansho3 と同じ 1000 枠・台形減速・coast。旋回なし）
+ *   6: Test → Nansho1 → Nansho2 → Nansho3（LT前段＋Nansho3相当直進）
+ *   7: Test のみ（Nansho3相当直進。S字加速→クルーズ→S字減速→coast。方位PI）
+ *   8: Test のみ（エンコーダ基準直進。距離・S字は 7 と同じ）
  *   13: Nansho3 のみ（単体LT開始つき。旧 3→1 は廃止）
- *   14: Test のみ（Nansho3 と同じその場旋回を繰り返し、1回ごとに停止。TEST_TURN_LEFT で左右）
- *   15: Test のみ（Nansho3 と同じその場旋回を1回だけ。TEST_TURN_LEFT で左右）
+ *   14: Test のみ（その場旋回ループ。Nansho3SpinStopOnEncoder で IMU/エンコーダ切り替え）
+ *   15: Test のみ（その場旋回1回。同上。TEST_TURN_LEFT で左右）
+ *   16: Test のみ（その場旋回を左右ランダムに繰り返し。止め方は 14 と同じ）
+ *   17: Test のみ（直進と90°旋回で四角走行。TEST_TURN_LEFT で左右）
+ *   18: Nansho3KYOKU（事前曲線計画＋Pure Pursuit。Settings.h参照）
+ *   19: Test のみ（Nansho3 initial: 白検知LT→停止・reset→バック→旋回→直進停止）
+ *   20: Test のみ（通常直進をTEST_STRAIGHT_CELLSマス分。座標更新なし）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
 #define ETROBO_SCENE 4
@@ -146,7 +147,15 @@ extern "C" {
 
 /* シーン14・15の旋回方向。1=左(CCW -90°) 0=右(CW +90°) */
 #ifndef TEST_TURN_LEFT
-#define TEST_TURN_LEFT 1
+#define TEST_TURN_LEFT 0
+#endif
+
+/* シーン20の直進マス数。途中は止めず、最後のマスで減速停止する。 */
+#ifndef TEST_STRAIGHT_CELLS
+#define TEST_STRAIGHT_CELLS 2
+#endif
+#if TEST_STRAIGHT_CELLS < 1 || TEST_STRAIGHT_CELLS > 3
+#error "TEST_STRAIGHT_CELLS must be 1, 2 or 3"
 #endif
 
 /* タスク優先度 */
@@ -192,6 +201,7 @@ extern void tracer_task(intptr_t exinf);
 extern void Nansho1Task(intptr_t exinf);
 extern void Nansho2Task(intptr_t exinf);
 extern void Nansho3Task(intptr_t exinf);
+extern void Nansho3KYOKUTask(intptr_t exinf);
 extern void TestTask(intptr_t exinf);
 extern void StraightBalanceTask(intptr_t exinf);
 

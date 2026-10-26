@@ -60,3 +60,8 @@ INCLUDES     += -I$(mkfile_path)Scene/Nansho3
 APPL_CXXOBJS += Test.o
 APPL_DIRS    += $(mkfile_path)Scene/Test
 INCLUDES     += -I$(mkfile_path)Scene/Test
+
+# === Continuous curve / Pure Pursuit scene ===
+APPL_CXXOBJS += Nansho3KYOKU.o Path.o
+APPL_DIRS += $(mkfile_path)Scene/Nansho3KYOKU
+INCLUDES += -I$(mkfile_path)Scene/Nansho3KYOKU
