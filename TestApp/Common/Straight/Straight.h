@@ -91,6 +91,12 @@ public:
   void stop();
   /* 左右モータのエンコーダ [deg] で直進／ピボットを終了する。 */
   void runFor(int left_power, int right_power, int32_t target_deg);
+  void runForEach(int left_power, int right_power,
+                  int32_t left_target_deg, int32_t right_target_deg);
+  void runForRotations(int left_power, int right_power,
+                       float left_rotations, float right_rotations);
+  void runForRotationsSameTime(int left_power, int right_power,
+                               float left_rotations, float right_rotations);
   /* 指定時間 [ms] 走行して台形減速停止（後退など時間制御向け）。
    * decel_ms: 終端でパワーを線形に落とす時間。省略時は DecelMs。
    * step_ms: 減速の更新間隔。大きいほど 1 段の減少幅が大きい。 */
@@ -157,11 +163,14 @@ public:
   void tickCorrection();
 
   void resetEncoderCount();
+  void resetRotationCount();
   /* 左右エンコーダの生カウント [deg]（符号つき）。回転センサを直接読むので、
    * set_power で走らせている最中（LT 中など）でも値が進む。
    * 呼び出し側で開始値を控えて差分を取れば、reset なしで距離を測れる。 */
   int32_t leftEncoderCount() const;
   int32_t rightEncoderCount() const;
+  float leftRotationCount() const;
+  float rightRotationCount() const;
   /* 開始時に控えた生カウントからの走行距離 [deg]（左右の絶対値平均）。
    * 走行を止めずに測れるので、LT 中や連続直進の途中でも使える。
    * 車輪 56mm なら 360deg ≒ 176mm（約 0.49mm/deg）。 */

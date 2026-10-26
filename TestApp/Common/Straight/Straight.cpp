@@ -398,6 +398,11 @@ void Straight::resetEncoderCount()
   enc_zero_right_ = tachoDeg(right_);
 }
 
+void Straight::resetRotationCount()
+{
+  resetEncoderCount();
+}
+
 int32_t Straight::leftEncoderCount() const
 {
   return tachoDeg(left_);
@@ -406,6 +411,16 @@ int32_t Straight::leftEncoderCount() const
 int32_t Straight::rightEncoderCount() const
 {
   return tachoDeg(right_);
+}
+
+float Straight::leftRotationCount() const
+{
+  return (float)leftEncoderCount() / 360.0f;
+}
+
+float Straight::rightRotationCount() const
+{
+  return (float)rightEncoderCount() / 360.0f;
 }
 
 int32_t Straight::traveledDegFrom(int32_t left_base, int32_t right_base) const
@@ -615,6 +630,159 @@ void Straight::runFor(int left_power, int right_power, int32_t target_deg)
   pup_motor_brake(right_);
   syncStoppedState();
   heading_correction_ = prev_heading_correction;
+}
+
+void Straight::runForEach(int left_power, int right_power,
+                          int32_t left_target_deg, int32_t right_target_deg)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+  if ((left_target_deg <= 0 && right_target_deg <= 0) ||
+      (left_power == 0 && right_power == 0)) {
+    stop();
+    return;
+  }
+
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+
+  const bool prev_heading_correction = heading_correction_;
+  heading_correction_ = false;
+
+  const int l_pwr = clampMotorPower(left_power);
+  const int r_pwr = clampMotorPower(right_power);
+
+  resetEncoderCount();
+  pup_motor_set_power(left_, (left_target_deg > 0) ? l_pwr : 0);
+  pup_motor_set_power(right_, (right_target_deg > 0) ? r_pwr : 0);
+
+  uint32_t safety_ms = 0U;
+  while (safety_ms < EncoderRunMaxMs) {
+    const bool left_done = wheelEncoderReached(
+        tachoDeg(left_) - enc_zero_left_, l_pwr, left_target_deg);
+    const bool right_done = wheelEncoderReached(
+        tachoDeg(right_) - enc_zero_right_, r_pwr, right_target_deg);
+    if (left_done && right_done) {
+      break;
+    }
+    pup_motor_set_power(left_, left_done ? 0 : l_pwr);
+    pup_motor_set_power(right_, right_done ? 0 : r_pwr);
+    dly_tsk(EncoderStepMs * 1000U);
+    safety_ms += EncoderStepMs;
+  }
+
+  pup_motor_brake(left_);
+  pup_motor_brake(right_);
+  syncStoppedState();
+  heading_correction_ = prev_heading_correction;
+}
+
+void Straight::runForEachSynchronized(int left_power, int right_power,
+                                      int32_t left_target_deg,
+                                      int32_t right_target_deg)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+  if ((left_target_deg <= 0 && right_target_deg <= 0) ||
+      (left_power == 0 && right_power == 0)) {
+    stop();
+    return;
+  }
+
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+
+  const bool prev_heading_correction = heading_correction_;
+  heading_correction_ = false;
+
+  const int l_pwr = clampMotorPower(left_power);
+  const int r_pwr = clampMotorPower(right_power);
+  resetEncoderCount();
+  pup_motor_set_power(left_, (left_target_deg > 0) ? l_pwr : 0);
+  pup_motor_set_power(right_, (right_target_deg > 0) ? r_pwr : 0);
+
+  uint32_t safety_ms = 0U;
+  while (safety_ms < EncoderRunMaxMs) {
+    const int32_t left_count =
+        absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
+    const int32_t right_count =
+        absEncoderDeg(tachoDeg(right_) - enc_zero_right_);
+    const bool left_done = left_target_deg <= 0 ||
+                           left_count >= left_target_deg;
+    const bool right_done = right_target_deg <= 0 ||
+                            right_count >= right_target_deg;
+    if (left_done || right_done) {
+      break;
+    }
+
+    const float left_progress =
+        (float)left_count / (float)left_target_deg;
+    const float right_progress =
+        (float)right_count / (float)right_target_deg;
+    int left_command = l_pwr;
+    int right_command = r_pwr;
+    if (left_progress > right_progress + 0.01f) {
+      left_command = (l_pwr > 0) ? l_pwr - 1 : l_pwr + 1;
+    } else if (right_progress > left_progress + 0.01f) {
+      right_command = (r_pwr > 0) ? r_pwr - 1 : r_pwr + 1;
+    }
+    pup_motor_set_power(left_, left_command);
+    pup_motor_set_power(right_, right_command);
+    dly_tsk(EncoderStepMs * 1000U);
+    safety_ms += EncoderStepMs;
+  }
+
+  pup_motor_brake(left_);
+  pup_motor_brake(right_);
+  syncStoppedState();
+  heading_correction_ = prev_heading_correction;
+}
+
+void Straight::runForRotations(int left_power, int right_power,
+                               float left_rotations, float right_rotations)
+{
+  const float left_corrected_deg =
+      fabsf(left_rotations) * 360.0f - 10.0f;
+  const int32_t left_target_deg =
+      (int32_t)ceilf((left_corrected_deg > 0.0f) ? left_corrected_deg : 0.0f);
+  const int32_t right_target_deg =
+      (int32_t)ceilf(fabsf(right_rotations) * 360.0f);
+  runForEach(left_power, right_power, left_target_deg, right_target_deg);
+}
+
+void Straight::runForRotationsSameTime(int left_power, int right_power,
+                                       float left_rotations,
+                                       float right_rotations)
+{
+  const float left_corrected_deg =
+      fabsf(left_rotations) * 360.0f - 10.0f;
+  const int32_t left_target_deg =
+      (int32_t)ceilf((left_corrected_deg > 0.0f) ? left_corrected_deg : 0.0f);
+  const int32_t right_target_deg =
+      (int32_t)ceilf(fabsf(right_rotations) * 360.0f);
+  const int32_t max_target_deg =
+      (left_target_deg > right_target_deg) ? left_target_deg : right_target_deg;
+
+  if (max_target_deg <= 0) {
+    stop();
+    return;
+  }
+
+  int synchronized_left_power =
+      (int)((int64_t)left_power * left_target_deg / max_target_deg);
+  int synchronized_right_power =
+      (int)((int64_t)right_power * right_target_deg / max_target_deg);
+
+  if (left_target_deg > 0 && synchronized_left_power == 0 && left_power != 0) {
+    synchronized_left_power = (left_power > 0) ? 1 : -1;
+  }
+  if (right_target_deg > 0 && synchronized_right_power == 0 &&
+      right_power != 0) {
+    synchronized_right_power = (right_power > 0) ? 1 : -1;
+  }
+
+  runForEachSynchronized(synchronized_left_power, synchronized_right_power,
+                         left_target_deg, right_target_deg);
 }
 
 void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms,
