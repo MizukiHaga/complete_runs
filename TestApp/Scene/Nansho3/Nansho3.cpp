@@ -903,8 +903,8 @@ bool Nansho3Scene::passGateStartsWithFwd(
   QrPoint first = gate.a;
   bool    use_ab = ab_ok;
   if (ab_ok && ba_ok) {
-    use_ab = (cost_to_a + cost_a_to_b + extra_ab) <=
-             (cost_to_b + cost_b_to_a + extra_ba);
+    use_ab = (2 * (cost_to_a + cost_a_to_b) + extra_ab) <=
+             (2 * (cost_to_b + cost_b_to_a) + extra_ba);
     const QrPoint here = {sx, sy};
     /* 既に端上なら、その端から他端へ通過（逆向き→戻りは二重通過になる） */
     if (here.x == gate.a.x && here.y == gate.a.y) {
@@ -1106,8 +1106,10 @@ bool Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
   QrPoint second = gate.b;
   bool    use_ab = ab_ok;
   if (ab_ok && ba_ok) {
-    const int total_ab = cost_to_a + cost_a_to_b + extra_ab;
-    const int total_ba = cost_to_b + cost_b_to_a + extra_ba;
+    /* 接近を重くする。次ゲートのためだけに遠端へ迂回すると、
+     * L では黄を通って青へ向かう経路になる。 */
+    const int total_ab = 2 * (cost_to_a + cost_a_to_b) + extra_ab;
+    const int total_ba = 2 * (cost_to_b + cost_b_to_a) + extra_ba;
     use_ab = (total_ab <= total_ba);
     {
       const QrPoint here = {x_, y_};
@@ -1629,9 +1631,9 @@ void Nansho3Scene::run()
   /* Nansho2 が stp_cyc している。直進中の tickCorrection に必要 */
   sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
 
-  /* 単体(4) / 3→1(13): 低速LTで白まで＋ジャイロreset
-   * 通し(0/6): Nansho2 終了位置から。LT は省略し向きを 0° にしてバックへ */
-#if ETROBO_SCENE == 4 || ETROBO_SCENE == 13
+  /* 単体(4): 低速LTで白まで＋ジャイロreset
+   * 通し(0/5/6): Nansho2 終了位置から。LT は省略し向きを 0° にしてバックへ */
+#if ETROBO_SCENE == 4
   testInitialTrace();
 #else
   gGyro.reset();
@@ -1650,9 +1652,9 @@ void Nansho3Scene::run()
   const GateSeg yellow = {{4}, {4, 5}}; /* Y連続 */
 #else
   /* Lコース */
-  const GateSeg red    = {{1}, {2, 3}}; /* Y連続 */
-  const GateSeg blue   = {{0, 1}, {4}}; /* X連続 */
-  const GateSeg yellow = {{4}, {4, 5}}; /* Y連続 */
+  const GateSeg red    = {{3}, {2, 3}}; /* Y連続 */
+  const GateSeg blue   = {{4, 5}, {1}}; /* X連続 */
+  const GateSeg yellow = {{1}, {3, 4}}; /* Y連続 */
 #endif
 
   facing_deg_             = 0.0f;

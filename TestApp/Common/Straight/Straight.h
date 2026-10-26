@@ -85,18 +85,29 @@ public:
   /* エンコーダ未到達時の安全打ち切り [ms]（距離制御には使わない） */
   static constexpr uint32_t EncoderRunMaxMs    = 5000U;
 
-  /* encoder_deg>0 なら、開始時点からの左右エンコーダ平均 [deg] で終了して stop。
-   * 0 以下は指令だけ出して戻る（従来どおり）。ヨー補正は掛けたまま。 */
-  void run(int left_power, int right_power, int32_t encoder_deg = 0);
+  /* encoder_deg>0 なら、開始時点からの左右エンコーダ平均 [deg] で終了。
+   * 0 以下は指令だけ出して戻る（従来どおり）。ヨー補正は掛けたまま。
+   * stop_end=false ならモータを止めず、次の run / curve へつなぐ。 */
+  void run(int left_power, int right_power, int32_t encoder_deg = 0,
+           bool stop_end = true);
   void stop();
   /* 左右モータのエンコーダ [deg] で直進／ピボットを終了する。 */
   void runFor(int left_power, int right_power, int32_t target_deg);
+  /* 左右それぞれ指定 deg まで。先に着いた側は 0。 */
   void runForEach(int left_power, int right_power,
                   int32_t left_target_deg, int32_t right_target_deg);
+  /* 左右の進捗を揃えて runForEach する。 */
+  void runForEachSynchronized(int left_power, int right_power,
+                              int32_t left_target_deg,
+                              int32_t right_target_deg);
+  /* 回転数指定。左は 10deg 手前で切る（FixedRun 用）。 */
   void runForRotations(int left_power, int right_power,
                        float left_rotations, float right_rotations);
   void runForRotationsSameTime(int left_power, int right_power,
                                float left_rotations, float right_rotations);
+  void resetRotationCount();
+  float leftRotationCount() const;
+  float rightRotationCount() const;
   /* 指定時間 [ms] 走行して台形減速停止（後退など時間制御向け）。
    * decel_ms: 終端でパワーを線形に落とす時間。省略時は DecelMs。
    * step_ms: 減速の更新間隔。大きいほど 1 段の減少幅が大きい。 */
@@ -151,6 +162,18 @@ public:
                      int slow_power = 33,
                      int32_t stop_early_deg = 0,
                      bool coast_end = false);
+
+  /* 内外輪パワーで目標方位まで弧走行する。
+   * prefer_sign: 0=最短、+1=右(CW)、-1=左(CCW)。
+   * exit_accel_deg>0 なら残りがその角以下で内外とも 100 へ戻す。
+   * stop_end=false なら止めず次の指令へつなぐ。 */
+  void curveToHeading(float target_heading,
+                      int outer_power,
+                      int inner_power,
+                      uint32_t max_ms = 3000U,
+                      float exit_accel_deg = 0.0f,
+                      int prefer_sign = 0,
+                      bool stop_end = true);
 
   void pivotCW(int power)  { run( power, -power); }
   void pivotCCW(int power) { run(-power,  power); }

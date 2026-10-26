@@ -8,7 +8,7 @@
 namespace TurnDriftConfig {
 constexpr bool Enabled = true;
 constexpr float EncoderPer90Deg = 180.0f;
-constexpr float EncoderWeight = 0.17f;
+constexpr float EncoderWeight = 0.159f;
 constexpr uint32_t SettleMs = 80U;
 constexpr float MaxWheelMismatch = 0.35f;
 // エンコーダ量子化の影響が大きい走り出しだけジャイロを使う。

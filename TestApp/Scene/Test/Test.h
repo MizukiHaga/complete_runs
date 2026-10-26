@@ -8,17 +8,34 @@
 #include "app.h"
 #include "TurnDrift.h"
 
+/* === テストケース切り替え（ETROBO_SCENE=6 で Test に入ってから、ここで選ぶ） ===
+ * TEST_CASE:
+ *   6: スカイブルーLT → Nansho3相当直進 → Nansho1〜3
+ *   7: Nansho3相当直進（S字加速→クルーズ→S字減速→coast。方位PI）
+ *   8: エンコーダ基準直進（距離・S字は 7 と同じ。左右進み差で補正）
+ *  14: その場旋回ループ（IMU 90刻み or エンコーダ。TEST_TURN_LEFT）
+ *  15: その場旋回1回（同上）
+ *  16: その場旋回を左右ランダム（14 と同じ止め方・ログ）
+ *  17: 直進と90°旋回で四角走行（TEST_TURN_LEFT で左右）
+ *  19: Nansho3 initial（白検知LT→停止・reset→バック→旋回→直進停止）
+ *  20: 通常直進を TEST_STRAIGHT_CELLS マス分（座標更新なし） */
+#ifndef TEST_CASE
+#define TEST_CASE 7
+#endif
+
+#ifndef TEST_TURN_LEFT
+#define TEST_TURN_LEFT 0 /* 1=左(CCW -90°) 0=右(CW +90°) */
+#endif
+
+#ifndef TEST_STRAIGHT_CELLS
+#define TEST_STRAIGHT_CELLS 2
+#endif
+#if TEST_STRAIGHT_CELLS < 1 || TEST_STRAIGHT_CELLS > 3
+#error "TEST_STRAIGHT_CELLS must be 1, 2 or 3"
+#endif
+
 class TestScene {
 public:
-  /* ETROBO_SCENE==6: スカイブルーLT → Nansho3相当直進 → Nansho1〜3
-   * ETROBO_SCENE==7: Nansho3通常直進相当（S字加速→クルーズ→S字減速→coast。方位PI）
-   * ETROBO_SCENE==8: エンコーダ基準直進のみ（距離・S字は 7 と同じ。左右進み差で補正）
-   * ETROBO_SCENE==14: その場旋回ループ（IMU 90刻み or エンコーダ。TEST_TURN_LEFT）
-   * ETROBO_SCENE==15: その場旋回1回（同上）
-   * ETROBO_SCENE==16: その場旋回を左右ランダム（14 と同じ止め方・ログ）
-   * ETROBO_SCENE==17: 四角走行を無限に反復（TEST_TURN_LEFT で左右）
-   * ETROBO_SCENE==19: Nansho3 initial（白検知LT→停止・reset→バック→旋回→直進停止）
-   * ETROBO_SCENE==20: Nansho3通常直進を1〜3マス分（座標更新なし） */
   void run();
 
   /* 直進中: 開始基準からの左右エンコーダ絶対値と平均 [deg] */
@@ -28,7 +45,7 @@ public:
 private:
   void runLineTraceUntilSkyblueThenStraight();
   void runStraightTest();
-  /* シーン8: エンコーダ左右差で直進補正 */
+  /* TEST_CASE 8: エンコーダ左右差で直進補正 */
   void runEncoderStraightTest();
   /* S字加速→クルーズ→S字減速→coast。
    * encoder_balance なら方位PIではなく左右エンコーダ差。 */
@@ -95,7 +112,7 @@ private:
   static constexpr float    InitialStraightBalanceIMax = 18.0f;
   static constexpr float    InitialStraightBalanceDeadbandDeg = 0.8f;
 
-  /* === Nansho3 その場旋回（ETROBO_SCENE==14/15/16） === */
+  /* === Nansho3 その場旋回（TEST_CASE 14/15/16） === */
   static constexpr bool     Nansho3SpinStopOnEncoder    = false;
   /* その場 90° に相当する片輪エンコーダ [deg]。実測 183〜186 の中央 */
   static constexpr float    Nansho3SpinEncoderPer90Deg = TurnDriftConfig::EncoderPer90Deg;
