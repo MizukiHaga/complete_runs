@@ -15,6 +15,7 @@
 
 #include "ColorLAB.h"
 #include "Gyro.h"
+#include "HeadingFusionLog.h"
 #include "LineTracer.h"
 #include "Straight.h"
 #include "TurnDrift.h"
@@ -331,9 +332,9 @@ void Nansho3Scene::decelToStopByEncoder(int32_t left_base, int32_t right_base,
                                         int32_t total_deg, int cruise_power,
                                         int32_t decel_deg)
 {
-  /* 停止位置はエンコーダ total_deg。S字で残り距離比に応じてパワーを落とす。
+  /* total_degまでの残り距離でS字減速し、最後は短絡ブレーキで止める。
    * 最低パワー未満にしない（進まず永久待ちになるのを防ぐ）。
-   * それでも停滞したら安全に抜けて coast → 後続の旋回へ。 */
+   * 停滞・時間上限でもブレーキを掛け、停止待ち後に後続へ進む。 */
   if (decel_deg < 1) {
     decel_deg = 1;
   }
@@ -380,7 +381,8 @@ void Nansho3Scene::decelToStopByEncoder(int32_t left_base, int32_t right_base,
     dly_tsk(CoreStraightStepMs * 1000U);
     elapsed_ms += CoreStraightStepMs;
   }
-  gMotors.coast();
+  gMotors.brake();
+  dly_tsk(CoreStraightBrakeSettleMs * 1000U);
 }
 
 void Nansho3Scene::driveOneCell(bool stop_after)
@@ -488,6 +490,14 @@ void Nansho3Scene::logDriveControl(const char *phase, bool use_motor_target,
             rp, ph);
     fflush(s_turn_log);
   }
+  if (gGyro.fusionEnabled() && use_motor_target) {
+    const HeadingFusion::State state = gGyro.fusionState();
+    writeHeadingFusionLog(stdout, state, corrected);
+    if (turnLogWritable()) {
+      writeHeadingFusionLog(s_turn_log, state, corrected);
+      fflush(s_turn_log);
+    }
+  }
 }
 
 void Nansho3Scene::logStopInstant()
@@ -496,6 +506,11 @@ void Nansho3Scene::logStopInstant()
     return;
   }
   openTurnLog();
+  writeTurnEncoderLog(stdout, gMotors.turnEncoderSnapshot());
+  if (turnLogWritable()) {
+    writeTurnEncoderLog(s_turn_log, gMotors.turnEncoderSnapshot());
+    fflush(s_turn_log);
+  }
   const int32_t left_abs = gMotors.lastTurnEncLeftAbsDeg();
   const int32_t right_abs = gMotors.lastTurnEncRightAbsDeg();
   const float enc_avg =
@@ -533,6 +548,16 @@ void Nansho3Scene::logAfterTurn(int32_t left_abs_deg, int32_t right_abs_deg,
   emitTurnEncodersOnce(left_abs_deg, right_abs_deg, heading_rel_deg, left,
                        enc_ang, ang_err);
   logDriveControl("turn", /*use_motor_target=*/false, turn_target_deg);
+  if (gGyro.fusionEnabled()) {
+    const HeadingFusion::State state = gGyro.fusionState();
+    const float heading = gGyro.heading();
+    writeHeadingFusionLog(stdout, state, heading);
+    if (turnLogWritable()) {
+      writeHeadingFusionLog(s_turn_log, state, heading);
+      fflush(s_turn_log);
+    }
+    return;
+  }
   const float correction = gMotors.turnDriftCorrectionDeg();
   const float rate = gMotors.turnDriftRate();
   const TurnDrift &diag = gMotors.turnDriftDiagnostics();
@@ -560,8 +585,8 @@ void Nansho3Scene::logAfterTurn(int32_t left_abs_deg, int32_t right_abs_deg,
   }
 }
 
-void Nansho3Scene::turnToAbsolute(float target_heading, float extra_early_deg,
-                                  int prefer_sign, bool log_turn)
+void Nansho3Scene::turnToAbsolute(float target_heading, int prefer_sign,
+                                  bool log_turn)
 {
   gGyro.setRateHeading(false);
   const bool do_log = EnableTurnLog && log_turn;
@@ -569,21 +594,36 @@ void Nansho3Scene::turnToAbsolute(float target_heading, float extra_early_deg,
   const int32_t r0 = do_log ? gMotors.rightEncoderCount() : 0;
   const float   h0 = do_log ? gGyro.rawHeading() : 0.0f;
 
-  float early = CoreTurnEarlyStopDeg + extra_early_deg;
   gMotors.turnToHeading(target_heading, /*tolerance_deg=*/0.0f, CoreTurnPower,
                         CoreTurnPower, CoreTurnMaxMs, CoreTurnSlowApproachDeg,
-                        CoreTurnSlowPower, early, /*coast_end=*/true,
+                        CoreTurnSlowPower, /*stop_early_deg=*/0.0f,
+                        /*coast_end=*/true,
                         prefer_sign, /*encoder_drift_correction=*/true);
 
-  if (!do_log) {
-    return;
+  if (do_log) {
+    logStopInstant();
+    const float heading_rel = Gyro::wrapDeg180(gGyro.rawHeading() - h0);
+    const bool left = gMotors.lastTurnGyroAccDeg() < 0.0f;
+    logAfterTurn(absEncoderDelta(gMotors.leftEncoderCount(), l0),
+                 absEncoderDelta(gMotors.rightEncoderCount(), r0),
+                 heading_rel, left, target_heading);
   }
-  logStopInstant();
-  const float heading_rel = Gyro::wrapDeg180(gGyro.rawHeading() - h0);
-  const bool left = (prefer_sign < 0) || (prefer_sign == 0 && heading_rel < 0.0f);
-  logAfterTurn(absEncoderDelta(gMotors.leftEncoderCount(), l0),
-               absEncoderDelta(gMotors.rightEncoderCount(), r0),
-               heading_rel, left, target_heading);
+
+  if (do_log && !gGyro.fusionEnabled()) {
+    const unsigned long skipped = static_cast<unsigned long>(
+        gMotors.turnDriftDiagnostics().count(TurnDrift::EncoderUnderRead));
+    const TurnDrift &diag = gMotors.turnDriftDiagnostics();
+    const char *format =
+        "DRIFT_Lsigned,%.2f,DRIFT_Rsigned,%.2f,DRIFT_enc_signed,%.3f,"
+        "DRIFT_gyro_signed,%.3f,DRIFT_under,%lu\n";
+    printf(format, (double)diag.leftEncoder(), (double)diag.rightEncoder(),
+           (double)diag.encoderAngle(), (double)diag.gyroAngle(), skipped);
+    if (turnLogWritable()) {
+      fprintf(s_turn_log, format, (double)diag.leftEncoder(), (double)diag.rightEncoder(),
+              (double)diag.encoderAngle(), (double)diag.gyroAngle(), skipped);
+      fflush(s_turn_log);
+    }
+  }
 }
 
 void Nansho3Scene::turnExitOneWheel(float target_heading)
@@ -617,9 +657,7 @@ void Nansho3Scene::turnCoreToAbsolute(float target, int prefer_sign)
   gGyro.setRateHeading(false);
   dly_tsk(CoreTurnBeforeMs * 1000U);
 
-  const float extra_early = (prefer_sign < 0) ? CoreTurnLeftEarlyExtraDeg
-                                               : CoreTurnRightEarlyExtraDeg;
-  turnToAbsolute(target, extra_early, prefer_sign);
+  turnToAbsolute(target, prefer_sign);
   heading_add_ = 0.0f; // 動的補正は Gyro 側に反映済み
   gMotors.setTargetHeading(straightTargetDeg(facing_deg_));
   dly_tsk(CoreTurnAfterMs * 1000U);
@@ -629,7 +667,7 @@ void Nansho3Scene::turnByAction(MoveAction action)
 {
   const float offset =
       (action == MoveAction::L90) ? -90.0f : 90.0f;
-  /* BFS の左右どおりに回す。最短側だと実角ずれで逆向きになることがある */
+  /* 通常は最短側。±180°で同距離の場合だけBFSの旋回方向を使う。 */
   const int prefer_sign = (action == MoveAction::L90) ? -1 : 1;
   facing_deg_ =
       facingDegFromIndex(facingIndex(facing_deg_ + offset));
@@ -641,7 +679,7 @@ void Nansho3Scene::turnByAction(MoveAction action)
 
 int Nansho3Scene::bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
                           const RouteBlocks &blocked, MoveAction *out_actions,
-                          int max_actions, int *out_facing_i) const
+                          int max_actions, int *out_facing_i, int *out_cost) const
 {
   if (!inGrid(sx, sy) || !inGrid(gx, gy)) {
     return -1;
@@ -658,11 +696,22 @@ int Nansho3Scene::bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
     if (out_facing_i != nullptr) {
       *out_facing_i = sfacing_i;
     }
+    if (out_cost != nullptr) {
+      *out_cost = 0;
+    }
     return 0;
   }
 
-  bool visited[GridSize][GridSize][FacingCount];
-  memset(visited, 0, sizeof(visited));
+  int  dist[GridSize][GridSize][FacingCount];
+  bool used[GridSize][GridSize][FacingCount];
+  for (int x = 0; x < GridSize; ++x) {
+    for (int y = 0; y < GridSize; ++y) {
+      for (int f = 0; f < FacingCount; ++f) {
+        dist[x][y][f] = BfsInfCost;
+        used[x][y][f] = false;
+      }
+    }
+  }
 
   int8_t  parent_x[StateCount];
   int8_t  parent_y[StateCount];
@@ -676,42 +725,52 @@ int Nansho3Scene::bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
     parent_action[i] = 0;
   }
 
-  int qx[StateCount];
-  int qy[StateCount];
-  int qf[StateCount];
-  int qh = 0;
-  int qt = 0;
-
-  qx[qt] = sx;
-  qy[qt] = sy;
-  qf[qt] = sfacing_i;
-  ++qt;
-  visited[sx][sy][sfacing_i] = true;
+  dist[sx][sy][sfacing_i] = 0;
 
   int  goal_f = -1;
   bool found  = false;
 
-  while (qh < qt) {
-    const int cx = qx[qh];
-    const int cy = qy[qh];
-    const int cf = qf[qh];
-    ++qh;
-
-    if (cx == gx && cy == gy) {
-      goal_f = cf;
+  for (int step = 0; step < StateCount; ++step) {
+    int bx = -1;
+    int by = -1;
+    int bf = -1;
+    int bd = BfsInfCost;
+    for (int x = 0; x < GridSize; ++x) {
+      for (int y = 0; y < GridSize; ++y) {
+        for (int f = 0; f < FacingCount; ++f) {
+          if (!used[x][y][f] && dist[x][y][f] < bd) {
+            bd = dist[x][y][f];
+            bx = x;
+            by = y;
+            bf = f;
+          }
+        }
+      }
+    }
+    if (bx < 0) {
+      break;
+    }
+    used[bx][by][bf] = true;
+    if (bx == gx && by == gy) {
+      goal_f = bf;
       found  = true;
       break;
     }
 
+    const int cx = bx;
+    const int cy = by;
+    const int cf = bf;
     const MoveAction cands[3] = {MoveAction::Fwd, MoveAction::L90,
                                  MoveAction::R90};
     for (int ci = 0; ci < 3; ++ci) {
       int nx = cx;
       int ny = cy;
       int nf = cf;
+      int add = BfsTurnCost;
       const MoveAction act = cands[ci];
 
       if (act == MoveAction::Fwd) {
+        add = BfsFwdCost;
         nx = cx + kDx[cf];
         ny = cy + kDy[cf];
         if (!inGrid(nx, ny)) {
@@ -727,20 +786,16 @@ int Nansho3Scene::bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
         nf = (cf + 1) % FacingCount;
       }
 
-      if (visited[nx][ny][nf]) {
+      const int nd = dist[cx][cy][cf] + add;
+      if (nd >= dist[nx][ny][nf]) {
         continue;
       }
-      visited[nx][ny][nf] = true;
+      dist[nx][ny][nf] = nd;
       const int ni = nx * (GridSize * FacingCount) + ny * FacingCount + nf;
       parent_x[ni]      = static_cast<int8_t>(cx);
       parent_y[ni]      = static_cast<int8_t>(cy);
       parent_f[ni]      = static_cast<int8_t>(cf);
       parent_action[ni] = static_cast<uint8_t>(act);
-
-      qx[qt] = nx;
-      qy[qt] = ny;
-      qf[qt] = nf;
-      ++qt;
     }
   }
 
@@ -750,6 +805,9 @@ int Nansho3Scene::bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
 
   if (out_facing_i != nullptr) {
     *out_facing_i = goal_f;
+  }
+  if (out_cost != nullptr) {
+    *out_cost = dist[gx][gy][goal_f];
   }
 
   if (out_actions == nullptr || max_actions <= 0) {
@@ -804,8 +862,12 @@ int Nansho3Scene::bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
 int Nansho3Scene::bfsCost(int sx, int sy, int sfacing_i, int gx, int gy,
                           const RouteBlocks &blocked, int *out_facing_i) const
 {
-  return bfsPlan(sx, sy, sfacing_i, gx, gy, blocked, nullptr, 0,
-                 out_facing_i);
+  int cost = -1;
+  if (bfsPlan(sx, sy, sfacing_i, gx, gy, blocked, nullptr, 0, out_facing_i,
+              &cost) < 0) {
+    return -1;
+  }
+  return cost;
 }
 
 bool Nansho3Scene::planStartsWithFwd(int sx, int sy, int sfacing_i, QrPoint goal,
@@ -825,7 +887,7 @@ bool Nansho3Scene::passGateStartsWithFwd(
     const GateSeg *tgt_continue_gate, const GateSeg *tgt_continue_futures,
     int tgt_continue_future_count) const
 {
-  /* 予測と実走に同じ通過順制約を使う。端点への進入自体は禁止しない。 */
+  /* 予測と実走に同じ通過順制約を使う。端点への進入は可、順番外の辺だけ通過禁止。 */
 
   RouteBlocks block_none;
   clearBlocked(block_none);
@@ -903,22 +965,19 @@ bool Nansho3Scene::passGateStartsWithFwd(
   QrPoint first = gate.a;
   bool    use_ab = ab_ok;
   if (ab_ok && ba_ok) {
-    use_ab = (2 * (cost_to_a + cost_a_to_b) + extra_ab) <=
-             (2 * (cost_to_b + cost_b_to_a) + extra_ba);
+    /* 次色へ出やすい向きを優先。近い入口から入ると出口が次色と逆になり、
+     * L では赤のあと青と反対へ出て回り道になる。 */
+    if (next_gate != nullptr && extra_ab != extra_ba) {
+      use_ab = (extra_ab < extra_ba);
+    } else {
+      use_ab = (cost_to_a + cost_a_to_b) <= (cost_to_b + cost_b_to_a);
+    }
     const QrPoint here = {sx, sy};
     /* 既に端上なら、その端から他端へ通過（逆向き→戻りは二重通過になる） */
     if (here.x == gate.a.x && here.y == gate.a.y) {
       use_ab = true;
     } else if (here.x == gate.b.x && here.y == gate.b.y) {
       use_ab = false;
-    } else {
-      const bool adj_a = isOrthoAdjacent(here, gate.a);
-      const bool adj_b = isOrthoAdjacent(here, gate.b);
-      if (adj_a && !adj_b) {
-        use_ab = true;
-      } else if (adj_b && !adj_a) {
-        use_ab = false;
-      }
     }
   } else if (!ab_ok) {
     use_ab = false;
@@ -1022,7 +1081,8 @@ bool Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
 {
   const int fi = facingIndex(facing_deg_);
 
-  /* 過去・未来のゲート辺を禁止し、現在の色だけ通過可能にする。 */
+  /* 過去・未来のゲート辺を通過禁止し、現在の色だけ通過可能にする。
+   * 未通過色のマスへの進入は禁止しない。 */
   RouteBlocks block_none;
   clearBlocked(block_none);
   blockGates(block_none, past_gates, past_count);
@@ -1106,11 +1166,13 @@ bool Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
   QrPoint second = gate.b;
   bool    use_ab = ab_ok;
   if (ab_ok && ba_ok) {
-    /* 接近を重くする。次ゲートのためだけに遠端へ迂回すると、
-     * L では黄を通って青へ向かう経路になる。 */
-    const int total_ab = 2 * (cost_to_a + cost_a_to_b) + extra_ab;
-    const int total_ba = 2 * (cost_to_b + cost_b_to_a) + extra_ba;
-    use_ab = (total_ab <= total_ba);
+    /* 次色へ出やすい向きを優先。近い入口から入ると出口が次色と逆になり、
+     * L では赤のあと青と反対へ出て回り道になる。 */
+    if (next_gate != nullptr && extra_ab != extra_ba) {
+      use_ab = (extra_ab < extra_ba);
+    } else {
+      use_ab = (cost_to_a + cost_a_to_b) <= (cost_to_b + cost_b_to_a);
+    }
     {
       const QrPoint here = {x_, y_};
       /* 既に端上なら、その端から他端へ通過（開始(2,2)=赤a で b→a→戻りを防ぐ） */
@@ -1118,14 +1180,6 @@ bool Nansho3Scene::passGateShortest(GateSeg gate, const GateSeg *past_gates,
         use_ab = true;
       } else if (here.x == gate.b.x && here.y == gate.b.y) {
         use_ab = false;
-      } else {
-        const bool adj_a = isOrthoAdjacent(here, gate.a);
-        const bool adj_b = isOrthoAdjacent(here, gate.b);
-        if (adj_a && !adj_b) {
-          use_ab = true;
-        } else if (adj_b && !adj_a) {
-          use_ab = false;
-        }
       }
     }
   } else if (!ab_ok) {
@@ -1653,8 +1707,8 @@ void Nansho3Scene::run()
 #else
   /* Lコース */
   const GateSeg red    = {{3}, {2, 3}}; /* Y連続 */
-  const GateSeg blue   = {{4, 5}, {1}}; /* X連続 */
-  const GateSeg yellow = {{1}, {3, 4}}; /* Y連続 */
+  const GateSeg blue   = {{0, 1}, {4}}; /* X連続 */
+  const GateSeg yellow = {{4}, {0, 1}}; /* Y連続 */
 #endif
 
   facing_deg_             = 0.0f;

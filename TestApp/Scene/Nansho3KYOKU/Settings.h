@@ -2,6 +2,7 @@
 #define NANSHO3_KYOKU_SETTINGS_H
 
 #include "Path.h"
+#include <math.h>
 
 /* Nansho3KYOKU の調整値。
  * 距離:mm / 速度:mm/s / 加速度:mm/s^2 / 角度:rad / 時間:ms。
@@ -40,30 +41,76 @@ constexpr float BodyHeightMm    = 200.0f;
 constexpr float LeftEncoderSign  = 1.0f;
 constexpr float RightEncoderSign = 1.0f;
 
+/* === 格子座標・ゲート配置 =====================================
+ * 格子は位置指定にだけ使う。実際の走行経路は格子に沿わせない。
+ * Nansho3 の GateSeg と同様、a→b は開口を横切る2点（支柱ではない）。
+ * 開口中央は2点の中点。方向は両向きを探索するので、a/bの逆順も可。
+ * 以下は計算・追従確認用の仮配置。実コースに合わせて必ず変更する。 */
+struct GridGate {
+  kyoku::Vec a;
+  kyoku::Vec b;
+};
+
+constexpr float GridStepXMm = 250.0f;  // x方向の1マスの実測距離
+constexpr float GridStepYMm = 250.0f;  // y方向の1マスの実測距離
+constexpr kyoku::Vec GridStart = {1.0f, 1.0f};
+constexpr kyoku::Vec GridFinish = {1.0f, 5.0f};
+constexpr float FinishHeadingRad = kyoku::Pi;
+constexpr GridGate GridGates[3] = {
+  {{2.0f, 1.0f}, {4.0f, 1.0f}},  // 赤: x方向に通過
+  {{5.0f, 2.0f}, {5.0f, 4.0f}},  // 青: y方向に通過
+  {{4.0f, 5.0f}, {2.0f, 5.0f}},  // 黄: x方向に通過
+};
+
+/* 初期直進の完了地点を(0,0)、向きを+xとする。
+ * Lは格子+yが左、Rは右。既存 ETROBO_COURSE_L の0=L/1=Rに合わせる。 */
+inline kyoku::Vec gridPoint(kyoku::Vec point, bool right_course = false)
+{
+  return {(point.x - GridStart.x) * GridStepXMm,
+          (point.y - GridStart.y) * GridStepYMm * (right_course ? -1.0f : 1.0f)};
+}
+
+constexpr kyoku::Pose Start = {{0.0f, 0.0f}, 0.0f};
+
+inline kyoku::Pose finishPose(bool right_course = false)
+{
+  return {gridPoint(GridFinish, right_course),
+          right_course ? -FinishHeadingRad : FinishHeadingRad};
+}
+
+inline kyoku::Gate gridGate(GridGate gate, bool right_course = false)
+{
+  const kyoku::Vec a = gridPoint(gate.a, right_course);
+  const kyoku::Vec b = gridPoint(gate.b, right_course);
+  const bool valid = (gate.a.x == gate.b.x) != (gate.a.y == gate.b.y);
+  return {{(a.x + b.x) / 2, (a.y + b.y) / 2},
+          valid ? atan2f(b.y - a.y, b.x - a.x) : NAN};
+}
+
+inline void gates(kyoku::Gate result[3], bool right_course = false)
+{
+  for (int index = 0; index < 3; ++index) {
+    result[index] = gridGate(GridGates[index], right_course);
+  }
+}
+
 /* === ゲート・コース範囲 =======================================
- * ゲート座標は開口の中央。normal は通過方向で、脚の並ぶ方向と直交する。
- * 旧 Nansho3 の格子座標ではなく、進入完了位置を基準にした実寸座標。
- * L/R のゲート配置はここで設定する（自動鏡像変換なし）。 */
+ * 範囲はStart基準のmm、L側で指定。R側ではy範囲を反転する。
+ * 車体全体が収まる範囲を指定し、格子の最外点と混同しない。 */
 constexpr float GateInnerWidthMm  = 240.0f;
 constexpr float GateInnerHeightMm = 245.0f;
-constexpr float GateFootRadiusMm  = 25.0f;  // 柱・継手・足元を含む円の半径
+constexpr float GateFootRadiusMm  = 25.0f;
 constexpr float CollisionMarginMm = 30.0f;
 constexpr float CourseMinXMm = -400.0f;
 constexpr float CourseMaxXMm = 1600.0f;
 constexpr float CourseMinYMm = -500.0f;
 constexpr float CourseMaxYMm = 1600.0f;
 
-/* 初期動作の直進完了地点を Start とみなす。角度の単位は rad。 */
-constexpr kyoku::Pose Start  = {{0.0f,    0.0f}, 0.0f};
-constexpr kyoku::Pose Finish = {{0.0f, 1000.0f}, kyoku::Pi};
-constexpr kyoku::Gate Gates[3] = {
-  {{ 500.0f,    0.0f}, 0.0f},           // 赤: ±x 方向に通過
-  {{1000.0f,  500.0f}, kyoku::Pi / 2},  // 青: ±y 方向に通過
-  {{ 500.0f, 1000.0f}, kyoku::Pi},      // 黄: ±x 方向に通過
-};
-
 /* === 経路生成・速度計画 ======================================= */
 constexpr int   RallyLapCount          = 6;
+constexpr int   CurveStyleCount        = 1;     // Hubは1から。2〜3は計算時間と相談して増やす
+constexpr bool  FastPlan               = true;  // Hubはtrue。全候補比較はfalse
+constexpr bool  OptimizeTravelTime     = true;  // falseは距離優先（比較・検証用）
 constexpr float PathSampleMm           = 8.0f;
 constexpr float MinTurnRadiusMm        = 100.0f;
 constexpr float CruiseSpeedMmPerSec    = 220.0f;
@@ -81,6 +128,8 @@ constexpr float LookaheadTimeSec   = 0.25f;
 constexpr float MaxTrackingErrorMm = 25.0f;
 
 /* === 制御周期・停止判定 ======================================= */
+constexpr unsigned PlanTimeoutMs       = 10000U; // 経路計算の上限。超過時はQ表示
+constexpr unsigned PlanYieldIntervalMs = 20U;    // 計算中に他タスクへ実行を譲る間隔
 constexpr unsigned ControlPeriodMs     = 10U;
 constexpr unsigned MaxControlPeriodMs  = 100U;
 constexpr unsigned RunTimeoutMs        = 180000U;
@@ -96,7 +145,7 @@ constexpr unsigned PlanErrorToneHz     = 300U;
 constexpr unsigned PlanErrorToneMs     = 300U;
 
 /* 経路モジュールへ渡す設定。調整は上の定数だけ変更する。 */
-inline kyoku::Config config()
+inline kyoku::Config config(bool right_course = false)
 {
   kyoku::Config result;
   result.wheelDiameter = WheelDiameterMm;
@@ -111,9 +160,12 @@ inline kyoku::Config config()
   result.margin        = CollisionMarginMm;
   result.minX          = CourseMinXMm;
   result.maxX          = CourseMaxXMm;
-  result.minY          = CourseMinYMm;
-  result.maxY          = CourseMaxYMm;
+  result.minY          = right_course ? -CourseMaxYMm : CourseMinYMm;
+  result.maxY          = right_course ? -CourseMinYMm : CourseMaxYMm;
   result.laps          = RallyLapCount;
+  result.curveStyles   = CurveStyleCount;
+  result.optimizeTime  = OptimizeTravelTime;
+  result.fastPlan      = FastPlan;
   result.sample        = PathSampleMm;
   result.minRadius     = MinTurnRadiusMm;
   result.maxSpeed      = CruiseSpeedMmPerSec;
@@ -128,10 +180,16 @@ inline kyoku::Config config()
   return result;
 }
 
+static_assert(GridStepXMm > 0 && GridStepYMm > 0,
+              "Grid spacing must be positive");
+static_assert(CurveStyleCount >= 1 && CurveStyleCount <= 3,
+              "CurveStyleCount must be 1..3");
 static_assert(MinRunPower > 0 && MinRunPower <= MaxPower && MaxPower <= 100,
               "Motor power must satisfy 0 < MinRunPower <= MaxPower <= 100");
 static_assert(StaticFrictionBlendSpeed > 0 && SpeedIntegralMax > 0,
               "Speed control limits must be positive");
+static_assert(PlanTimeoutMs > 0 && PlanYieldIntervalMs > 0,
+              "Planning time limits must be positive");
 static_assert(ControlPeriodMs > 0 && ControlPeriodMs <= MaxControlPeriodMs,
               "Invalid control period");
 

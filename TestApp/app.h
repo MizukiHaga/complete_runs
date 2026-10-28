@@ -135,12 +135,13 @@ extern "C" {
  *   9: FixedRun 短縮（FixedRunShort。ETROBO_COURSE_L で L/R）
  * 試合前にここだけ変更する。 */
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 8
+#define ETROBO_SCENE 6
 #endif
 
 /* タスク優先度 */
 #define MAIN_PRIORITY              5 /* メインタスク */
 #define STRAIGHT_BALANCE_PRIORITY  6 /* Straight PID 補正タスク (Nansho1 より高優先度で確実に回す) */
+#define GYRO_FUSION_PRIORITY        4 /* mainより高優先度で連続方位推定 */
 #define STRAIGHT_PRIORITY          6 /* app.cfg の既存参照用 */
 #define TRACER_PRIORITY            7 /* ライントレースタスク */
 #define NANSHO1_PRIORITY           8 /* Nansho1タスク */
@@ -150,6 +151,7 @@ extern "C" {
 #define FIXEDRUN_PRIORITY         12 /* FixedRunタスク */
 
 /* タスク周期の定義 */
+#define GYRO_FUSION_PERIOD       (10 * 1000)
 #define LINE_TRACER_PERIOD       (5 * 1000) /* ライントレースタスク:5msec周期 */
 #define STRAIGHT_BALANCE_PERIOD  ( 10 * 1000) /* Straight PID 補正タスク:10msec周期 */
 
@@ -189,6 +191,7 @@ extern void Nansho3Task(intptr_t exinf);
 extern void Nansho3KYOKUTask(intptr_t exinf);
 extern void TestTask(intptr_t exinf);
 extern void StraightBalanceTask(intptr_t exinf);
+extern void GyroFusionTask(intptr_t exinf);
 extern void FixedRunTask(intptr_t exinf);
 
 #endif /* TOPPERS_MACRO_ONLY */

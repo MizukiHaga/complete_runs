@@ -18,9 +18,11 @@
  *  16: その場旋回を左右ランダム（14 と同じ止め方・ログ）
  *  17: 直進と90°旋回で四角走行（TEST_TURN_LEFT で左右）
  *  19: Nansho3 initial（白検知LT→停止・reset→バック→旋回→直進停止）
- *  20: 通常直進を TEST_STRAIGHT_CELLS マス分（座標更新なし） */
+ *  20: 通常直進を TEST_STRAIGHT_CELLS マス分（座標更新なし）
+ *  21: 完全静止15秒のbias確認（走行なし）
+ *  22: 静止確認後、エンコーダ平均180degを1回旋回して車輪換算を校正 */
 #ifndef TEST_CASE
-#define TEST_CASE 7
+#define TEST_CASE 17
 #endif
 
 #ifndef TEST_TURN_LEFT
@@ -43,6 +45,10 @@ public:
                            const char *phase);
 
 private:
+  void runHeadingCalibration(bool turn);
+  void logHeadingCalibration(const char *phase, uint32_t elapsed_ms,
+                             float raw_start, float heading_start,
+                             int32_t left_start, int32_t right_start);
   void runLineTraceUntilSkyblueThenStraight();
   void runStraightTest();
   /* TEST_CASE 8: エンコーダ左右差で直進補正 */
@@ -75,7 +81,12 @@ private:
   void logStopInstant();
 
   static constexpr uint32_t StepMs = 1U;
-  static constexpr bool EnableLog = false;
+  static constexpr bool EnableLog = (TEST_CASE == 21 || TEST_CASE == 22);
+  static constexpr uint32_t CalibrationStillMs = 15000U;
+  static constexpr uint32_t CalibrationLogMs = 250U;
+  static constexpr uint32_t CalibrationSettleMs = 2000U;
+  static constexpr int32_t CalibrationEncoderDeg = 180;
+  static constexpr int CalibrationPower = 40;
   static constexpr uint32_t StraightEncLogIntervalMs = 200U;
   static constexpr uint32_t GyroResetSettleMs = 80U;
   /* 四角走行: 一辺は車輪エンコーダ角。直進・旋回の速度設定は既存テストと共通。 */
@@ -124,10 +135,7 @@ private:
   static constexpr int      Nansho3SpinSlowPower        = 40;
   static constexpr uint32_t Nansho3SpinMaxMs            = 8000U;
   static constexpr uint32_t Nansho3SpinBeforeMs         = 200U;
-  static constexpr float    Nansho3SpinEarlyStopDeg     = 3.0f;
-  static constexpr float    Nansho3SpinLeftEarlyExtraDeg  = -1.0f;
-  static constexpr float    Nansho3SpinRightEarlyExtraDeg = -1.0f;
-  static constexpr uint32_t Nansho3SpinAfterMs          = 0U;
+  static constexpr uint32_t Nansho3SpinAfterMs          = 80U;
   /* 動的補正の設定は Common/Gyro/TurnDrift.h を参照。 */
 };
 

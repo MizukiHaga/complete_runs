@@ -101,8 +101,12 @@ private:
   static constexpr int FacingCount = 4;
   static constexpr int StateCount = GridSize * GridSize * FacingCount;
   static constexpr int MaxPathLen = 64;
+  /* 経路コスト。旋回は直進より遅いので、旋回が少ない方が早い。 */
+  static constexpr int BfsFwdCost  = 1;
+  static constexpr int BfsTurnCost = 8;
+  static constexpr int BfsInfCost  = 0x3fff;
   /* 点の立入禁止と、ゲート端点間の通過禁止を分ける。
-   * 共有端点には立ち入れるが、順番外のゲート辺は双方向に通らない。 */
+   * 未通過の色のマスには入れる。順番外のゲート辺だけ双方向に通らない（通過禁止）。 */
   struct RouteBlocks {
     bool cells[GridSize][GridSize];
     GateSeg edges[3];
@@ -124,7 +128,7 @@ private:
   /* 停止からの直進: 1D レート方位で S字加速 → cruise_power */
   void accelToCruise(int32_t left_base, int32_t right_base, int32_t accel_deg,
                      int cruise_power);
-  /* エンコーダ total_deg まで S字減速して coast。停止位置固定用。
+  /* エンコーダ total_deg まで S字減速して短絡ブレーキ。停止位置固定用。
    * 停滞/上限は安全抜け（固まったまま旋回へ行けないのを防ぐ）。 */
   void decelToStopByEncoder(int32_t left_base, int32_t right_base,
                             int32_t total_deg, int cruise_power,
@@ -138,8 +142,8 @@ private:
   /* 90° 刻みへその場旋回（追い込みなし）。
    * prefer_sign: 0=最短、+1=CW、-1=CCW（BFS の L90/R90 どおりに回すとき）
    * log_turn: EnableTurnLog が true のとき、false を渡すと出力を抑止。 */
-  void turnToAbsolute(float target_heading, float extra_early_deg = 0.0f,
-                      int prefer_sign = 0, bool log_turn = true);
+  void turnToAbsolute(float target_heading, int prefer_sign = 0,
+                      bool log_turn = true);
   void logAfterTurn(int32_t left_abs_deg, int32_t right_abs_deg,
                     float heading_rel_deg, bool left, float turn_target_deg);
   /* 停止指令直前に撮った経過時間・生ジャイロ累積角・エンコーダ角・補正後方位。 */
@@ -158,7 +162,7 @@ private:
   /* ゲート通過後（ジャイロresetによる停止はしない） */
   void onGatePassed();
 
-  /* 次目標へ向き付き最短で移動（BFS）。blocked は禁止マスと禁止ゲート辺。
+  /* 次目標へ向き付き最短で移動（旋回多めは遅い）。blocked は禁止マスと禁止ゲート辺。
    * stop_at_end=false なら最終直進後も停止せず、次の goTo へ連続走行可能。 */
   bool goTo(QrPoint goal, const RouteBlocks &blocked,
             bool stop_at_end = true);
@@ -167,7 +171,8 @@ private:
                int *out_facing_i) const;
   int  bfsPlan(int sx, int sy, int sfacing_i, int gx, int gy,
                const RouteBlocks &blocked, MoveAction *out_actions,
-               int max_actions, int *out_facing_i) const;
+               int max_actions, int *out_facing_i,
+               int *out_cost = nullptr) const;
 
   bool passGateShortest(GateSeg gate, const GateSeg *past_gates,
                         int past_count, const GateSeg *future_gates,
@@ -251,11 +256,11 @@ private:
    * 連続 Fwd の途中は加速しない。
    * 1マス移動と連続の最後は CoreStraightDeg（枠内で減速）。
    * 連続 Fwd（減速なし）は CoreStraightContinueDeg。 */
-  static constexpr int      CoreRunStraightPower = 100;
+  static constexpr int      CoreRunStraightPower = 90;
   /* 減速して止まる 1マスの距離 [deg]（減速中に進む分を含む）
    * L/R は下の *R / *L を触る。 */
-  static constexpr int32_t  CoreStraightDegR = 485;
-  static constexpr int32_t  CoreStraightDegL = 485;
+  static constexpr int32_t  CoreStraightDegR = 515;
+  static constexpr int32_t  CoreStraightDegL = 515;
   static constexpr int32_t  CoreStraightDeg =
       ETROBO_COURSE_L ? CoreStraightDegR : CoreStraightDegL;
   /* 上のうち減速中に進む距離 [deg]。ここまで来たら減速に入る。
@@ -267,6 +272,9 @@ private:
   static constexpr int32_t  CoreStraightAccelDeg        = 150;
   /* エンコーダ減速中の最低パワー。小さすぎると進まず停止位置に届かない */
   static constexpr int      CoreStraightDecelMinPower = 40;
+  /* 減速終了後の短絡ブレーキ待ち。次の旋回までの車体の揺れを抑える。
+   * 距離の追加走行はしない。制動中の実際の移動量は実機で確認する。 */
+  static constexpr uint32_t CoreStraightBrakeSettleMs = 100U;
   /* エンコーダ減速の安全抜け（本終了は total_deg） */
   static constexpr uint32_t CoreStraightDecelStallMs = 250U;
   static constexpr uint32_t CoreStraightDecelMaxMs   = 2500U;
@@ -274,8 +282,8 @@ private:
   static constexpr uint32_t CoreStraightDecelMs     = 400U;
   static constexpr uint32_t CoreStraightDecelStepMs = 100U;
   /* 連続 Fwd（減速なし）1マスの距離 [deg]。マスを越えるなら減らす */
-  static constexpr int32_t  CoreStraightContinueDegR = 525;
-  static constexpr int32_t  CoreStraightContinueDegL = 525;
+  static constexpr int32_t  CoreStraightContinueDegR = 540;
+  static constexpr int32_t  CoreStraightContinueDegL = 540;
   static constexpr int32_t  CoreStraightContinueDeg =
       ETROBO_COURSE_L ? CoreStraightContinueDegR : CoreStraightContinueDegL;
   /* ±90°（論理 +y/-y）の直進に足す距離 [deg]。Y が短いなら増やす */
@@ -297,15 +305,15 @@ private:
   static constexpr uint32_t InitialSlowTraceWhiteIgnoreMs = 200U;
   static constexpr uint32_t InitialSlowTraceMaxMs         = 15000U;
   /* 反射光がこの値以上なら白（ColorLAB::WhiteReflectionMin と同じ系統） */
-  static constexpr int32_t  InitialSlowTraceWhiteReflectionMin = 65;
+  static constexpr int32_t  InitialSlowTraceWhiteReflectionMin = 75;
   /* 白検知後、停止時の揺れが落ち着いてからジャイロをリセットする。 */
   static constexpr uint32_t InitialSlowTraceStopSettleMs = 100U;
 
   /* === initialRun: バック → 絶対±90°旋回 → 直進 === */
   static constexpr int      InitialBackPower     = 40;
   /* 一定パワーで進むバック距離 [deg]。左右エンコーダの絶対値平均 */
-  static constexpr int32_t  InitialBackDegR      = 150;
-  static constexpr int32_t  InitialBackDegL      = 150;
+  static constexpr int32_t  InitialBackDegR      = 140;
+  static constexpr int32_t  InitialBackDegL      = 140;
   static constexpr int32_t  InitialBackDeg =
       ETROBO_COURSE_L ? InitialBackDegR : InitialBackDegL;
   static constexpr float    InitialBackBalanceKp   = 5.0f; 
@@ -317,7 +325,7 @@ private:
       ETROBO_COURSE_L ? 90.0f : -90.0f;
   static constexpr int      InitialStraightPower = 50;
   /* 減速中に進む分を含めた直進距離 [deg] */
-  static constexpr int32_t  InitialStraightDeg      = 630;
+  static constexpr int32_t  InitialStraightDeg      = 615;
   /* 上のうち減速中に進むと見込む距離 [deg] */
   static constexpr int32_t  InitialStraightDecelDeg = 100;
   static constexpr float    InitialStraightBalanceIMax       = 18.0f;
@@ -336,19 +344,13 @@ private:
   static constexpr uint32_t CoreTurnMaxMs           = 8000U;
   /* 停止してから旋回を始めるまでの待ち [ms] */
   static constexpr uint32_t CoreTurnBeforeMs        = 200U;
-  /* 経過角打ち切りをこの角手前で止める（慣性＋h 遅れの行き過ぎ） */
-  static constexpr float    CoreTurnEarlyStopDeg    = 3.0f;
-  /* 左/右だけさらに手前で止める [deg]。負なら目標より奥まで回す。
-   * 止めどころの調整のみ。直進 PI 目標には載せない。 */
-  static constexpr float    CoreTurnLeftEarlyExtraDeg  = -1.0f;
-  static constexpr float    CoreTurnRightEarlyExtraDeg = -1.0f;
   /* 動的補正の設定は Common/Gyro/TurnDrift.h を参照。 */
   /* 旋回完了後、直進に入る前の待ち [ms]（0=待ちなし） */
-  static constexpr uint32_t CoreTurnAfterMs         = 0U;
+  static constexpr uint32_t CoreTurnAfterMs         = 80U;
   /* true で初回を含む両輪旋回を Test と同じ形式で出す。false で出さない。 */
-  static constexpr bool     EnableTurnLog           = false;
+  static constexpr bool     EnableTurnLog           = true;
   /* true で直進中に IMU_raw / IMU_h / TGT / MOT_Lp/Rp を周期出力する。 */
-  static constexpr bool     EnableStraightLog       = false;
+  static constexpr bool     EnableStraightLog       = true;
   static constexpr uint32_t StraightLogIntervalMs   = 200U;
 
   /* === 指定周回後の退出シーケンス === */
