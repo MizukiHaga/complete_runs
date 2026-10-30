@@ -17,7 +17,7 @@ public:
     Yellow,
     Blue,
   };
-
+  static constexpr bool kimeuti = true; /* true: ルート分岐後にそのまま走る / false: ルート分岐後に LT until heading → 直進 → 旋回 → LT until black */
   /* ⓪ LT (スカイブルー → 黒) → 後退 → アーム上げ → 0° 補正低速直進
    *     → 色検知で停止・ブザー・少し後退・アーム下げ（分岐フラグのみ設定）
    *       ブロック色は PETRED / PETYELLOW / PETBLUE で判定
@@ -34,6 +34,7 @@ public:
   void run();
 
   RouteBranch routeBranch() const { return route_branch_; }
+  bool handedOffToNansho3() const { return handed_off_to_nansho3_; }
 
 private:
   void runInitialLineTrace();
@@ -44,14 +45,26 @@ private:
   void beepOnRouteBranchDetected();
   void beepOnBlackDetected();
   void beepOnBlueDetected();
+  void logBlueLineDetected(const char *source);
   void driveForwardAndDetectRouteBranch();
 
   bool scanRouteBranchOnce();
   void runLineTraceUntilHeadingThenStraight();
   void runAfterColorLineTraceUntilHeading();
   void runAfterBlackLeftTurnAndBranch();
-  void driveStraightUntilBlackLine(float target_heading);
-  void runLineTraceUntilColor(color_detect_t color);
+  void runLowSpeedTraceAndBranchToNansho3();
+    bool runStraightUntilBlackLineThenHeading(
+            float before_heading, float after_heading,
+            int before_left_power, int before_right_power,
+            float after_left_power, float after_right_power,
+            float after_left_rotations, float after_right_rotations,
+            float tolerance_deg = 1.0f);
+    bool runStraightAtHeadingUntilBlackLine(float target_heading,
+                                            int left_power, int right_power);
+    void driveStraightUntilBlackLine(float target_heading);
+  void runLineTraceUntilColor(color_detect_t color,
+                              const char *blue_log_source = "line-trace",
+                              bool after_turn = false);
   void runAfterBlueByRouteBranch();
   void runYellowRouteAfterBlue();
   void runBlueRouteAfterBlue();
@@ -71,19 +84,22 @@ private:
   void runRouteFinalBack(float heading, int power, uint32_t ignore_ms,
                          bool then_final = true);
   void runAfterFinalStopTurnRightAndSlowTraceToWhite(bool do_turn = true);
-
   void turnToHeading(float target_heading, float tolerance_deg,
                      int left_power, int right_power,
                      int prefer_turn_sign = 0);
   void setupPostBlackLineTrace();
+  void setupPostBlackAfterTurnTrace();
 
   static const char *routeBranchName(RouteBranch branch);
 
   RouteBranch route_branch_ = RouteBranch::None;
+  bool handed_off_to_nansho3_ = false;
+  uint32_t blue_line_count_ = 0U;
 
   /* === 共通 === */
-  static constexpr uint32_t StepMs = 1U;  /* 制御ループ周期 [ms] */
+  static constexpr uint32_t StepMs = 3U;  /* 制御ループ周期 [ms] */
   static constexpr uint32_t LtMaxMs = 8000U;  /* LT のタイムアウト [ms] */
+  static constexpr uint32_t StraightRunMaxMs = 15000U;
 
   /* === 共通（その場旋回） === */
   static constexpr float    TurnSlowApproachDeg   = 15.0f; /* この角度以内で減速旋回 [deg] */
@@ -106,13 +122,13 @@ private:
 
   /* === ⓪ 色検知後の後退（アーム下げ前） === */
   static constexpr int      BackBeforeLowerPower = 50;    /* 後退パワー */
-  static constexpr uint32_t BackBeforeLowerMs    = 300U;  /* 後退時間 [ms] */
+  static constexpr float    BackBeforeLowerRotations = 0.3f; /* 左右の後退回転数 */
 
   /* === ⓪ アーム === */
   static constexpr uint32_t ArmRaiseBeforeMs = 300U; /* 上げ前の待ち [ms] */
-  static constexpr int      ArmRaisePower = 100;     /* 上げパワー */
+  static constexpr int      ArmRaisePower = 95;     /* 上げパワー */
   static constexpr int      ArmLowerPower = -100;  /* 下げパワー */
-  static constexpr int32_t  ArmRaiseDeg   = 140;   /* 上げ角度 [deg] */
+  static constexpr int32_t  ArmRaiseDeg   = 125;   /* 上げ角度 [deg] */
   /* 0 位置を過ぎて余分に下げる量 [deg]（確実に接地） */
   static constexpr int32_t  ArmLowerOvershootDeg = 25;
   static constexpr uint32_t ArmRaiseMaxMs = 4000U; /* 上げタイムアウト [ms] */
@@ -201,7 +217,7 @@ private:
 
   /* === ① 左向き旋回直後の低速LT（線に乗せる） === */
   static constexpr float    PostBlackSlowTracePower  = 37.0f; /* 低速LT パワー */
-  static constexpr uint32_t PostBlackSlowTraceMs     = 300U;  /* 低速LT 時間 [ms] */
+  static constexpr uint32_t PostBlackSlowTraceMs     = 0U;    /* 青検知前の無視時間 [ms] */
   static constexpr float    PostBlackSlowTraceKp     = 0.30f;
   static constexpr float    PostBlackSlowTraceKi     = 0.01f;
   static constexpr float    PostBlackSlowTraceKd     = 0.8f;
@@ -218,6 +234,12 @@ private:
   static constexpr float    PostBlackTraceScale      = 1.0f;
   static constexpr bool     PostBlackTraceEdgeFollow = (ETROBO_COURSE_L == 0);
   /* PostBlackTraceEdgeFollow: L=左エッジ, R=右エッジ */
+  static constexpr float    PostBlackAfterTurnTraceKp = 0.75f;
+  static constexpr float    PostBlackAfterTurnTraceKi = PostBlackTraceKi;
+  static constexpr float    PostBlackAfterTurnTraceKd = 0.5f;
+  static constexpr float    PostBlackAfterTurnTraceOutMax =
+      PostBlackTraceOutMax;
+  static constexpr float    PostBlackAfterTurnTraceScale = PostBlackTraceScale;
 
   /* === ② 黄/青/赤共通（右旋回後の遅い直進） === */
   static constexpr int      RouteFinalApproachLeftPower  = 50;    /* 右旋回後直進 左パワー */
@@ -334,7 +356,8 @@ private:
   static constexpr float    FinalSlowTraceKi                = 0.0001f;
   static constexpr float    FinalSlowTraceKd                = 0.8f;
   static constexpr float    FinalSlowTraceOutMax            = 100.0f;
-  static constexpr float    FinalSlowTraceScale             = 1.0f;
+  static constexpr float    FinalSlowTraceScale             = 3.0f;
+//   static constexpr float    FinalSlowTraceScale             = 1.0f;
   /* 黄: 最終LTは先にこのパワー、その後 FinalSlowTracePower へ落とす */
   static constexpr float    FinalYellowStartTracePower      = 45.0f;
   static constexpr uint32_t FinalYellowStartTraceMs         = 500U;
@@ -351,6 +374,36 @@ private:
   /* FinalSlowTraceWhiteIgnoreMs: 最終旋回後LT開始直後、白判定を無視する時間 [ms] */
   /* 反射光がこの値以上なら白（ColorLAB::WhiteReflectionMin と同じ系統） */
   static constexpr int32_t  FinalSlowTraceWhiteReflectionMin = 71;
+  /* === 決め打ち用の値 === */
+    static constexpr float motor_speed = 100.0f;
+    static constexpr float motor_speed_slow = 50.0f;
+    /* 0°から±90°へ旋回する主速度。左右の符号はコースに合わせる。 */
+    static constexpr float turn_speed_r = ETROBO_COURSE_L ? -50.0f : 50.0f;
+    static constexpr float turn_speed_l = ETROBO_COURSE_L ? 50.0f : -50.0f;
+    static constexpr float heading_90 = ETROBO_COURSE_L ? 90.0f : -90.0f;
+    static constexpr float heading_180 = 180.0f;
+    static constexpr float heading_100_rotation = 9.5f;
+    static constexpr float HeadingRunInitialRotations = 0.5f;
+    static constexpr uint32_t HeadingBlackLineMaxMs = 15000U;
+    static constexpr float heading_170 = ETROBO_COURSE_L ? 140.0f : -140.0f;
+    static constexpr float turn_90_r = ETROBO_COURSE_L ? 0.0f : 0.5f;
+    static constexpr float turn_90_l = ETROBO_COURSE_L ? 0.5f : 0.0f;
+    static constexpr float heading_90_diff = ETROBO_COURSE_L ? 89.7f : -89.7f;
+    static constexpr float HeadingRunKp = 4.0f;
+    static constexpr float HeadingRunKi = 0.8f;
+    static constexpr float HeadingRunKd = 0.0f;
+    static constexpr float HeadingRunIntegralMax = 30.0f;
+    static constexpr int HeadingRunTrimLimit = 100;
+    static constexpr float HeadingRunPowerScale = 3.0f;
+    
+    static constexpr float Heading90RunKp = 3.5f;
+    static constexpr float Heading90RunKi = 1.0f;
+    static constexpr float Heading90RunKd = 0.0f;
+    static constexpr float Heading90RunCorrectionScale = 5.7f;
+
+    static constexpr float Heading90RunIntegralMax = 30.0f;
+    static constexpr float Heading90RunPowerScale = 0.9f;
+    static constexpr float BackBeforeLowerArmRotations = 0.2f;
 };
 
 #ifdef __cplusplus

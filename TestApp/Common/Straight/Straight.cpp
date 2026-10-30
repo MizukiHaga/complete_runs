@@ -16,10 +16,15 @@
  * 以降 get_count は常に 0 になる。走行中に距離を測るため回転センサを直接読む。 */
 extern "C" {
 #include <pbio/tacho.h>
+#include <spike/hub/battery.h>
+#include <serial/newlib.h>
+#include <serial/serial.h>
+#include <syssvc/serial.h>
 }
 
 extern Straight gMotors;
 extern Gyro     gGyro;
+extern FILE     *gBluetoothOut;
 
 /* 回転センサの角度 [deg]。取得できなければ 0。 */
 static int32_t tachoDeg(pup_motor_t *motor, bool *valid = nullptr)
@@ -34,6 +39,78 @@ static int32_t tachoDeg(pup_motor_t *motor, bool *valid = nullptr)
   }
   if (valid != nullptr) *valid = true;
   return (angle.rotations * 360) + (angle.millidegrees / 1000);
+}
+
+void Straight::setDebug(bool enabled)
+{
+  correction_debug_ = enabled;
+  sync_debug_ = enabled;
+  heading_debug_div_ = 0;
+  if (enabled && gBluetoothOut == nullptr) {
+    serial_opn_por(SIO_BLUETOOTH_PORTID);
+    gBluetoothOut = serial_open_newlib_file(SIO_BLUETOOTH_PORTID);
+  }
+}
+
+void Straight::setHeadingDebug(bool enabled)
+{
+  heading_debug_enabled_ = enabled;
+  heading_debug_div_ = 0;
+  if (enabled && gBluetoothOut == nullptr) {
+    serial_opn_por(SIO_BLUETOOTH_PORTID);
+    gBluetoothOut = serial_open_newlib_file(SIO_BLUETOOTH_PORTID);
+  }
+}
+
+void Straight::setSyncDebug(bool enabled)
+{
+  sync_debug_ = enabled;
+  sync_debug_div_ = 0;
+  if (enabled && gBluetoothOut == nullptr) {
+    serial_opn_por(SIO_BLUETOOTH_PORTID);
+    gBluetoothOut = serial_open_newlib_file(SIO_BLUETOOTH_PORTID);
+  }
+}
+
+void Straight::shutdownDebugOutput()
+{
+  /* 出力を止めてから FILE を閉じ、以後のデバッグ出力が解放済み
+   * Bluetooth FILE を参照しないようにする。 */
+  heading_debug_enabled_ = false;
+  correction_debug_ = false;
+  sync_debug_ = false;
+  heading_debug_div_ = 0;
+  correction_debug_div_ = 0;
+  sync_debug_div_ = 0;
+
+  FILE *output = gBluetoothOut;
+  gBluetoothOut = nullptr;
+  if (output != nullptr) {
+    fflush(output);
+    fclose(output);
+  }
+  serial_cls_por(SIO_BLUETOOTH_PORTID);
+}
+
+void Straight::setHeadingDebugPhase(const char *phase)
+{
+  heading_debug_phase_ = (phase != nullptr) ? phase : "unknown";
+}
+
+void Straight::debugHeading()
+{
+  if (!heading_debug_enabled_) {
+    return;
+  }
+
+  if (++heading_debug_div_ < 100U) {
+    return;
+  }
+  heading_debug_div_ = 0;
+  fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+          "Heading,Phase=%s,H=%.2f,T=%.2f,E=%.2f\n",
+          heading_debug_phase_, gGyro.heading(), target_heading_,
+          Gyro::wrapDeg180(gGyro.heading() - target_heading_));
 }
 
 float Straight::clampFloat(float value, float min_value, float max_value)
@@ -159,13 +236,31 @@ void Straight::setTargetHeading(float heading_deg)
 }
 
 // 直進補正のpid設定
-void Straight::setBalancePid(float kp, float ki, float i_max, float deadband_deg)
+void Straight::setBalancePid(float kp, float ki, float i_max,
+                             float deadband_deg, float kd)
 {
   kp_            = kp;
   ki_            = ki;
+  kd_            = kd;
   i_max_         = i_max;
   deadband_deg_  = (deadband_deg < 0.0f) ? 0.0f : deadband_deg;
   integral_      = 0.0f;
+  heading_correction_scale_ = 1.0f;
+}
+
+void Straight::setHeadingTrimLimit(int limit)
+{
+  heading_trim_limit_ = clampInt(limit, 0, 100);
+}
+
+void Straight::setHeadingRunPowerScale(float scale)
+{
+  heading_run_power_scale_ = clampFloat(scale, 0.2f, 1.0f);
+}
+
+void Straight::setHeadingCorrectionScale(float scale)
+{
+  heading_correction_scale_ = clampFloat(scale, 0.0f, 10.0f);
 }
 
 // 直進補正のオン・オフ
@@ -256,7 +351,8 @@ void Straight::applyWithCorrection(int left_power, int right_power)
 
   /* isReady は「静止校正済み」判定であり、heading 取得可否ではない。
    * ここで弾くと PI が常に無効になり、Kp を変えても挙動が変わらない。 */
-  if (!correction_enabled_ || !heading_correction_ || !straight_cmd) {
+  if (!correction_enabled_ || !heading_correction_ ||
+      (!straight_cmd && !allow_heading_correction_for_ratio_)) {
     integral_ = 0.0f;
     setPowerRaw(left_power, right_power);
     return;
@@ -319,27 +415,41 @@ void Straight::applyWithCorrection(int left_power, int right_power)
 
   const float trim = kp_ * error + ki_ * integral_;
   int diff = (int)roundf(trim);
-  diff = clampInt(diff, -MaxHeadingTrim, MaxHeadingTrim);
+  diff = clampInt(diff, -heading_trim_limit_, heading_trim_limit_);
   const int dL = diff / 2;
   const int dR = diff - dL;  /* |diff|==1 のとき片側に ±1 が残る */
 
-  /* ヨー: error>0（右ずれ）→ 左旋回。前進は L弱/R強、後退は同じ式で負パワーが効く。
-   * エンコーダ: 左が進みすぎ → 進行方向の左マグを落とす（後退は符号を反転）。 */
-  const int out_left =
-      encoder_straight_
-          ? clampMotorPower(left_power - travel_sign * dL)
-          : clampMotorPower(left_power - dL);
-  const int out_right =
-      encoder_straight_
-          ? clampMotorPower(right_power + travel_sign * dR)
-          : clampMotorPower(right_power + dR);
+  /* error>0（右ずれ）→ 左旋回: 前進は L弱/R強、後退は L強/R弱（同じ式で負パワーが効く） */
+  int out_left  = left_power - dL;
+  int out_right = right_power + dR;
+
+  /* 片側がパワー上限に当たったときは、余った補正を反対側へ回す。 */
+  if (out_right > 100) {
+    out_left -= out_right - 100;
+    out_right = 100;
+  }
+  if (out_left < -100) {
+    out_right += out_left + 100;
+    out_left = -100;
+  }
+  if (out_left > 100) {
+    out_right += out_left - 100;
+    out_left = 100;
+  }
+  if (out_right < -100) {
+    out_left -= out_right + 100;
+    out_right = -100;
+  }
+  out_left = clampMotorPower(out_left);
+  out_right = clampMotorPower(out_right);
 
   if (correction_debug_) {
     if (++correction_debug_div_ >= 10U) {
       correction_debug_div_ = 0;
-      printf("Heading tgt=%d cur=%d err=%d trim=%d diff=%d kp=%d -> L=%d R=%d\n",
-             (int)target_heading_, (int)gGyro.heading(), (int)error,
-             (int)trim, diff, (int)(kp_ * 100.0f), out_left, out_right);
+            fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+              "Heading tgt=%d cur=%d err=%d trim=%d diff=%d kp=%d -> L=%d R=%d\n",
+              (int)target_heading_, (int)gGyro.heading(), (int)error,
+              (int)trim, diff, (int)(kp_ * 100.0f), out_left, out_right);
     }
   }
 
@@ -398,9 +508,21 @@ void Straight::resetEncoderCount()
   enc_zero_right_ = tachoDeg(right_);
 }
 
+void Straight::resetEncoderCountNoBrake()
+{
+  if (left_ != nullptr) {
+    pup_motor_reset_count(left_);
+  }
+  if (right_ != nullptr) {
+    pup_motor_reset_count(right_);
+  }
+  enc_zero_left_  = tachoDeg(left_);
+  enc_zero_right_ = tachoDeg(right_);
+}
+
 void Straight::resetRotationCount()
 {
-  resetEncoderCount();
+  resetEncoderCountNoBrake();
 }
 
 int32_t Straight::leftEncoderCount() const
@@ -710,6 +832,7 @@ void Straight::runForEachSynchronized(int left_power, int right_power,
 
   uint32_t safety_ms = 0U;
   while (safety_ms < EncoderRunMaxMs) {
+    debugHeading();
     const int32_t left_count =
         absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
     const int32_t right_count =
@@ -718,7 +841,7 @@ void Straight::runForEachSynchronized(int left_power, int right_power,
                            left_count >= left_target_deg;
     const bool right_done = right_target_deg <= 0 ||
                             right_count >= right_target_deg;
-    if (left_done || right_done) {
+    if (left_done && right_done) {
       break;
     }
 
@@ -726,11 +849,13 @@ void Straight::runForEachSynchronized(int left_power, int right_power,
         (float)left_count / (float)left_target_deg;
     const float right_progress =
         (float)right_count / (float)right_target_deg;
-    int left_command = l_pwr;
-    int right_command = r_pwr;
-    if (left_progress > right_progress + 0.01f) {
+    int left_command = left_done ? 0 : l_pwr;
+    int right_command = right_done ? 0 : r_pwr;
+    if (!left_done && !right_done &&
+        left_progress > right_progress + 0.01f) {
       left_command = (l_pwr > 0) ? l_pwr - 1 : l_pwr + 1;
-    } else if (right_progress > left_progress + 0.01f) {
+    } else if (!left_done && !right_done &&
+               right_progress > left_progress + 0.01f) {
       right_command = (r_pwr > 0) ? r_pwr - 1 : r_pwr + 1;
     }
     pup_motor_set_power(left_, left_command);
@@ -761,8 +886,490 @@ void Straight::runForRotationsSameTime(int left_power, int right_power,
                                        float left_rotations,
                                        float right_rotations)
 {
-  const float left_corrected_deg =
-      fabsf(left_rotations) * 360.0f - 10.0f;
+  const float left_corrected_deg = fabsf(left_rotations) * 360.0f;
+  const int32_t left_target_deg =
+      (int32_t)ceilf((left_corrected_deg > 0.0f) ? left_corrected_deg : 0.0f);
+  const int32_t right_target_deg =
+      (int32_t)ceilf(fabsf(right_rotations) * 360.0f);
+  runForEachSynchronizedFractional((float)left_power, (float)right_power,
+                                    left_target_deg, right_target_deg);
+}
+
+void Straight::runForRotationsSameTime(float left_power, float right_power,
+                                       float left_rotations,
+                                       float right_rotations)
+{
+  const int32_t left_target_deg =
+      (int32_t)ceilf(fabsf(left_rotations) * 360.0f);
+  const int32_t right_target_deg =
+      (int32_t)ceilf(fabsf(right_rotations) * 360.0f);
+  runForEachSynchronizedFractional(left_power, right_power,
+                                    left_target_deg, right_target_deg);
+}
+
+bool Straight::runForRotationsSameTimeWithHeading(float left_power,
+                                                  float right_power,
+                                                  float left_rotations,
+                                                  float right_rotations,
+                                                  bool stop_at_end,
+                                                  float tolerance_deg)
+{
+  const int32_t left_target_deg =
+      (int32_t)ceilf(fabsf(left_rotations) * 360.0f);
+  const int32_t right_target_deg =
+      (int32_t)ceilf(fabsf(right_rotations) * 360.0f);
+  if (left_target_deg <= 0 && right_target_deg <= 0) {
+    stop();
+    return true;
+  }
+  if (left_ == nullptr || right_ == nullptr) {
+    return false;
+  }
+
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  const float heading_tolerance =
+      (tolerance_deg >= 0.0f) ? tolerance_deg : 0.0f;
+  const float left_base_power = clampFloat(left_power, -100.0f, 100.0f);
+  const float right_base_power = clampFloat(right_power, -100.0f, 100.0f);
+  float sync_integral = 0.0f;
+  float previous_heading_error = 0.0f;
+  float filtered_heading_rate = 0.0f;
+  bool have_previous_heading_error = false;
+  float left_fraction = 0.0f;
+  float right_fraction = 0.0f;
+
+  const auto nextPower = [](float desired_power, float& fraction) {
+    int command = (int)desired_power;
+    fraction += desired_power - (float)command;
+    if (fraction >= 1.0f) {
+      ++command;
+      fraction -= 1.0f;
+    } else if (fraction <= -1.0f) {
+      --command;
+      fraction += 1.0f;
+    }
+    if (command > 0 && command < TurnEncBalanceMinPower) {
+      command = TurnEncBalanceMinPower;
+    } else if (command < 0 && command > -TurnEncBalanceMinPower) {
+      command = -TurnEncBalanceMinPower;
+    }
+    return clampMotorPower(command);
+  };
+
+  if (stop_at_end) {
+    resetEncoderCount();
+  } else {
+    resetEncoderCountNoBrake();
+  }
+  uint32_t safety_ms = 0U;
+  while (safety_ms < EncoderRunMaxMs) {
+    debugHeading();
+    const int32_t left_count =
+        absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
+    const int32_t right_count =
+        absEncoderDeg(tachoDeg(right_) - enc_zero_right_);
+    const bool left_done = left_target_deg <= 0 || left_count >= left_target_deg;
+    const bool right_done = right_target_deg <= 0 || right_count >= right_target_deg;
+    const float heading_error =
+      Gyro::wrapDeg180(gGyro.heading() - target_heading_);
+    if (have_previous_heading_error) {
+      const float heading_rate =
+          (heading_error - previous_heading_error) /
+          ((float)EncoderStepMs / 1000.0f);
+      filtered_heading_rate =
+          filtered_heading_rate * 0.8f + heading_rate * 0.2f;
+    } else {
+      have_previous_heading_error = true;
+    }
+    previous_heading_error = heading_error;
+    const bool distance_done = left_done && right_done;
+    if (distance_done && fabsf(heading_error) <= heading_tolerance) {
+      break;
+    }
+
+    const bool pivot_profile =
+        (left_target_deg == 0) != (right_target_deg == 0);
+    float left_desired =
+        (distance_done || left_done) ? 0.0f : left_base_power;
+    float right_desired =
+        (distance_done || right_done) ? 0.0f : right_base_power;
+    if (!distance_done && pivot_profile) {
+      const int32_t pivot_count =
+          (left_target_deg > 0) ? left_count : right_count;
+      const int32_t pivot_target =
+          (left_target_deg > 0) ? left_target_deg : right_target_deg;
+      const float progress =
+          clampFloat((float)pivot_count / (float)pivot_target, 0.0f, 1.0f);
+      const float ramp = clampFloat(progress / 0.25f, 0.0f, 1.0f);
+      const float decel =
+          clampFloat((1.0f - progress) / 0.25f, 0.0f, 1.0f);
+      const float profile = 0.55f + 0.45f * ((ramp < decel) ? ramp : decel);
+      left_desired *= profile;
+      right_desired *= profile;
+    }
+    if (!distance_done && heading_run_power_scale_ < 1.0f) {
+      const float error_ratio = clampFloat(fabsf(heading_error) / 15.0f,
+                                           0.0f, 1.0f);
+      const float power_scale =
+          heading_run_power_scale_ +
+          (1.0f - heading_run_power_scale_) * error_ratio;
+      left_desired *= power_scale;
+      right_desired *= power_scale;
+    }
+    float sync_correction = 0.0f;
+    if (!left_done && !right_done) {
+      const float left_progress = (float)left_count / (float)left_target_deg;
+      const float right_progress = (float)right_count / (float)right_target_deg;
+      const float progress_error = right_progress - left_progress;
+      sync_integral = clampFloat(sync_integral + progress_error, -20.0f, 20.0f);
+      sync_correction = clampFloat(progress_error * 500.0f +
+                                       sync_integral * 1.5f,
+                                   -40.0f, 40.0f);
+      left_desired += (left_base_power >= 0.0f)
+                          ? sync_correction : -sync_correction;
+      right_desired -= (right_base_power >= 0.0f)
+                           ? sync_correction : -sync_correction;
+    }
+
+    /* 距離到達後はピボット収束へ切り替えるため、走行中の積分値を
+     * 残さない。積分値が残ると収束中に補正方向が遅れて反転する。 */
+    if (distance_done) {
+      integral_ = 0.0f;
+    } else {
+      /* 積分値は秒単位で蓄積する。 */
+      integral_ = clampFloat(
+          integral_ + heading_error * ((float)EncoderStepMs / 1000.0f),
+          -i_max_, i_max_);
+    }
+    const float heading_correction = clampFloat(
+        (kp_ * heading_error + ki_ * integral_ -
+         kd_ * filtered_heading_rate) * heading_correction_scale_,
+        (float)-heading_trim_limit_, (float)heading_trim_limit_);
+    int heading_diff = clampInt((int)roundf(heading_correction),
+                                -heading_trim_limit_, heading_trim_limit_);
+    /* 小さな誤差が丸めで補正ゼロにならないよう、許容誤差超では
+     * 最低1段の補正を残す。 */
+    if (heading_diff == 0 && fabsf(heading_error) > heading_tolerance) {
+      heading_diff = (heading_error > 0.0f) ? 1 : -1;
+    }
+    if (distance_done) {
+      /* 距離到達後は走行パワーを残さず、角度だけピボットで収束させる。 */
+      const int settle_power = clampInt(abs(heading_diff), 5, 35);
+      if (heading_error > 0.0f) {
+        left_desired = -(float)settle_power;
+        right_desired = (float)settle_power;
+      } else {
+        left_desired = (float)settle_power;
+        right_desired = -(float)settle_power;
+      }
+    } else if (!pivot_profile) {
+      left_desired -= (float)(heading_diff / 2);
+      right_desired += (float)(heading_diff - heading_diff / 2);
+
+      /* 片側が100%に飽和して補正差が消えないよう、余剰分を反対側へ回す。 */
+      if (right_desired > 100.0f) {
+        left_desired -= right_desired - 100.0f;
+        right_desired = 100.0f;
+      }
+      if (left_desired < -100.0f) {
+        right_desired += left_desired + 100.0f;
+        left_desired = -100.0f;
+      }
+      if (left_desired > 100.0f) {
+        right_desired += left_desired - 100.0f;
+        left_desired = 100.0f;
+      }
+      if (right_desired < -100.0f) {
+        left_desired -= right_desired + 100.0f;
+        right_desired = -100.0f;
+      }
+    }
+
+    const int left_command = nextPower(left_desired, left_fraction);
+    const int right_command = nextPower(right_desired, right_fraction);
+    pup_motor_set_power(left_, left_command);
+    pup_motor_set_power(right_, right_command);
+    if (sync_debug_ && ++sync_debug_div_ >= 10U) {
+      sync_debug_div_ = 0U;
+      fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+              "SyncH,phase=%s,T=%.2f,H=%.2f,E=%.2f,Hc=%.2f\n",
+              heading_debug_phase_, target_heading_, gGyro.heading(),
+              heading_error, heading_correction);
+    }
+    dly_tsk(EncoderStepMs * 1000U);
+    safety_ms += EncoderStepMs;
+  }
+
+  const int32_t final_left_count =
+      absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
+  const int32_t final_right_count =
+      absEncoderDeg(tachoDeg(right_) - enc_zero_right_);
+  const float final_heading = gGyro.heading();
+  const float final_error =
+      Gyro::wrapDeg180(final_heading - target_heading_);
+  const bool completed =
+      final_left_count >= left_target_deg &&
+      final_right_count >= right_target_deg &&
+      fabsf(final_error) <= heading_tolerance;
+  if (sync_debug_ || heading_debug_enabled_) {
+    fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+            "RunH,done=%s,ms=%lu,L=%ld/%ld,R=%ld/%ld,"
+            "T=%.2f,H=%.2f,E=%.2f\n",
+            completed ? "true" : "false",
+            (unsigned long)safety_ms,
+            (long)final_left_count, (long)left_target_deg,
+            (long)final_right_count, (long)right_target_deg,
+            target_heading_, final_heading, final_error);
+  }
+  return completed;
+
+  if (stop_at_end) {
+    pup_motor_brake(left_);
+    pup_motor_brake(right_);
+    syncStoppedState();
+  }
+}
+
+void Straight::runForEachSynchronizedFractional(float left_power,
+                                                float right_power,
+                                                int32_t left_target_deg,
+                                                int32_t right_target_deg)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+  if ((left_target_deg <= 0 && right_target_deg <= 0) ||
+      (left_power == 0.0f && right_power == 0.0f)) {
+    stop();
+    return;
+  }
+
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  const float left_base_power = clampFloat(left_power, -100.0f, 100.0f);
+  const float right_base_power = clampFloat(right_power, -100.0f, 100.0f);
+  float left_fraction = 0.0f;
+  float right_fraction = 0.0f;
+  float sync_integral = 0.0f;
+
+  const auto nextPower = [](float desired_power, float& fraction) {
+    int command = (int)desired_power;
+    fraction += desired_power - (float)command;
+    if (fraction >= 1.0f) {
+      ++command;
+      fraction -= 1.0f;
+    } else if (fraction <= -1.0f) {
+      --command;
+      fraction += 1.0f;
+    }
+    if (command > 0 && command < TurnEncBalanceMinPower) {
+      command = TurnEncBalanceMinPower;
+    } else if (command < 0 && command > -TurnEncBalanceMinPower) {
+      command = -TurnEncBalanceMinPower;
+    }
+    return clampMotorPower(command);
+  };
+
+  resetEncoderCount();
+  int left_command = nextPower(left_base_power, left_fraction);
+  int right_command = nextPower(right_base_power, right_fraction);
+  pup_motor_set_power(left_, left_command);
+  pup_motor_set_power(right_, right_command);
+
+  uint32_t safety_ms = 0U;
+  while (safety_ms < EncoderRunMaxMs) {
+    const int32_t left_count =
+        absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
+    const int32_t right_count =
+        absEncoderDeg(tachoDeg(right_) - enc_zero_right_);
+    const bool left_done = left_target_deg <= 0 || left_count >= left_target_deg;
+    const bool right_done = right_target_deg <= 0 || right_count >= right_target_deg;
+    if (left_done && right_done) {
+      break;
+    }
+
+    float left_desired = left_done ? 0.0f : left_base_power;
+    float right_desired = right_done ? 0.0f : right_base_power;
+    float sync_correction = 0.0f;
+    if (!left_done && !right_done) {
+      const float left_progress =
+          (float)left_count / (float)left_target_deg;
+      const float right_progress =
+          (float)right_count / (float)right_target_deg;
+      const float progress_error = right_progress - left_progress;
+        sync_integral = clampFloat(sync_integral + progress_error, -20.0f, 20.0f);
+        sync_correction = clampFloat(progress_error * 500.0f +
+                         sync_integral * 1.5f,
+                       -40.0f, 40.0f);
+      left_desired += (left_base_power >= 0.0f)
+                          ? sync_correction : -sync_correction;
+      right_desired -= (right_base_power >= 0.0f)
+                           ? sync_correction : -sync_correction;
+    }
+
+    left_command = nextPower(left_desired, left_fraction);
+    right_command = nextPower(right_desired, right_fraction);
+    pup_motor_set_power(left_, left_command);
+    pup_motor_set_power(right_, right_command);
+    if (sync_debug_ && ++sync_debug_div_ >= 10U) {
+      sync_debug_div_ = 0U;
+            fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+              "Sync,Lcmd=%d,Rcmd=%d,Ldeg=%ld/%ld,Rdeg=%ld/%ld,Lp=%.3f,Rp=%.3f,C=%.2f\n",
+              left_command, right_command,
+              (long)left_count, (long)left_target_deg,
+              (long)right_count, (long)right_target_deg,
+              (float)left_count / (float)left_target_deg,
+              (float)right_count / (float)right_target_deg,
+              sync_correction);
+    }
+    dly_tsk(EncoderStepMs * 1000U);
+    safety_ms += EncoderStepMs;
+  }
+
+  pup_motor_brake(left_);
+  pup_motor_brake(right_);
+  syncStoppedState();
+}
+
+bool Straight::runForRotationsUntilHeading(float left_power, float right_power,
+                                            float left_rotations,
+                                            float right_rotations,
+                                            float target_heading,
+                                            float tolerance_deg,
+                                            float min_left_rotations,
+                                            float min_right_rotations,
+                                            bool pivot_on_failure,
+                                            int pivot_min_power,
+                                            uint32_t pivot_max_ms)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return false;
+  }
+
+  const int32_t left_target_deg =
+      (int32_t)ceilf(fabsf(left_rotations) * 360.0f);
+  const int32_t right_target_deg =
+      (int32_t)ceilf(fabsf(right_rotations) * 360.0f);
+    const int32_t left_min_deg =
+      (int32_t)ceilf(fabsf(min_left_rotations) * 360.0f);
+    const int32_t right_min_deg =
+      (int32_t)ceilf(fabsf(min_right_rotations) * 360.0f);
+  if ((left_target_deg <= 0 && right_target_deg <= 0) ||
+      (left_power == 0.0f && right_power == 0.0f) ||
+      (left_target_deg > 0 && left_min_deg > left_target_deg) ||
+      (right_target_deg > 0 && right_min_deg > right_target_deg)) {
+    stop();
+    return false;
+  }
+
+  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  setTargetHeading(target_heading);
+  correction_enabled_ = true;
+  resetEncoderCount();
+
+  const float left_base_power = clampFloat(left_power, -100.0f, 100.0f);
+  const float right_base_power = clampFloat(right_power, -100.0f, 100.0f);
+  uint32_t elapsed_ms = 0U;
+  while (elapsed_ms < EncoderRunMaxMs) {
+    debugHeading();
+    const int32_t left_count =
+        absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
+    const int32_t right_count =
+        absEncoderDeg(tachoDeg(right_) - enc_zero_right_);
+    const float heading_error =
+        Gyro::wrapDeg180(gGyro.heading() - target_heading);
+    const bool heading_reached = fabsf(heading_error) <= tolerance_deg;
+    const bool minimum_rotation_reached =
+      (left_min_deg <= 0 || left_count >= left_min_deg) &&
+      (right_min_deg <= 0 || right_count >= right_min_deg);
+    const bool rotation_limit_reached =
+        (left_target_deg > 0 && left_count >= left_target_deg) ||
+        (right_target_deg > 0 && right_count >= right_target_deg);
+    if (heading_reached && minimum_rotation_reached) {
+      break;
+    }
+    if (rotation_limit_reached) {
+      pup_motor_brake(left_);
+      pup_motor_brake(right_);
+      syncStoppedState();
+      if (pivot_on_failure) {
+        turnToHeading(target_heading, tolerance_deg,
+                      70, 70, pivot_max_ms, 30.0f,
+                      pivot_min_power);
+        return fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
+               tolerance_deg;
+      }
+      return false;
+    }
+
+    integral_ = clampFloat(integral_ + heading_error, -i_max_, i_max_);
+    const float correction = clampFloat(
+        kp_ * heading_error + ki_ * integral_,
+        (float)-heading_trim_limit_, (float)heading_trim_limit_);
+    const int heading_diff = clampInt((int)roundf(correction),
+                                      -heading_trim_limit_, heading_trim_limit_);
+    const int left_command = clampMotorPower(
+        (int)roundf(left_base_power - (float)(heading_diff / 2)));
+    const int right_command = clampMotorPower(
+        (int)roundf(right_base_power +
+                    (float)(heading_diff - heading_diff / 2)));
+    pup_motor_set_power(left_, left_command);
+    pup_motor_set_power(right_, right_command);
+    dly_tsk(EncoderStepMs * 1000U);
+    elapsed_ms += EncoderStepMs;
+  }
+
+  pup_motor_brake(left_);
+  pup_motor_brake(right_);
+  syncStoppedState();
+  if (pivot_on_failure &&
+      fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) >
+          tolerance_deg) {
+    turnToHeading(target_heading, tolerance_deg,
+                  70, 70, pivot_max_ms, 30.0f,
+                  pivot_min_power);
+  }
+  return fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
+         tolerance_deg;
+}
+
+bool Straight::runForRotationsUntilAngle(
+    float left_power, float right_power,
+    float left_rotations, float right_rotations,
+    float angle_deg, float tolerance_deg,
+    bool pivot_on_failure, int pivot_min_power, uint32_t pivot_max_ms,
+    bool allow_negative_power)
+{
+  const float target_heading = Gyro::wrapDeg180(angle_deg);
+  const float initial_left_power =
+      allow_negative_power ? left_power : fabsf(left_power);
+  const float initial_right_power =
+      allow_negative_power ? right_power : fabsf(right_power);
+  /* 指定角度を走行開始時から目標にし、距離走行中もヨー角を補正する。 */
+  setTargetHeading(target_heading);
+  runForRotationsSameTimeWithHeading(
+      initial_left_power, initial_right_power,
+      left_rotations, right_rotations, true, tolerance_deg);
+
+  if (fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
+      tolerance_deg) {
+    return true;
+  }
+
+  if (pivot_on_failure) {
+    turnToHeading(target_heading, tolerance_deg,
+                  70, 70, pivot_max_ms, 60.0f,
+                  pivot_min_power);
+  }
+
+  return fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
+         tolerance_deg;
+}
+
+void Straight::runBalancedRotationsSameTime(int left_power, int right_power,
+                                            float left_rotations,
+                                            float right_rotations)
+{
+  const float left_corrected_deg = fabsf(left_rotations) * 360.0f;
   const int32_t left_target_deg =
       (int32_t)ceilf((left_corrected_deg > 0.0f) ? left_corrected_deg : 0.0f);
   const int32_t right_target_deg =
@@ -779,17 +1386,42 @@ void Straight::runForRotationsSameTime(int left_power, int right_power,
       (int)((int64_t)left_power * left_target_deg / max_target_deg);
   int synchronized_right_power =
       (int)((int64_t)right_power * right_target_deg / max_target_deg);
-
   if (left_target_deg > 0 && synchronized_left_power == 0 && left_power != 0) {
     synchronized_left_power = (left_power > 0) ? 1 : -1;
   }
-  if (right_target_deg > 0 && synchronized_right_power == 0 &&
-      right_power != 0) {
+  if (right_target_deg > 0 && synchronized_right_power == 0 && right_power != 0) {
     synchronized_right_power = (right_power > 0) ? 1 : -1;
   }
 
-  runForEachSynchronized(synchronized_left_power, synchronized_right_power,
-                         left_target_deg, right_target_deg);
+  beginBalancedEncoderRun();
+  allow_heading_correction_for_ratio_ = true;
+  const int left_command = clampMotorPower(synchronized_left_power);
+  const int right_command = clampMotorPower(synchronized_right_power);
+
+  uint32_t safety_ms = 0U;
+  while (safety_ms < EncoderRunMaxMs) {
+    const int32_t left_count =
+        absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
+    const int32_t right_count =
+        absEncoderDeg(tachoDeg(right_) - enc_zero_right_);
+    const bool left_done = left_target_deg <= 0 || left_count >= left_target_deg;
+    const bool right_done = right_target_deg <= 0 || right_count >= right_target_deg;
+    if (left_done && right_done) {
+      break;
+    }
+    const uint32_t ramp_ms = (safety_ms < 500U) ? safety_ms : 500U;
+    const int ramp_percent = 10 + (int)(90U * ramp_ms / 500U);
+    const int ramped_left =
+      (left_command * ramp_percent) / 100;
+    const int ramped_right =
+      (right_command * ramp_percent) / 100;
+    applyWithCorrection(ramped_left, ramped_right);
+    dly_tsk(EncoderStepMs * 1000U);
+    safety_ms += EncoderStepMs;
+  }
+
+  allow_heading_correction_for_ratio_ = false;
+  endBalancedEncoderRun();
 }
 
 void Straight::runForMs(int left_power, int right_power, uint32_t duration_ms,
@@ -980,19 +1612,12 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   };
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < max_ms) {
-    const float raw = gGyro.rawHeading();
-    if (!isfinite(raw) || !isfinite(previous_raw)) break;
-    // 周期差だけ wrap し、累積角は wrap しない（180°を超えても保持）。
-    gyro_traveled += Gyro::wrapDeg180(raw - previous_raw);
-    previous_raw = raw;
-    read_turn_encoders();
-    const float correction = fusion_enabled
-        ? turn_drift_.estimate(gyro_traveled, enc_left, enc_right, turn_dir,
-                               encoder_valid, sample_ms, direction_valid)
-        : 0.0f;
-    const float fused_angle = gyro_traveled + correction;
-    // 方向付きの累積角で残りを求め、180°越え・目標通過も連続に扱う。
-    const float rem = need - turn_dir * fused_angle;
+    debugHeading();
+    const float h = gGyro.heading();
+    traveled += turn_dir * Gyro::wrapDeg180(h - prev);
+    prev = h;
+
+    const float rem = need - traveled;
     if (rem <= early) {
       break;
     }
@@ -1005,10 +1630,14 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
       base = -base;
     }
     if (slow_approach_deg > 0.0f && rem <= slow_approach_deg) {
-      base = slow_power;
-      if (base < 0) {
-        base = -base;
-      }
+      const float full_power = (float)base;
+      const float minimum_power = (slow_power < 0)
+                                      ? (float)-slow_power
+                                      : (float)slow_power;
+      const float approach_ratio = clampFloat(
+          rem / slow_approach_deg, 0.0f, 1.0f);
+      base = (int)roundf(minimum_power +
+                         (full_power - minimum_power) * approach_ratio);
     }
     if (base < TurnEncBalanceMinPower) {
       base = TurnEncBalanceMinPower;
@@ -1074,163 +1703,14 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   dly_tsk(TurnStepMs * 1000U);
 }
 
-void Straight::turnByEncoder(int32_t target_deg, bool left, int left_power,
-                             int right_power, uint32_t max_ms,
-                             int32_t slow_approach_deg, int slow_power,
-                             int32_t stop_early_deg, bool coast_end)
+void Straight::turnByAngle(float angle_deg, float tolerance_deg,
+                           int left_power, int right_power, uint32_t max_ms,
+                           float slow_approach_deg, int slow_power,
+                           float stop_early_deg, bool coast_end,
+                           int prefer_sign)
 {
-  turn_drift_ = TurnDrift();
-  if (left_ == nullptr || right_ == nullptr) {
-    return;
-  }
-
-  const int32_t need = absEncoderDeg(target_deg);
-  if (need <= 0) {
-    captureTurnStopSnapshot(0U, 0.0f, 0, 0);
-    if (coast_end) {
-      coast();
-    } else {
-      stop();
-    }
-    return;
-  }
-
-  const float   turn_dir = left ? -1.0f : 1.0f;
-  const int32_t early    = stop_early_deg;
-  const int32_t enc_l0   = tachoDeg(left_);
-  const int32_t enc_r0   = tachoDeg(right_);
-  const bool    prev_heading_correction = heading_correction_;
-  heading_correction_ = false;
-
-  float previous_raw = gGyro.rawHeading();
-  float gyro_traveled = 0.0f;
-  uint32_t elapsed_ms = 0U;
-  while (elapsed_ms < max_ms) {
-    const float raw = gGyro.rawHeading();
-    gyro_traveled += Gyro::wrapDeg180(raw - previous_raw);
-    previous_raw = raw;
-    const int32_t l_abs = absEncoderDeg(tachoDeg(left_) - enc_l0);
-    const int32_t r_abs = absEncoderDeg(tachoDeg(right_) - enc_r0);
-    const int32_t rem   = need - ((l_abs + r_abs) / 2);
-    if (rem <= early) {
-      break;
-    }
-
-    int base = left_power;
-    if (right_power < base) {
-      base = right_power;
-    }
-    if (base < 0) {
-      base = -base;
-    }
-    if (slow_approach_deg > 0 && rem <= slow_approach_deg) {
-      base = slow_power;
-      if (base < 0) {
-        base = -base;
-      }
-    }
-    if (base < TurnEncBalanceMinPower) {
-      base = TurnEncBalanceMinPower;
-    }
-
-    const int32_t enc_diff = l_abs - r_abs;
-    int l_mag = 0;
-    int r_mag = 0;
-    turnWheelMags(base, enc_diff, &l_mag, &r_mag);
-
-    if (turn_dir > 0.0f) {
-      run(l_mag, -r_mag);
-    } else {
-      run(-l_mag, r_mag);
-    }
-
-    dly_tsk(TurnStepMs * 1000U);
-    elapsed_ms += TurnStepMs;
-  }
-
-  captureTurnStopSnapshot(
-      elapsed_ms, gyro_traveled,
-      absEncoderDeg(tachoDeg(left_) - enc_l0),
-      absEncoderDeg(tachoDeg(right_) - enc_r0));
-  heading_correction_ = prev_heading_correction;
-  if (coast_end) {
-    coast();
-  } else {
-    stop();
-  }
-  dly_tsk(TurnStepMs * 1000U);
-}
-
-void Straight::curveToHeading(float target_heading, int outer_power,
-                              int inner_power, uint32_t max_ms,
-                              float exit_accel_deg, int prefer_sign,
-                              bool stop_end)
-{
-  if (left_ == nullptr || right_ == nullptr) {
-    return;
-  }
-
-  correction_enabled_ = true;
-  const bool prev_heading_correction = heading_correction_;
-  heading_correction_ = false;
-
-  float current = gGyro.heading();
-  const float delta = Gyro::wrapDeg180(target_heading - current);
-
-  float turn_dir;
-  if (prefer_sign > 0) {
-    turn_dir = 1.0f;
-  } else if (prefer_sign < 0) {
-    turn_dir = -1.0f;
-  } else {
-    turn_dir = (delta >= 0.0f) ? 1.0f : -1.0f;
-  }
-
-  float need;
-  if (turn_dir * delta >= 0.0f) {
-    need = fabsf(delta);
-  } else {
-    need = 360.0f - fabsf(delta);
-  }
-
-  float traveled = 0.0f;
-  float previous = current;
-  uint32_t elapsed_ms = 0U;
-
-  while (elapsed_ms < max_ms) {
-    current = gGyro.heading();
-    traveled += turn_dir * Gyro::wrapDeg180(current - previous);
-    previous = current;
-    const float remaining = need - traveled;
-    if (remaining <= 2.0f) {
-      break;
-    }
-
-    int outer = outer_power;
-    int inner = inner_power;
-    if (exit_accel_deg > 0.0f && remaining <= exit_accel_deg) {
-      float ratio = (exit_accel_deg - remaining) / exit_accel_deg;
-      ratio = clampFloat(ratio, 0.0f, 1.0f);
-      outer = outer_power +
-              static_cast<int>(roundf((100 - outer_power) * ratio));
-      inner = inner_power +
-              static_cast<int>(roundf((100 - inner_power) * ratio));
-    }
-
-    outer = clampMotorPower(outer);
-    inner = clampMotorPower(inner);
-    if (turn_dir > 0.0f) {
-      applyWithCorrection(outer, inner);
-    } else {
-      applyWithCorrection(inner, outer);
-    }
-
-    dly_tsk(TurnStepMs * 1000U);
-    elapsed_ms += TurnStepMs;
-  }
-
-  heading_correction_ = prev_heading_correction;
-  if (stop_end) {
-    stop();
-  }
+  const float target_heading = Gyro::wrapDeg180(angle_deg);
+  turnToHeading(target_heading, tolerance_deg, left_power, right_power,
+                max_ms, slow_approach_deg, slow_power, stop_early_deg,
+                coast_end, prefer_sign);
 }

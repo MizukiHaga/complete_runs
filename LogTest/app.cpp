@@ -131,8 +131,8 @@ void main_task(intptr_t unused)
   Battery_Init(bt_out);
   SonicLight_Init(nullptr, SONIC_LIGHT_PORT);
 
-  //sta_cyc(MORTER_TASK_CYC);
+  // sta_cyc(MORTER_TASK_CYC);
   //sta_cyc(DISTANCE_TASK_CYC);
-  //sta_cyc(BATTERY_TASK_CYC);
+  sta_cyc(BATTERY_TASK_CYC);
   //sta_cyc(SONIC_LIGHT_TASK_CYC);
 }

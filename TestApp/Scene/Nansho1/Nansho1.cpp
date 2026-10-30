@@ -591,45 +591,48 @@ void Nansho1Scene::runAfterFinalBlackLine()
   gLineTracer.setEnabled(true);
   gLineTracer.setEdgeFollow(FinalBlueTraceEdgeFollow);
 
-  /* 旋回直後は低速で線に乗せる（この間も青判定する） */
+  /* 旋回直後は低速で線に乗せる。青判定は通常速度後に行う。 */
   gLineTracer.setBaseSpeed(FinalSlowTracePower, FinalSlowTracePower);
   gLineTracer.setPid(FinalSlowTraceKp, FinalSlowTraceKi, FinalSlowTraceKd,
                      FinalSlowTraceOutMax);
   gLineTracer.setScale(FinalSlowTraceScale);
 
   uint32_t elapsed_ms = 0U;
-  bool     hit_blue   = false;
   while (elapsed_ms < FinalSlowTraceMs) {
     gLineTracer.step();
-    if (elapsed_ms >= FinalBlueTraceColorIgnoreMs &&
-        (gColorLAB.is(COLOR_DETECT_SKYBLUE, true) ||
-         gColorLAB.is(COLOR_DETECT_BLUE, true))) {
-      hit_blue = true;
-      break;
-    }
     dly_tsk(StepMs * 1000U);
     elapsed_ms += StepMs;
   }
 
-  /* 本線 LT。エッジは低速 LT のまま。SKYBLUE/BLUE 検知で終了 */
-  if (!hit_blue) {
-    gLineTracer.setBaseSpeed(FinalBlueTracePower, FinalBlueTracePower);
-    gLineTracer.setPid(FinalBlueTraceKp, FinalBlueTraceKi,
-                       FinalBlueTraceKd, FinalBlueTraceOutMax);
-    gLineTracer.setScale(FinalBlueTraceScale);
+  /* 通常速度LTを固定時間だけ行う。青判定は低速へ戻ってから行う。 */
+  gLineTracer.setBaseSpeed(FinalBlueTracePower, FinalBlueTracePower);
+  gLineTracer.setPid(FinalBlueTraceKp, FinalBlueTraceKi,
+                     FinalBlueTraceKd, FinalBlueTraceOutMax);
+  gLineTracer.setScale(FinalBlueTraceScale);
 
-    while (elapsed_ms < FinalBlueTraceMaxMs) {
-      gLineTracer.step();
+  const uint32_t cruise_end_ms = elapsed_ms + FinalBlueTraceCruiseMs;
+  while (elapsed_ms < cruise_end_ms && elapsed_ms < FinalBlueTraceMaxMs) {
+    gLineTracer.step();
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
+  }
 
-      if (elapsed_ms >= FinalBlueTraceColorIgnoreMs &&
-          (gColorLAB.is(COLOR_DETECT_SKYBLUE, true) ||
-           gColorLAB.is(COLOR_DETECT_BLUE, true))) {
-        break;
-      }
+  /* 通常速度区間の後は低速に戻し、青を検知するまで走行する。 */
+  gLineTracer.setBaseSpeed(FinalSlowTracePower, FinalSlowTracePower);
+  gLineTracer.setPid(FinalSlowTraceKp, FinalSlowTraceKi,
+                     FinalSlowTraceKd, FinalSlowTraceOutMax);
+  gLineTracer.setScale(FinalSlowTraceScale);
+  while (elapsed_ms < FinalBlueTraceMaxMs) {
+    gLineTracer.step();
 
-      dly_tsk(StepMs * 1000U);
-      elapsed_ms += StepMs;
+    if (elapsed_ms >= FinalBlueTraceColorIgnoreMs &&
+        (gColorLAB.is(COLOR_DETECT_SKYBLUE, true) ||
+         gColorLAB.is(COLOR_DETECT_BLUE, true))) {
+      break;
     }
+
+    dly_tsk(StepMs * 1000U);
+    elapsed_ms += StepMs;
   }
 
   gMotors.stop();
