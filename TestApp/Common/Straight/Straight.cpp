@@ -1365,6 +1365,19 @@ bool Straight::runForRotationsUntilAngle(
          tolerance_deg;
 }
 
+bool Straight::runForRotationsUntilAngleNansho2Kimeuti(
+    float left_power, float right_power,
+    float left_rotations, float right_rotations,
+    float angle_deg, float tolerance_deg,
+    bool pivot_on_failure, int pivot_min_power, uint32_t pivot_max_ms,
+    bool allow_negative_power)
+{
+  return runForRotationsUntilAngle(
+      left_power, right_power, left_rotations, right_rotations,
+      angle_deg, tolerance_deg, pivot_on_failure, pivot_min_power,
+      pivot_max_ms, allow_negative_power);
+}
+
 void Straight::runBalancedRotationsSameTime(int left_power, int right_power,
                                             float left_rotations,
                                             float right_rotations)

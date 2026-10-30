@@ -930,7 +930,7 @@ void Nansho2Scene::run()
       gMotors.setHeadingTrimLimit(HeadingRunTrimLimit);
       gMotors.setHeadingRunPowerScale(HeadingRunPowerScale);
       gMotors.setHeadingDebugPhase("Straight::runForRotationsUntilAngle");
-      gMotors.runForRotationsUntilAngle(
+      gMotors.runForRotationsUntilAngleNansho2Kimeuti(
         turn_speed_l, turn_speed_r,  // 左右パワー
         turn_90_l, turn_90_r,    // 左右最大回転数
         heading_90,    // gGyro.reset()基準の目標角
@@ -963,7 +963,7 @@ void Nansho2Scene::run()
       runStraightAtHeadingUntilBlackLine(heading_90, (int)motor_speed_slow,
                                           (int)motor_speed_slow);
       // 90度直進: 指定角度を維持し、黒線検知で停止
-      gMotors.runForRotationsUntilAngle(
+      gMotors.runForRotationsUntilAngleNansho2Kimeuti(
         turn_speed_l, turn_speed_r,  // 左右パワー
         turn_90_l, turn_90_r,    // 左右最大回転数
         180.0f,    // gGyro.reset()基準の目標角

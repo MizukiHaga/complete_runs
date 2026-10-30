@@ -155,6 +155,14 @@ public:
       bool pivot_on_failure = false, int pivot_min_power = 40,
       uint32_t pivot_max_ms = 3000U,
       bool allow_negative_power = true);
+  /* 難所2の決め打ち走行用。通常の旋回制御と呼び出し経路を分離する。 */
+  bool runForRotationsUntilAngleNansho2Kimeuti(
+      float left_power, float right_power,
+      float left_rotations, float right_rotations,
+      float angle_deg, float tolerance_deg = 1.0f,
+      bool pivot_on_failure = false, int pivot_min_power = 40,
+      uint32_t pivot_max_ms = 3000U,
+      bool allow_negative_power = true);
   void runBalancedRotationsSameTime(int left_power, int right_power,
                                     float left_rotations, float right_rotations);
   /* 指定時間 [ms] 走行して台形減速停止（後退など時間制御向け）。
