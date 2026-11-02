@@ -31,10 +31,6 @@ void Gyro::init()
 
 void Gyro::update()
 {
-  if (!hub_imu_is_ready()) {
-    return;
-  }
-  updateKalman();
 }
 
 bool Gyro::isReady() const
@@ -50,53 +46,13 @@ void Gyro::reset(float offset_deg)
 
 void Gyro::setRateHeading(bool enable)
 {
-  float angv[3] = {0.0f, 0.0f, 0.0f};
-  hub_imu_get_angular_velocity(angv);
-  /* pybricks: heading は CW 正、heading_rate = -angv.z */
-  return -angv[2];
-}
-
-void Gyro::updateKalman()
-{
-  SYSTIM now = 0U;
-  get_tim(&now);
-
-  if (!kf_ready_) {
-    kf_angle_    = hub_imu_get_heading();
-    kf_variance_ = kf_r_;
-    kf_last_tim_ = (uint64_t)now;
-    kf_ready_    = true;
+  if (enable == rate_heading_) {
     return;
   }
-
-  float dt_s =
-      (float)((int64_t)now - (int64_t)kf_last_tim_) * kSystimToSec;
-  if (dt_s <= 0.0f) {
-    return;
-  }
-  if (dt_s > kMaxKalmanDtSec) {
-    dt_s = kMaxKalmanDtSec;
-  }
-
-  const float yaw_rate = readYawRateDegPerSec();
-
-  /* 予測 */
-  kf_angle_ += yaw_rate * dt_s;
-  kf_variance_ += kf_q_ * dt_s;
-
-  /* 更新 */
-  const float measurement = hub_imu_get_heading();
-  const float innovation  = wrapDeg180(measurement - kf_angle_);
-  const float gain        = kf_variance_ / (kf_variance_ + kf_r_);
-  kf_angle_ += gain * innovation;
-  kf_variance_ *= (1.0f - gain);
-
-  kf_last_tim_ = (uint64_t)now;
-}
-
-float Gyro::heading() const
-{
-  return kf_angle_ + heading_offset_;
+  /* 切替前後で heading() を連続にする */
+  const float current = heading();
+  rate_heading_       = enable;
+  heading_offset_     = current - rawHeading();
 }
 
 float Gyro::rawHeading() const

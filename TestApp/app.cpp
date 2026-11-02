@@ -168,7 +168,7 @@ extern "C" void FixedRunTask(intptr_t exinf)
   gMotors.stop();
   gLineTracer.setEnabled(false);
   dly_tsk(50 * 1000U);
-  act_tsk(NANSHO1_TASK);
+  act_tsk(SUMO_TASK);
 #endif
 }
 extern "C" void GyroUpdateTask(intptr_t exinf)

@@ -15,7 +15,7 @@ extern "C" {
 
 /* === 実行シーン切り替え ==========================================
  * ETROBO_SCENE:
- *   0: FixedRun → Nansho1 → Nansho2Kime → Nansho3（本番）
+ *   0: FixedRun → Sumo → Nansho1 → Nansho2Kime → Nansho3（本番）
  *   1: Nansho1 のみ
  *   2: Nansho2 のみ（取り込み前）
  *   3: HCR のみ
@@ -43,7 +43,7 @@ extern "C" {
 #endif
 
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 4
+#define ETROBO_SCENE 0
 #endif
 
 /* タスク優先度 */

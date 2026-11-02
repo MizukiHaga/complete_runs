@@ -27,7 +27,7 @@ public:
 
   void init();
   bool isReady() const;
-  /* IMUとカルマンフィルタを更新する。専用周期タスクからのみ呼び出す。 */
+  /* 周期タスク用。観測時に heading() を読むので更新処理は空。 */
   void update();
 
   /* 現在ヨー角をリセットする。
@@ -65,25 +65,6 @@ public:
 private:
   float heading_offset_ = 0.0f;
   bool  rate_heading_   = false;
-  /* ASP3 の SYSTIM / get_tim() はマイクロ秒（dly_tsk と同じ）。
-   * 0.001 だと dt が 1000 倍になり、旋回中の予測が数十°跳び即終了する。 */
-  static constexpr float kSystimToSec = 1.0e-6f;
-  static constexpr float kMaxKalmanDtSec = 0.2f;
-
-  float readYawRateDegPerSec() const;
-  void updateKalman();
-
-  float kf_q_ = DefaultKalmanProcessNoise;
-  float kf_r_ = DefaultKalmanMeasNoise;
-
-  /* reset(offset_deg) で載せる下駄 [deg]。heading() にだけ足す。
-   * カルマンの内部状態は 0 基準のままなので、観測で消えることはない。 */
-  float heading_offset_ = 0.0f;
-
-  float  kf_angle_    = 0.0f;
-  float  kf_variance_ = DefaultKalmanMeasNoise;
-  bool   kf_ready_    = false;
-  uint64_t kf_last_tim_ = 0U;
 };
 
 #endif  // TESTAPP_GYRO_H_
