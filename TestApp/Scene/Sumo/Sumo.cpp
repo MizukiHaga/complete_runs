@@ -23,9 +23,6 @@ extern Arm        gArm;
 extern SumoScene  gSumo;
 
 void SumoScene::run(){
-  // LR切り替え(Rがデフォでfalse、Lにしたい時はtrue)
-  set_sumo_reverse(false);
-  
   // ジャイロリセット
   gLineTracer.setEnabled(false);
   gMotors.stop();
@@ -45,7 +42,7 @@ void SumoScene::run(){
   int linetrace_dist_for_dohyo = 660;
   int linetrace_power_for_dohyo = 80;
   float target_angle_for_dohyo = -90.0f;
-  drive_linetrace_distance(linetrace_dist_for_dohyo, linetrace_power_for_dohyo, invert_edge(true));
+  drive_linetrace_distance(linetrace_dist_for_dohyo, linetrace_power_for_dohyo, invert_edge(false));
   drive_senkai(invert_angle(target_angle_for_dohyo), base_senkai_power, -base_senkai_power, base_tolerance_deg, invert_ccw(true));
   gGyro.reset(0.0f);
   
@@ -160,14 +157,14 @@ void SumoScene::run(){
 extern "C" void SumoTask(intptr_t exinf){
   (void)exinf;
   gSumo.run();
-  /* Nansho1 以降は既定どおりヨー角 PI 補正を使う */
+  /* Nansho2 以降は既定どおりヨー角 PI 補正を使う */
   gMotors.setHeadingCorrection(true);
 
 #if ETROBO_SCENE == 0
   gMotors.stop();
   gLineTracer.setEnabled(false);
   dly_tsk(50 * 1000U);
-  act_tsk(NANSHO1_TASK);
+  act_tsk(NANSHO2KIME_TASK);
 #endif
 
   ext_tsk();

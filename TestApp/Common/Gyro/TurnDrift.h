@@ -9,7 +9,7 @@ namespace TurnDriftConfig {
 constexpr bool Enabled = true;
 constexpr float EncoderPer90Deg = 180.0f;
 constexpr float EncoderWeightLeft = 0.15f;  // 左旋回(CCW)
-constexpr float EncoderWeightRight = 0.145f; // 右旋回(CW)
+constexpr float EncoderWeightRight = 0.097f; // 右旋回(CW)
 constexpr uint32_t SettleMs = 80U;
 
 }

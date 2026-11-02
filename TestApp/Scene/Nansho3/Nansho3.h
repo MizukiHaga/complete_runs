@@ -315,8 +315,8 @@ private:
   /* 経過角打ち切りをこの角手前で止める（慣性＋h 遅れの行き過ぎ） */
   static constexpr float    CoreTurnEarlyStopDeg    = 10.0f;
   /* 左/右の早止め追加 [deg]。Test と同じく負なら目標より奥まで回す */
-  static constexpr float    CoreTurnLeftEarlyExtraDeg  = 0.0f;
-  static constexpr float    CoreTurnRightEarlyExtraDeg = 0.0f;
+  static constexpr float    CoreTurnLeftEarlyExtraDeg  = 10.0f;
+  static constexpr float    CoreTurnRightEarlyExtraDeg = 10.0f;
   /* 旋回完了後、直進に入る前の待ち [ms]（0=待ちなし） */
   static constexpr uint32_t CoreTurnAfterMs = 80U;
 
