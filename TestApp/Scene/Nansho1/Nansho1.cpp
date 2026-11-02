@@ -764,7 +764,7 @@ extern "C" void Nansho1Task(intptr_t exinf)
   gMotors.stop();
   gLineTracer.setEnabled(false);
   dly_tsk(50 * 1000U);
-  act_tsk(NANSHO2_TASK);
+  act_tsk(NANSHO2KIME_TASK);
 #endif
 
   ext_tsk();

@@ -39,4 +39,4 @@ void SumoTask(intptr_t exinf);
 }
 #endif
 
-#endif  // TESTAPP_NANSHO1_H_
+#endif  // TESTAPP_SUMO_H_
