@@ -51,6 +51,11 @@ APPL_CXXOBJS += Nansho2.o
 APPL_DIRS    += $(mkfile_path)Scene/Nansho2
 INCLUDES     += -I$(mkfile_path)Scene/Nansho2
 
+# === Scene: Nansho2 決め打ち（取り込み後） ================
+APPL_CXXOBJS += Nansho2Kime.o
+APPL_DIRS    += $(mkfile_path)Scene/Nansho2Kime
+INCLUDES     += -I$(mkfile_path)Scene/Nansho2Kime
+
 # === Scene: Member C =====================================
 APPL_CXXOBJS += Nansho3.o
 APPL_DIRS    += $(mkfile_path)Scene/Nansho3
@@ -65,6 +70,11 @@ INCLUDES     += -I$(mkfile_path)Scene/Test
 APPL_CXXOBJS += FixedRunComplete.o FixedRunShort.o
 APPL_DIRS    += $(mkfile_path)Scene/FixedRun
 INCLUDES     += -I$(mkfile_path)Scene/FixedRun
+
+# === Scene: Sumo =========================================
+APPL_CXXOBJS += Sumo.o
+APPL_DIRS    += $(mkfile_path)Scene/Sumo
+INCLUDES     += -I$(mkfile_path)Scene/Sumo
 
 # === Continuous curve / Pure Pursuit scene ===
 APPL_CXXOBJS += Nansho3KYOKU.o Path.o

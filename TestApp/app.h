@@ -15,17 +15,24 @@ extern "C" {
 
 /* === 実行シーン切り替え ==========================================
  * ETROBO_SCENE:
- *   0: HCR → Nansho1 → Nansho2 → Nansho3（本番）
+ *   0: FixedRun → Nansho1 → Nansho2Kime → Nansho3（本番）
  *   1: Nansho1 のみ
- *   2: Nansho2 のみ
+ *   2: Nansho2 のみ（取り込み前）
  *   3: HCR のみ
  *   4: Nansho3 のみ（単体LT開始つき）
- *   5: Nansho1 → Nansho2 → Nansho3（HCRなし）
+ *   5: Nansho1 → Nansho2Kime → Nansho3（FixedRunなし）
  *   6: Test（ケースは Scene/Test/Test.h の TEST_CASE）
  *   7: Nansho3KYOKU（事前曲線計画＋Pure Pursuit。Settings.h参照）
  *   8: FixedRun 完成（FixedRunComplete。ETROBO_COURSE_L で L/R）
  *   9: FixedRun 短縮（FixedRunShort。ETROBO_COURSE_L で L/R）
+ *  10: Sumo
+ *  11: Nansho2Kime（決め打ち）
  * 試合前にここだけ変更する。 */
+#define ETROBO_SCENE_NANSHO2      2
+#define ETROBO_SCENE_NANSHO3      4
+#define ETROBO_SCENE_FIXEDRUN     8
+#define ETROBO_SCENE_SUMO         10
+#define ETROBO_SCENE_NANSHO2KIME  11
 /* Nansho3補正切替: 0=固定値（旧Honban）、1=エンコーダ＋ジャイロTurnDrift。
  * 旋回・直進・距離・ゲートの設定は両モード共通。KFではない。 */
 #ifndef NANSHO3_USE_TURN_DRIFT
@@ -49,6 +56,7 @@ extern "C" {
 #define NANSHO3_PRIORITY          10 /* Nansho3タスク */
 #define TEST_PRIORITY             11 /* Testタスク */
 #define FIXEDRUN_PRIORITY         12 /* FixedRunタスク */
+#define SUMO_PRIORITY             13 /* Sumoタスク */
 
 /* タスク周期の定義 */
 #define LINE_TRACER_PERIOD       ( 5 * 1000) /* ライントレースタスク:5msec周期 */
@@ -81,17 +89,23 @@ extern "C" {
 #define FIXEDRUN_STACK_SIZE (8192)
 #endif
 
+#ifndef SUMO_STACK_SIZE
+#define SUMO_STACK_SIZE (16384)
+#endif
+
 #ifndef TOPPERS_MACRO_ONLY
 
 extern void main_task(intptr_t exinf);
 extern void tracer_task(intptr_t exinf);
 extern void Nansho1Task(intptr_t exinf);
 extern void Nansho2Task(intptr_t exinf);
+extern void Nansho2KimeTask(intptr_t exinf);
 extern void Nansho3Task(intptr_t exinf);
 extern void Nansho3KYOKUTask(intptr_t exinf);
 extern void TestTask(intptr_t exinf);
 extern void StraightBalanceTask(intptr_t exinf);
 extern void FixedRunTask(intptr_t exinf);
+extern void SumoTask(intptr_t exinf);
 extern void GyroUpdateTask(intptr_t exinf);
 
 #endif /* TOPPERS_MACRO_ONLY */
