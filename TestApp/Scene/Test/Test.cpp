@@ -11,8 +11,6 @@
 #include "Common/LineTracer/LineTracer.h"
 #include "Common/Straight/Straight.h"
 #include "Gyro.h"
-#include "HeadingFusionLog.h"
-#include "HeadingFusionSettings.h"
 #include "Scene/Nansho3/Nansho3.h"
 
 #include <serial/newlib.h>
@@ -118,24 +116,6 @@ void TestScene::logStraightEncoders(int32_t left_base, int32_t right_base,
   }
   printf("MOT_L,%d,MOT_R,%d,ENC_avg,%d,PHASE,%s\n",
          (int)l, (int)r, (int)avg, ph);
-  const float raw = gGyro.rawHeading();
-  const float heading = gGyro.heading();
-  const float target = gMotors.targetHeading();
-  const HeadingFusion::State state = gGyro.fusionState();
-  const auto write = [&](FILE *output) {
-    if (output == nullptr) return;
-    fprintf(output,
-        "SQUARE_DRIVE,PHASE,%s,TGT,%.3f,IMU_raw,%.3f,KF_h,%.3f,ERR,%.3f,"
-        "LAST_L,%d,LAST_R,%d\n",
-        ph, (double)target, (double)raw, (double)heading,
-        (double)Gyro::wrapDeg180(heading - target),
-        gMotors.lastAppliedLeftPower(), gMotors.lastAppliedRightPower());
-    writeHeadingFusionLog(output, state, heading);
-    fflush(output);
-  };
-  write(stdout);
-  if (btLogWritable()) write(s_bt_out);
-
 }
 
 void TestScene::waitLogConnected()
@@ -164,11 +144,6 @@ void TestScene::logStopInstant()
     return;
   }
   openBtLog();
-  writeTurnEncoderLog(stdout, gMotors.turnEncoderSnapshot());
-  if (btLogWritable()) {
-    writeTurnEncoderLog(s_bt_out, gMotors.turnEncoderSnapshot());
-    fflush(s_bt_out);
-  }
   const int32_t left_abs = gMotors.lastTurnEncLeftAbsDeg();
   const int32_t right_abs = gMotors.lastTurnEncRightAbsDeg();
   const float enc_avg =
@@ -208,16 +183,6 @@ void TestScene::logAfterTurn(int32_t left_abs_deg, int32_t right_abs_deg,
   emitTurnEncodersOnce(left_abs_deg, right_abs_deg, heading_rel_deg, left,
                        enc_ang, ang_err);
   // IMU_h は補正前の相対角を維持。補正量を別列にして効果を検証する。
-  if (gGyro.fusionEnabled()) {
-    const HeadingFusion::State state = gGyro.fusionState();
-    const float heading = gGyro.heading();
-    writeHeadingFusionLog(stdout, state, heading);
-    if (btLogWritable()) {
-      writeHeadingFusionLog(s_bt_out, state, heading);
-      fflush(s_bt_out);
-    }
-    return;
-  }
   const float correction = gMotors.turnDriftCorrectionDeg();
   const float rate = gMotors.turnDriftRate();
   const TurnDrift &diag = gMotors.turnDriftDiagnostics();
@@ -445,13 +410,17 @@ void TestScene::runLineTraceUntilSkyblueThenStraight()
 /* Nansho3 と同じ両輪ピボット（終端 coast） */
 void TestScene::turnNansho3SpinOnce(float target, bool left)
 {
+  const float extra = left ? Nansho3SpinLeftEarlyExtraDeg
+                           : Nansho3SpinRightEarlyExtraDeg;
   const int   prefer = left ? -1 : 1;
+  gGyro.setRateHeading(false);
   gMotors.turnToHeading(target,
-                        /*tolerance_deg=*/0.0f, Nansho3SpinPower,
+                        Nansho3SpinToleranceDeg, Nansho3SpinPower,
                         Nansho3SpinPower, Nansho3SpinMaxMs,
                         Nansho3SpinSlowApproachDeg, Nansho3SpinSlowPower,
-                        /*stop_early_deg=*/0.0f, /*coast_end=*/true,
-                        prefer, /*encoder_drift_correction=*/true);
+                        Nansho3SpinEarlyStopDeg + extra, /*coast_end=*/true,
+                        prefer, /*encoder_drift_correction=*/Nansho3UseTurnDrift);
+  addFixedTurnCorrection(left);
 }
 
 void TestScene::turnNansho3SpinByEncoder(bool left)
@@ -460,11 +429,24 @@ void TestScene::turnNansho3SpinByEncoder(bool left)
                         Nansho3SpinPower, Nansho3SpinMaxMs,
                         Nansho3SpinEncoderSlowDeg, Nansho3SpinSlowPower,
                         Nansho3SpinEncoderEarlyDeg, /*coast_end=*/true);
+  addFixedTurnCorrection(left);
 }
 
-float TestScene::spinGridTarget(float grid_deg)
+float TestScene::spinGridTarget(float grid_deg) const
 {
-  return Gyro::wrapDeg180(grid_deg);
+  return Gyro::wrapDeg180(grid_deg + Nansho3Scene::HeadingOffsetDeg + heading_add_);
+}
+
+void TestScene::addFixedTurnCorrection(bool left)
+{
+  if (Nansho3UseTurnDrift) return;
+  int &count = left ? left_turn_count_ : right_turn_count_;
+  if (++count >= Nansho3Scene::TurnsPerHeadingAdd) {
+    count = 0;
+    heading_add_ = Gyro::wrapDeg180(heading_add_ +
+        (left ? Nansho3Scene::PerLeftTurnHeadingAddDeg
+              : Nansho3Scene::PerRightTurnHeadingAddDeg));
+  }
 }
 
 /* Nansho3 と同じ両輪ピボット。90° 刻みの絶対角へ回す */
@@ -522,6 +504,39 @@ void TestScene::runNansho3OnceTurn()
   } else {
     turnNansho3SpinOnce(target, left);
   }
+  // 制御中は記録のみ。出力待ちで旋回が伸びないよう終了後に送信する。
+  openBtLog();
+  const auto &at180 = gMotors.turnEncoder180Snapshot();
+  if (at180.reached) {
+    const char *fmt = "ENC180_ms,%lu,L,%ld,R,%ld,AVG,%.1f,IMU_delta,%.3f\n";
+    const double avg = 0.5 * (fabs((double)at180.left) + fabs((double)at180.right));
+    printf(fmt, (unsigned long)at180.elapsed_ms, (long)at180.left,
+           (long)at180.right, avg, (double)at180.gyro_delta);
+    if (btLogWritable()) {
+      fprintf(s_bt_out, fmt, (unsigned long)at180.elapsed_ms, (long)at180.left,
+              (long)at180.right, avg, (double)at180.gyro_delta);
+      fflush(s_bt_out);
+    }
+  } else {
+    printf("ENC180_NOT_REACHED\n");
+    if (btLogWritable()) {
+      fprintf(s_bt_out, "ENC180_NOT_REACHED\n");
+      fflush(s_bt_out);
+    }
+  }
+  // Test15専用。共通ログが無効でも旋回終了時の左右値を1回出力する。
+  const int32_t left_end = gMotors.leftEncoderCount();
+  const int32_t right_end = gMotors.rightEncoderCount();
+  const char *format =
+      "TEST15_TURN_END,DIR,%s,ENC_L,%ld,ENC_R,%ld,DELTA_L,%ld,DELTA_R,%ld\n";
+  openBtLog();
+  printf(format, left ? "L" : "R", (long)left_end, (long)right_end,
+         (long)(left_end - l0), (long)(right_end - r0));
+  if (btLogWritable()) {
+    fprintf(s_bt_out, format, left ? "L" : "R", (long)left_end, (long)right_end,
+            (long)(left_end - l0), (long)(right_end - r0));
+    fflush(s_bt_out);
+  }
   logAfterTurn(absEncoderDelta(gMotors.leftEncoderCount(), l0),
                absEncoderDelta(gMotors.rightEncoderCount(), r0),
                Gyro::wrapDeg180(gGyro.rawHeading() - h0), left);
@@ -570,29 +585,16 @@ void TestScene::runRandomSpinLoop()
 void TestScene::runSquareTest()
 {
   waitLogConnected();
-  const auto write_config = [&](FILE *output) {
-    if (output == nullptr) return;
-    fprintf(output,
-        "SQUARE_CONFIG,MOVING_WHEEL,%d,TURN_GAIN,%.3f,BIAS_STATIC_ONLY,1,EARLY,0,"
-        "TURN_POWER,%d,SLOW_DEG,%.1f,SLOW_POWER,%d,AFTER_MS,%lu\n",
-        HeadingFusionSettings::MovingWheelObservation ? 1 : 0,
-        (double)HeadingFusionSettings::TurnCorrectionGain, Nansho3SpinPower, (double)Nansho3SpinSlowApproachDeg,
-        Nansho3SpinSlowPower, (unsigned long)Nansho3SpinAfterMs);
-    fflush(output);
-  };
-  if (EnableLog) {
-    write_config(stdout);
-    if (btLogWritable()) write_config(s_bt_out);
-  }
   gGyro.setRateHeading(false);
   gGyro.reset();
   dly_tsk(GyroResetSettleMs * 1000U);
 
   const bool left = (TEST_TURN_LEFT != 0);
-  float target = 0.0f;
+  float logical_target = 0.0f;
   uint32_t lap = 1U;
   while (true) {
     for (int side = 0; side < 4; ++side) {
+      const float target = spinGridTarget(logical_target);
       if (EnableLog) {
         const char *format = "SQUARE_lap,%lu,SQUARE_side,%d,DIR,%s,TARGET,%.2f\n";
         printf(format, (unsigned long)lap, side + 1, left ? "L" : "R", (double)target);
@@ -603,108 +605,32 @@ void TestScene::runSquareTest()
       }
       driveStraight(target, SquareSideDeg, StraightPower);
       dly_tsk(Nansho3SpinBeforeMs * 1000U);
-      target = spinGridTarget(target + (left ? -90.0f : 90.0f));
+      logical_target = Gyro::wrapDeg180(logical_target + (left ? -90.0f : 90.0f));
       const int32_t l0 = gMotors.leftEncoderCount();
       const int32_t r0 = gMotors.rightEncoderCount();
       const float h0 = gGyro.rawHeading();
       if (Nansho3SpinStopOnEncoder) {
         turnNansho3SpinByEncoder(left);
       } else {
-        turnNansho3SpinOnce(target, left);
+        turnNansho3SpinOnce(spinGridTarget(logical_target), left);
       }
       logAfterTurn(absEncoderDelta(gMotors.leftEncoderCount(), l0),
                    absEncoderDelta(gMotors.rightEncoderCount(), r0),
                    Gyro::wrapDeg180(gGyro.rawHeading() - h0), left);
-      // coast後の惰性が落ち着いてから次辺を開始する。
-      dly_tsk(Nansho3SpinAfterMs * 1000U);
+      // Honbanと同じ旋回後待機。旋回前の待機は上で実施する。
+      if (Nansho3SpinAfterMs > 0U) {
+        dly_tsk(Nansho3SpinAfterMs * 1000U);
+      }
 
     }
     if (lap < UINT32_MAX) ++lap;
   }
 }
 
-/* 静止試験と、実角を外部計測するための1回だけの車輪旋回。 */
-void TestScene::logHeadingCalibration(const char *phase, uint32_t elapsed_ms,
-                                      float raw_start, float heading_start,
-                                      int32_t left_start, int32_t right_start)
-{
-  int32_t left = 0, right = 0;
-  const bool encoder_valid = gMotors.readEncoders(left, right);
-  const float l = static_cast<float>(left - left_start);
-  const float r = static_cast<float>(right - right_start);
-  const float raw = gGyro.rawHeading();
-  const float heading = gGyro.heading();
-  const HeadingFusion::State state = gGyro.fusionState();
-  const HeadingFusionConfig config = HeadingFusionSettings::config();
-  const float wheel = (config.leftDiameter * l - config.rightDiameter * r) /
-                       (2.0f * config.track);
-  const auto write = [&](FILE *output) {
-    if (output == nullptr) return;
-    fprintf(output,
-        "CAL_phase,%s,CAL_ms,%lu,ENC_ok,%d,L,%.0f,R,%.0f,AVG,%.1f,"
-        "IMU_raw,%.4f,IMU_delta,%.4f,KF_delta,%.4f,WHEEL_delta,%.4f\n",
-        phase, (unsigned long)elapsed_ms, encoder_valid ? 1 : 0,
-        (double)l, (double)r, (double)(0.5f * (fabsf(l) + fabsf(r))),
-        (double)raw, (double)Gyro::wrapDeg180(raw - raw_start),
-        (double)(heading - heading_start), (double)wheel);
-    writeHeadingFusionLog(output, state, heading);
-    fflush(output);
-  };
-  write(stdout);
-  if (btLogWritable()) write(s_bt_out);
-}
-
-void TestScene::runHeadingCalibration(bool turn)
-{
-  gMotors.brake();
-  waitLogConnected();
-  // BLE接続や設置時の揺れが収まってから原点だけ取り直す。biasは保持。
-  dly_tsk(CalibrationSettleMs * 1000U);
-  gGyro.reset();
-  int32_t left = 0, right = 0;
-  if (!gMotors.readEncoders(left, right) || !gGyro.fusionEnabled()) {
-    printf("CAL_ERROR,encoder_or_fusion_unavailable\n");
-    if (btLogWritable()) {
-      fprintf(s_bt_out, "CAL_ERROR,encoder_or_fusion_unavailable\n");
-      fflush(s_bt_out);
-    }
-    return;
-  }
-  float raw = gGyro.rawHeading();
-  float heading = gGyro.heading();
-  SYSTIM start = 0, now = 0;
-  get_tim(&start);
-  while (true) {
-    get_tim(&now);
-    const uint32_t elapsed = static_cast<uint32_t>((now - start) / 1000U);
-    logHeadingCalibration("still", elapsed, raw, heading, left, right);
-    if (elapsed >= CalibrationStillMs) break;
-    dly_tsk(CalibrationLogMs * 1000U);
-  }
-  if (!turn) return;
-
-  // 静止学習後のbiasを維持し、旋回前の実測基準を保存する。
-  if (!gMotors.readEncoders(left, right)) return;
-  raw = gGyro.rawHeading();
-  heading = gGyro.heading();
-  get_tim(&start);
-  logHeadingCalibration("turn_start", 0U, raw, heading, left, right);
-  gMotors.turnByEncoder(CalibrationEncoderDeg, TEST_TURN_LEFT != 0,
-      CalibrationPower, CalibrationPower, Nansho3SpinMaxMs,
-      CalibrationEncoderDeg, CalibrationPower, 0, /*coast_end=*/true);
-  gMotors.brake();
-  get_tim(&now);
-  logHeadingCalibration("turn_brake", static_cast<uint32_t>((now - start) / 1000U),
-                        raw, heading, left, right);
-  dly_tsk(CalibrationSettleMs * 1000U);
-  get_tim(&now);
-  logHeadingCalibration("turn_settled", static_cast<uint32_t>((now - start) / 1000U),
-                        raw, heading, left, right);
-  // ここで終了して保持。次の左右試験は基準線へ置き直し、再起動する。
-}
-
 void TestScene::run()
 {
+  heading_add_ = 0.0f;
+  left_turn_count_ = right_turn_count_ = 0;
   stp_cyc(LINE_TRACER_TASK_CYC);
   stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
   gLineTracer.setEnabled(false);
@@ -726,10 +652,6 @@ void TestScene::run()
   gNansho3.runInitialTest();
 #elif TEST_CASE == 20
   gNansho3.runStraightCellsTest(TEST_STRAIGHT_CELLS);
-#elif TEST_CASE == 21
-  runHeadingCalibration(false);
-#elif TEST_CASE == 22
-  runHeadingCalibration(true);
 #else
   /* TEST_CASE 6: LT → 直進 → Nansho1〜3 */
   runLineTraceUntilSkyblueThenStraight();

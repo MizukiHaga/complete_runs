@@ -26,7 +26,6 @@
 #define TESTAPP_STRAIGHT_H_
 
 #include "TurnDrift.h"
-#include "HeadingFusion.h"
 
 #include <pbio/port.h>
 #include <stdbool.h>
@@ -38,6 +37,18 @@ extern "C" {
 
 class Straight {
 public:
+  // 別シーンのジャイロを使用する場合の読み出し先。未指定なら共通gGyro。
+  void setHeadingSource(float (*heading)(), float (*raw)()) {
+    heading_reader_ = heading;
+    raw_heading_reader_ = raw;
+  }
+  struct TurnEncoder180Snapshot {
+    bool reached = false;
+    uint32_t elapsed_ms = 0;
+    int32_t left = 0, right = 0; // 旋回開始からの符号付き回転量
+    float gyro_delta = 0.0f;
+  };
+  const TurnEncoder180Snapshot &turnEncoder180Snapshot() const { return turn_encoder180_; }
   static constexpr uint32_t DecelMs = 800U;
   static constexpr uint32_t DecelStepMs = 40U;
   static constexpr uint32_t MaxDurationMs = 4000000U;
@@ -61,10 +72,6 @@ public:
   void setTargetHeading(float heading_deg);
   float targetHeading() const { return target_heading_; }
   /* 直進 PI / 旋回エンコーダ補正後に最後に出した左右パワー（停止で 0 にしない）。 */
-  /* 最後の非ゼロ出力ログとは別に、現在の停止指令を判定する。 */
-  bool stopCommanded() const {
-    return !correction_enabled_ || (last_cmd_left_ == 0 && last_cmd_right_ == 0);
-  }
   int lastAppliedLeftPower() const { return last_out_left_; }
   int lastAppliedRightPower() const { return last_out_right_; }
 
@@ -96,7 +103,7 @@ public:
   void run(int left_power, int right_power, int32_t encoder_deg = 0,
            bool stop_end = true);
   void stop();
-  /* 周期補正を止めて短絡ブレーキ。エンコーダと目標方位は保持する。 */
+  /* KYOKU用の互換API。Nansho3の旧制御からは呼ばない。 */
   void brake();
   /* 左右モータのエンコーダ [deg] で直進／ピボットを終了する。 */
   void runFor(int left_power, int right_power, int32_t target_deg);
@@ -131,10 +138,9 @@ public:
    * rem <= slow_approach_deg なら slow_power に落とす（行き過ぎ防止）。
    * stop_early_deg: 目標までの残りがこの角以下で止める（慣性の行き過ぎ用）。
    *   負なら目標を通り過ぎてから止める。
-   * prefer_sign: 最短旋回が±180°で同距離のとき、+1=CW、-1=CCW。
-   * 連続推定有効時は共通の推定角で制御し、旋回後の追加補正は行わない。
-   * encoder_drift_correctionは連続推定無効時だけ従来のTurnDriftを使う指定。
-   *   エンコーダは前進正の符号付き左右差から旋回角へ換算する。 */
+   * prefer_sign: 0=最短側、+1=CW 強制、-1=CCW 強制。
+   * encoder_drift_correction: TurnDrift.h の設定で停止後に信頼度で重み付けした方位補正。
+   *   計画が L90/R90 なのに最短が逆向きになるのを防ぐときに使う。 */
   void turnToHeading(float target_heading,
                      float tolerance_deg = 4.0f,
                      int left_power = 40,
@@ -150,22 +156,6 @@ public:
   float turnDriftCorrectionDeg() const { return turn_drift_.total(); }
   float turnDriftRate() const { return turn_drift_.rate(); }
   const TurnDrift &turnDriftDiagnostics() const { return turn_drift_; }
-
-  /* エンコーダ左右平均180deg以上の最初の制御周期。出力は旋回後に行う。 */
-  struct TurnEncoderSnapshot {
-    bool valid = false;
-    uint32_t elapsed_ms = 0U;
-    float left = 0.0f;
-    float right = 0.0f;
-    float gyro_delta = 0.0f;
-    float heading = 0.0f;
-    float heading_delta = 0.0f;
-    float wheel_delta = 0.0f;
-    float bias_correction = 0.0f;
-    float observation_correction = 0.0f;
-    HeadingFusion::State fusion;
-  };
-  const TurnEncoderSnapshot &turnEncoderSnapshot() const { return turn_encoder_snapshot_; }
 
   /* 旋回の停止指令直前スナップショット（coast/stop を出す直前）。 */
   uint32_t lastTurnElapsedMs() const { return last_turn_elapsed_ms_; }
@@ -213,7 +203,6 @@ public:
    * 呼び出し側で開始値を控えて差分を取れば、reset なしで距離を測れる。 */
   int32_t leftEncoderCount() const;
   int32_t rightEncoderCount() const;
-  bool readEncoders(int32_t &left, int32_t &right) const;
   float leftRotationCount() const;
   float rightRotationCount() const;
   /* 開始時に控えた生カウントからの走行距離 [deg]（左右の絶対値平均）。
@@ -232,6 +221,12 @@ public:
                              int32_t target_deg, uint32_t step_ms);
 
 private:
+  float (*heading_reader_)() = nullptr;
+  float (*raw_heading_reader_)() = nullptr;
+  float readHeading() const;
+  float readRawHeading() const;
+  TurnEncoder180Snapshot turn_encoder180_;
+  void captureEncoder180(uint32_t ms, int32_t left, int32_t right, float gyro_delta);
   TurnDrift turn_drift_;
   static constexpr uint32_t TurnStepMs = 1U;
   /* その場旋回: 左右エンコーダ回転量を揃える P 補正
@@ -240,8 +235,8 @@ private:
   static constexpr int   TurnEncBalanceMaxCorr  = 30;
   static constexpr int   TurnEncBalanceMinPower = 12;
   static constexpr int32_t TurnEncBalanceDeadbandDeg = 0;
-  /* 左輪が強い機械差。旋回中の左パワーから常に引く（大きいほど左を弱める）。
-   * P は差が出てから切るので、左が先に進む癖はこれで先に殺す。 */
+  /* 旋回中の左パワー絶対値に加算する（正値が大きいほど左を強める）。
+   * 左右どちらの旋回でも適用し、加算後の上限は100。 */
   static constexpr int TurnLeftPowerTrim = 7;
 
   static int clampMotorPower(int power);
@@ -290,7 +285,6 @@ private:
   float   i_max_            = BalanceIntegralMax;
   float   deadband_deg_     = 0.0f;
 
-  TurnEncoderSnapshot turn_encoder_snapshot_;
   uint32_t last_turn_elapsed_ms_   = 0U;
   float    last_turn_gyro_acc_deg_ = 0.0f;
   int32_t  last_turn_enc_left_abs_  = 0;

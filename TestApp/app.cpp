@@ -69,7 +69,6 @@ void main_task(intptr_t unused)
   gArm.configure(arm_motor_port);
   gLineTracer.configure(left_motor_port, right_motor_port, color_sensor_port);
   gGyro.init();
-  sta_cyc(GYRO_FUSION_TASK_CYC);
 
   pup_device_t *force_sensor = pup_force_sensor_get_device(force_sensor_port);
   hub_speaker_set_volume(50);
@@ -133,14 +132,6 @@ extern "C" void StraightBalanceTask(intptr_t exinf)
 {
   (void)exinf;
   gMotors.tickCorrection();
-  ext_tsk();
-}
-
-/* 直進補正タスクの開始・停止とは独立し、停止中も残留biasを学習する。 */
-extern "C" void GyroFusionTask(intptr_t exinf)
-{
-  (void)exinf;
-  gGyro.updateFusion();
   ext_tsk();
 }
 

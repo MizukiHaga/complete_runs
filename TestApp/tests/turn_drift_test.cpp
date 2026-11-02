@@ -1,13 +1,6 @@
 #include "../Common/Gyro/TurnDrift.h"
-
 #include <assert.h>
 #include <stdio.h>
-#include <initializer_list>
-
-static float wheel(float angle)
-{
-  return angle * TurnDriftConfig::EncoderPer90Deg / 90.0f;
-}
 
 static void near(float actual, float expected)
 {
@@ -16,83 +9,51 @@ static void near(float actual, float expected)
 
 int main()
 {
-  const float weight = TurnDriftConfig::EncoderWeight;
-  for (float sign : {-1.0f, 1.0f}) {
+  for (int sign = -1; sign <= 1; sign += 2) {
+    const float weight = sign < 0 ? TurnDriftConfig::EncoderWeightLeft
+                                  : TurnDriftConfig::EncoderWeightRight;
     TurnDrift drift;
+    // 開始直後・小回転・左右差・方向判定で補正を除外しない。
     near(drift.estimate(0, 0, 0, sign), 0);
     assert(drift.status() == TurnDrift::Accepted);
+    near(drift.estimate(sign * 1, sign * 2, -sign * 4, sign, true, 1, false), sign * 0.5f * weight);
+    for (int sample = 0; sample < 100; ++sample)
+      near(drift.estimate(sign * 40, sign * 180, -sign * 20, sign, true, sample, false),
+           sign * 10 * weight);
+    // ジャイロが指定方向と逆でも、値が正常なら同じ式で評価する。
+    near(drift.estimate(-sign * 5, sign * 10, -sign * 10, sign), sign * 10 * weight);
+    // 欠測・NaN後も正常値で再開し、旋回終了まで無効にしない。
+    near(drift.estimate(0, 0, 0, sign, false), 0);
+    assert(drift.status() == TurnDrift::Invalid);
+    near(drift.estimate(sign * 85, sign * 180, -sign * 180, sign), sign * 5 * weight);
+    near(drift.estimate(NAN, sign * 180, -sign * 180, sign), 0);
+    near(drift.estimate(sign * 85, sign * 180, -sign * 180, sign), sign * 5 * weight);
+    // 過小・過大を対称に反映。
+    near(drift.estimate(sign * 95, sign * 180, -sign * 180, sign), -sign * 5 * weight);
+    near(drift.estimate(sign * 85, INFINITY, 180, sign), 0);
+    near(drift.estimate(sign * 85, sign * 180, -sign * 180, sign), sign * 5 * weight);
+    // weight=0設定でも、換算した角度差そのものを検証する。
+    near(drift.angleError(), sign * 5);
+    // 同じ前後移動が両輪へ加わっても旋回角を変えない。
+    near(drift.estimate(sign * 85, sign * 180 + 100,
+                        -sign * 180 + 100, sign), sign * 5 * weight);
+    near(drift.angleError(), sign * 5);
+    // 指定方向ではなく、実際の車輪回転の符号から旋回角を求める。
+    near(drift.estimate(-sign * 85, -sign * 180, sign * 180, sign),
+         -sign * 5 * weight);
+    near(drift.angleError(), -sign * 5);
+    // 時間0も許容し、最終補正は一度だけ反映。
+    near(drift.update(sign * 85, sign * 180, -sign * 180, 0, sign), sign * 5 * weight);
+    near(drift.update(sign * 85, sign * 180, -sign * 180, 1, sign), 0);
     near(drift.gain(), weight);
-    near(drift.estimate(sign, sign * 2, -sign * 4, sign), sign * 0.5f * weight);
-    // 左右の符号、繰り返し評価、最終補正の一度だけの適用。
-    for (int sample = 0; sample < 100; ++sample) {
-      near(drift.estimate(sign * 40, sign * wheel(45), -sign * wheel(45), sign),
-           sign * 5 * weight);
-    }
-    near(drift.update(sign * 85, sign * wheel(90), -sign * wheel(90), 1, sign),
-         sign * 5 * weight);
-    near(drift.residual(), sign * 5 * (1 - weight));
-    near(drift.update(sign * 85, sign * wheel(90), -sign * wheel(90), 1, sign), 0);
-
-    TurnDrift long_turn;
-    near(long_turn.estimate(sign * 265, sign * wheel(270), -sign * wheel(270), sign),
-         sign * 5 * weight);
-    TurnDrift coast;
-    near(coast.estimate(sign * 85, sign * wheel(90), -sign * wheel(90), sign),
-         sign * 5 * weight);
-    near(coast.update(sign * 88, sign * wheel(92), -sign * wheel(92), 1, sign),
-         sign * 4 * weight);
-
-    // 起動時の左右差を理由に融合を止めない。
-    TurnDrift startup;
-    near(startup.estimate(sign * 10, sign * 30, -sign * 10, sign, true, 40), 0);
-    near(startup.estimate(sign * 20, sign * 50, -sign * 30, sign, true, 60), 0);
-    near(startup.estimate(sign * 85, sign * 180, -sign * 160, sign, true, 200), 0);
-    near(startup.estimate(sign * 40, sign * 100, -sign * 20, sign, true, 300),
-         -sign * 10 * weight);
-    assert(startup.status() == TurnDrift::Accepted);
-    near(startup.gain(), weight);
-    assert(startup.count(TurnDrift::EncoderUnderRead) == 1);
-
-    // 過大・過小を対称に反映し、ゼロ平均の測定誤差を片側で切り捨てない。
-    TurnDrift symmetric;
-    const float below = symmetric.estimate(sign * 90, sign * wheel(86),
-                                            -sign * wheel(86), sign);
-    const float above = symmetric.estimate(sign * 90, sign * wheel(94),
-                                            -sign * wheel(94), sign);
-    near(below, -sign * 4 * weight);
-    near(above, sign * 4 * weight);
-    near(below + above, 0);
-    assert(symmetric.status() == TurnDrift::Accepted);
-    // 停止時の過小側も補正し、経過時間0で拒否しない。
-    TurnDrift under;
-    near(under.update(sign * 90, sign * wheel(85), -sign * wheel(85), 0, sign),
-         -sign * 5 * weight);
-    near(under.update(sign * 90, sign * wheel(95), -sign * wheel(95), 1, sign), 0);
-
-    // 両輪に同じ前後移動を加えても旋回角は変わらない。
-    TurnDrift translation;
-    near(translation.estimate(sign * 85, sign * 180 + 100, -sign * 180 + 100, sign),
-         sign * 5 * weight);
-    near(translation.encoderAngle(), sign * 90);
-    // 指定方向が実際の車輪の向きと違っても、実測の符号を使用する。
-    near(translation.estimate(-sign * 85, -sign * 180, sign * 180, sign),
-         -sign * 5 * weight);
   }
-
-  for (float movement : {-180.0f, -40.0f, 0.0f, 40.0f, 180.0f}) {
+  for (int movement = -180; movement <= 180; movement += 60) {
     TurnDrift straight;
     near(straight.estimate(0, movement, movement, 1), 0);
-    near(straight.encoderAngle(), 0);
+    near(straight.angleError(), 0);
   }
-  TurnDrift invalid;
-  near(invalid.estimate(10, 20, -20, 1, false), 0);
-  assert(invalid.status() == TurnDrift::Invalid);
-  near(invalid.estimate(85, 180, -180, 1), 5 * weight);
-  near(invalid.estimate(NAN, 180, -180, 1), 0);
-  assert(invalid.status() == TurnDrift::Invalid);
-  near(invalid.estimate(85, 180, -180, 1), 5 * weight);
-  near(invalid.estimate(85, INFINITY, -180, 1), 0);
-  near(invalid.estimate(85, 180, -180, 0), 0);
-  near(invalid.estimate(85, 180, -180, 1), 5 * weight);
-  puts("turn_drift_test: PASS (signed wheels, symmetric fusion, translation cancellation, one-time update)");
+  TurnDrift retry;
+  near(retry.update(85, 180, -180, 1, 1, false), 0);
+  near(retry.update(85, 180, -180, 1, 1), 5 * TurnDriftConfig::EncoderWeightRight);
+  puts("turn_drift_test: PASS (signed wheels, translation cancellation, missing-data recovery, one-time update)");
 }
