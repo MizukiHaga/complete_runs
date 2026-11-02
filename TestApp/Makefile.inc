@@ -70,3 +70,4 @@ INCLUDES     += -I$(mkfile_path)Scene/FixedRun
 APPL_CXXOBJS += Nansho3KYOKU.o Path.o
 APPL_DIRS += $(mkfile_path)Scene/Nansho3KYOKU
 INCLUDES += -I$(mkfile_path)Scene/Nansho3KYOKU
+

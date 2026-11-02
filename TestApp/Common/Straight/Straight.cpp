@@ -165,6 +165,16 @@ int32_t Straight::absEncoderDeg(int32_t count)
   return (count < 0) ? -count : count;
 }
 
+float Straight::readHeading() const
+{
+  return heading_reader_ ? heading_reader_() : gGyro.heading();
+}
+
+float Straight::readRawHeading() const
+{
+  return raw_heading_reader_ ? raw_heading_reader_() : gGyro.rawHeading();
+}
+
 void Straight::turnWheelMags(int base, int32_t enc_diff, int *l_mag, int *r_mag)
 {
   int l = base;
@@ -182,8 +192,8 @@ void Straight::turnWheelMags(int base, int32_t enc_diff, int *l_mag, int *r_mag)
         0, TurnEncBalanceMaxCorr);
     r = clampInt(base - corr, TurnEncBalanceMinPower, base);
   }
-  /* 左輪が先に進む機械差。P の前から左を弱める */
-  l = clampInt(l - TurnLeftPowerTrim, TurnEncBalanceMinPower, base);
+  /* 同調P補正後、左輪のパワー絶対値へ加算する。モータ上限は100。 */
+  l = clampInt(l + TurnLeftPowerTrim, TurnEncBalanceMinPower, 100);
   *l_mag = l;
   *r_mag = r;
 }
@@ -397,7 +407,7 @@ void Straight::applyWithCorrection(int left_power, int right_power)
         travel_sign * (tachoDeg(right_) - enc_bal_right_);
     error = static_cast<float>(tL - tR);
   } else {
-    error = Gyro::wrapDeg180(gGyro.heading() - target_heading_);
+    error = Gyro::wrapDeg180(readHeading() - target_heading_);
   }
 
   /* 不感帯: ジャイロの微小揺れで trim を出し続けない。
@@ -415,41 +425,33 @@ void Straight::applyWithCorrection(int left_power, int right_power)
 
   const float trim = kp_ * error + ki_ * integral_;
   int diff = (int)roundf(trim);
-  diff = clampInt(diff, -heading_trim_limit_, heading_trim_limit_);
-  const int dL = diff / 2;
-  const int dR = diff - dL;  /* |diff|==1 のとき片側に ±1 が残る */
-
-  /* error>0（右ずれ）→ 左旋回: 前進は L弱/R強、後退は L強/R弱（同じ式で負パワーが効く） */
-  int out_left  = left_power - dL;
+  diff = clampInt(diff, -MaxHeadingTrim, MaxHeadingTrim);
+  /* ヨー: error>0（右ずれ）→ 左旋回。前進は L弱/R強、後退は同じ式で負パワーが効く。
+   * エンコーダ: 左が進みすぎ → 進行方向の左マグを落とす（後退は符号を反転）。 */
+  const int signed_diff = encoder_straight_ ? travel_sign * diff : diff;
+  // 奇数の補正も、符号反転で左右の出力が入れ替わるように配分する。
+  const int dL = signed_diff > 0 ? (signed_diff + 1) / 2 : signed_diff / 2;
+  const int dR = signed_diff - dL;
+  int out_left = left_power - dL;
   int out_right = right_power + dR;
-
-  /* 片側がパワー上限に当たったときは、余った補正を反対側へ回す。 */
-  if (out_right > 100) {
-    out_left -= out_right - 100;
-    out_right = 100;
+  // 片輪だけを飽和させると補正差が失われる。両輪を同量ずらして差を保つ。
+  const int high = out_left > out_right ? out_left : out_right;
+  if (high > 100) {
+    out_left -= high - 100;
+    out_right -= high - 100;
   }
-  if (out_left < -100) {
-    out_right += out_left + 100;
-    out_left = -100;
+  const int low = out_left < out_right ? out_left : out_right;
+  if (low < -100) {
+    out_left += -100 - low;
+    out_right += -100 - low;
   }
-  if (out_left > 100) {
-    out_right += out_left - 100;
-    out_left = 100;
-  }
-  if (out_right < -100) {
-    out_left -= out_right + 100;
-    out_right = -100;
-  }
-  out_left = clampMotorPower(out_left);
-  out_right = clampMotorPower(out_right);
 
   if (correction_debug_) {
     if (++correction_debug_div_ >= 10U) {
       correction_debug_div_ = 0;
-            fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
-              "Heading tgt=%d cur=%d err=%d trim=%d diff=%d kp=%d -> L=%d R=%d\n",
-              (int)target_heading_, (int)gGyro.heading(), (int)error,
-              (int)trim, diff, (int)(kp_ * 100.0f), out_left, out_right);
+      printf("Heading tgt=%d cur=%d err=%d trim=%d diff=%d kp=%d -> L=%d R=%d\n",
+             (int)target_heading_, (int)readHeading(), (int)error,
+             (int)trim, diff, (int)(kp_ * 100.0f), out_left, out_right);
     }
   }
 
@@ -703,6 +705,13 @@ void Straight::stop()
   /* 目標角は残す（次 run で現在角を目標に掴み直さない） */
   pup_motor_set_power(left_, 0);
   pup_motor_set_power(right_, 0);
+}
+
+void Straight::brake()
+{
+  syncStoppedState();
+  if (left_ != nullptr) pup_motor_brake(left_);
+  if (right_ != nullptr) pup_motor_brake(right_);
 }
 
 bool Straight::encoderReached(int left_power, int right_power, int32_t target_deg)
@@ -1535,7 +1544,20 @@ void Straight::captureTurnStopSnapshot(uint32_t elapsed_ms, float gyro_acc,
   last_turn_gyro_acc_deg_  = gyro_acc;
   last_turn_enc_left_abs_  = left_abs;
   last_turn_enc_right_abs_ = right_abs;
-  last_turn_heading_deg_   = gGyro.heading();
+  last_turn_heading_deg_   = readHeading();
+}
+
+void Straight::captureEncoder180(uint32_t ms, int32_t left, int32_t right,
+                                 float gyro_delta)
+{
+  if (!turn_encoder180_.reached &&
+      0.5f * (fabsf(static_cast<float>(left)) + fabsf(static_cast<float>(right))) >= 180.0f) {
+    turn_encoder180_.reached = true;
+    turn_encoder180_.elapsed_ms = ms;
+    turn_encoder180_.left = left;
+    turn_encoder180_.right = right;
+    turn_encoder180_.gyro_delta = gyro_delta;
+  }
 }
 
 void Straight::turnToHeading(float target_heading, float tolerance_deg,
@@ -1545,6 +1567,7 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
                              int prefer_sign, bool encoder_drift_correction)
 {
   turn_drift_ = TurnDrift();
+  turn_encoder180_ = TurnEncoder180Snapshot();
   if (left_ == nullptr || right_ == nullptr) {
     return;
   }
@@ -1554,7 +1577,7 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
    * 残りが slow_approach_deg 以内なら低速（行き過ぎ防止）。
    * その場旋回は両輪逆符号（L+/R− または L−/R+）。
    * 左右のエンコーダ回転量が揃うようパワーを補正する。 */
-  const float start = gGyro.heading();
+  const float start = readHeading();
   const float delta = Gyro::wrapDeg180(target_heading - start);
   if (fabsf(delta) <= tolerance_deg) {
     captureTurnStopSnapshot(0U, 0.0f, 0, 0);
@@ -1594,43 +1617,52 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
   bool right_valid = false;
   const int32_t enc_l0 = tachoDeg(left_, &left_valid);
   const int32_t enc_r0 = tachoDeg(right_, &right_valid);
-  bool encoder_valid = left_valid && right_valid;
+  const bool encoder_base_valid = left_valid && right_valid;
+  bool encoder_valid = encoder_base_valid;
   const bool    prev_heading_correction = heading_correction_;
   /* 旋回中は直進ヨー補正を掛けない（ピボット指令を崩さない） */
   heading_correction_ = false;
 
   SYSTIM turn_start = 0;
   (void)get_tim(&turn_start); // TOPPERS システム時刻は us
-  float previous_raw = gGyro.rawHeading();
+  float previous_raw = readRawHeading();
   float gyro_traveled = 0.0f;
-  const bool fusion_enabled = encoder_drift_correction && TurnDriftConfig::Enabled;
+  const bool fusion_enabled = encoder_drift_correction && !heading_reader_ && TurnDriftConfig::Enabled;
   float enc_left = 0.0f;
   float enc_right = 0.0f;
-  bool direction_valid = true;
   uint32_t sample_ms = 0U;
   const auto read_turn_encoders = [&]() {
     bool lv = false;
     bool rv = false;
     const int32_t l = tachoDeg(left_, &lv) - enc_l0;
     const int32_t r = tachoDeg(right_, &rv) - enc_r0;
-    // 取得失敗は即時無効。逆方向の小さな揺れは別判定で許容する。
-    encoder_valid = encoder_valid && lv && rv;
-    direction_valid = turn_dir * l >= -TurnDriftConfig::ReverseWheelToleranceDeg &&
-                      turn_dir * r <= TurnDriftConfig::ReverseWheelToleranceDeg;
+    // 欠測した周期だけ除外し、次の正常取得で補正へ復帰する。
+    encoder_valid = encoder_base_valid && lv && rv;
     SYSTIM sample_time = 0;
     (void)get_tim(&sample_time);
     sample_ms = static_cast<uint32_t>((sample_time - turn_start) / 1000U);
-    enc_left = static_cast<float>(absEncoderDeg(l));
-    enc_right = static_cast<float>(absEncoderDeg(r));
+    enc_left = static_cast<float>(l);
+    enc_right = static_cast<float>(r);
   };
   uint32_t elapsed_ms = 0U;
   while (elapsed_ms < max_ms) {
-    debugHeading();
-    const float h = gGyro.heading();
-    traveled += turn_dir * Gyro::wrapDeg180(h - prev);
-    prev = h;
-
-    const float rem = need - traveled;
+    const float raw = readRawHeading();
+    if (!isfinite(raw) || !isfinite(previous_raw)) break;
+    // 周期差だけ wrap し、累積角は wrap しない（180°を超えても保持）。
+    gyro_traveled += Gyro::wrapDeg180(raw - previous_raw);
+    previous_raw = raw;
+    read_turn_encoders();
+    if (encoder_valid) {
+      captureEncoder180(sample_ms, static_cast<int32_t>(enc_left),
+                        static_cast<int32_t>(enc_right), gyro_traveled);
+    }
+    const float correction = fusion_enabled
+        ? turn_drift_.estimate(gyro_traveled, enc_left, enc_right, turn_dir,
+                               encoder_valid, sample_ms)
+        : 0.0f;
+    const float fused_angle = gyro_traveled + correction;
+    // 方向付きの累積角で残りを求め、180°越え・目標通過も連続に扱う。
+    const float rem = need - turn_dir * fused_angle;
     if (rem <= early) {
       break;
     }
@@ -1690,7 +1722,7 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
     // 惰性を含む最終角を同じ式で融合し、方位へ一度だけ反映する。
     for (uint32_t waited = 0; waited < TurnDriftConfig::SettleMs; ++waited) {
       dly_tsk(1000U);
-      const float raw = gGyro.rawHeading();
+      const float raw = readRawHeading();
       if (!isfinite(raw) || !isfinite(previous_raw)) {
         encoder_valid = false;
         break;
@@ -1699,31 +1731,189 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
       previous_raw = raw;
       read_turn_encoders();
       turn_drift_.estimate(gyro_traveled, enc_left, enc_right, turn_dir,
-                               encoder_valid, sample_ms, direction_valid);
+                               encoder_valid, sample_ms);
     }
     SYSTIM now = 0;
     (void)get_tim(&now);
     const float correction = turn_drift_.update(
         gyro_traveled, enc_left, enc_right,
         static_cast<float>(now - turn_start) * 1.0e-6f, turn_dir,
-        encoder_valid, direction_valid);
-    const float fused_heading = start + gyro_traveled + correction;
-    const float current_heading = gGyro.heading();
-    if (isfinite(fused_heading) && isfinite(current_heading)) {
-      gGyro.addHeadingCorrection(Gyro::wrapDeg180(fused_heading - current_heading));
+        encoder_valid);
+    // 異なる取得時刻の方位差で上書きせず、計算した補正量だけを反映する。
+    // 重み0では方位を変更しない（静定待機は同じ条件で維持）。
+    if (isfinite(correction) && correction != 0.0f) {
+      gGyro.addHeadingCorrection(correction);
     }
   }
   dly_tsk(TurnStepMs * 1000U);
 }
 
-void Straight::turnByAngle(float angle_deg, float tolerance_deg,
-                           int left_power, int right_power, uint32_t max_ms,
-                           float slow_approach_deg, int slow_power,
-                           float stop_early_deg, bool coast_end,
-                           int prefer_sign)
+void Straight::turnByEncoder(int32_t target_deg, bool left, int left_power,
+                             int right_power, uint32_t max_ms,
+                             int32_t slow_approach_deg, int slow_power,
+                             int32_t stop_early_deg, bool coast_end)
 {
-  const float target_heading = Gyro::wrapDeg180(angle_deg);
-  turnToHeading(target_heading, tolerance_deg, left_power, right_power,
-                max_ms, slow_approach_deg, slow_power, stop_early_deg,
-                coast_end, prefer_sign);
+  turn_drift_ = TurnDrift();
+  turn_encoder180_ = TurnEncoder180Snapshot();
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+
+  const int32_t need = absEncoderDeg(target_deg);
+  if (need <= 0) {
+    captureTurnStopSnapshot(0U, 0.0f, 0, 0);
+    if (coast_end) {
+      coast();
+    } else {
+      stop();
+    }
+    return;
+  }
+
+  const float   turn_dir = left ? -1.0f : 1.0f;
+  const int32_t early    = stop_early_deg;
+  const int32_t enc_l0   = tachoDeg(left_);
+  const int32_t enc_r0   = tachoDeg(right_);
+  const bool    prev_heading_correction = heading_correction_;
+  heading_correction_ = false;
+
+  SYSTIM encoder_turn_start = 0;
+  (void)get_tim(&encoder_turn_start);
+  float previous_raw = readRawHeading();
+  float gyro_traveled = 0.0f;
+  uint32_t elapsed_ms = 0U;
+  while (elapsed_ms < max_ms) {
+    const float raw = readRawHeading();
+    gyro_traveled += Gyro::wrapDeg180(raw - previous_raw);
+    previous_raw = raw;
+    bool lv = false, rv = false;
+    const int32_t l = tachoDeg(left_, &lv) - enc_l0;
+    const int32_t r = tachoDeg(right_, &rv) - enc_r0;
+    const int32_t l_abs = absEncoderDeg(l);
+    const int32_t r_abs = absEncoderDeg(r);
+    SYSTIM now = 0;
+    (void)get_tim(&now);
+    if (lv && rv) captureEncoder180(static_cast<uint32_t>((now - encoder_turn_start) / 1000U), l, r, gyro_traveled);
+    const int32_t rem   = need - ((l_abs + r_abs) / 2);
+    if (rem <= early) {
+      break;
+    }
+
+    int base = left_power;
+    if (right_power < base) {
+      base = right_power;
+    }
+    if (base < 0) {
+      base = -base;
+    }
+    if (slow_approach_deg > 0 && rem <= slow_approach_deg) {
+      base = slow_power;
+      if (base < 0) {
+        base = -base;
+      }
+    }
+    if (base < TurnEncBalanceMinPower) {
+      base = TurnEncBalanceMinPower;
+    }
+
+    const int32_t enc_diff = l_abs - r_abs;
+    int l_mag = 0;
+    int r_mag = 0;
+    turnWheelMags(base, enc_diff, &l_mag, &r_mag);
+
+    if (turn_dir > 0.0f) {
+      run(l_mag, -r_mag);
+    } else {
+      run(-l_mag, r_mag);
+    }
+
+    dly_tsk(TurnStepMs * 1000U);
+    elapsed_ms += TurnStepMs;
+  }
+
+  captureTurnStopSnapshot(
+      elapsed_ms, gyro_traveled,
+      absEncoderDeg(tachoDeg(left_) - enc_l0),
+      absEncoderDeg(tachoDeg(right_) - enc_r0));
+  heading_correction_ = prev_heading_correction;
+  if (coast_end) {
+    coast();
+  } else {
+    stop();
+  }
+  dly_tsk(TurnStepMs * 1000U);
+}
+
+void Straight::curveToHeading(float target_heading, int outer_power,
+                              int inner_power, uint32_t max_ms,
+                              float exit_accel_deg, int prefer_sign,
+                              bool stop_end)
+{
+  if (left_ == nullptr || right_ == nullptr) {
+    return;
+  }
+
+  correction_enabled_ = true;
+  const bool prev_heading_correction = heading_correction_;
+  heading_correction_ = false;
+
+  float current = readHeading();
+  const float delta = Gyro::wrapDeg180(target_heading - current);
+
+  float turn_dir;
+  if (prefer_sign > 0) {
+    turn_dir = 1.0f;
+  } else if (prefer_sign < 0) {
+    turn_dir = -1.0f;
+  } else {
+    turn_dir = (delta >= 0.0f) ? 1.0f : -1.0f;
+  }
+
+  float need;
+  if (turn_dir * delta >= 0.0f) {
+    need = fabsf(delta);
+  } else {
+    need = 360.0f - fabsf(delta);
+  }
+
+  float traveled = 0.0f;
+  float previous = current;
+  uint32_t elapsed_ms = 0U;
+
+  while (elapsed_ms < max_ms) {
+    current = readHeading();
+    traveled += turn_dir * Gyro::wrapDeg180(current - previous);
+    previous = current;
+    const float remaining = need - traveled;
+    if (remaining <= 2.0f) {
+      break;
+    }
+
+    int outer = outer_power;
+    int inner = inner_power;
+    if (exit_accel_deg > 0.0f && remaining <= exit_accel_deg) {
+      float ratio = (exit_accel_deg - remaining) / exit_accel_deg;
+      ratio = clampFloat(ratio, 0.0f, 1.0f);
+      outer = outer_power +
+              static_cast<int>(roundf((100 - outer_power) * ratio));
+      inner = inner_power +
+              static_cast<int>(roundf((100 - inner_power) * ratio));
+    }
+
+    outer = clampMotorPower(outer);
+    inner = clampMotorPower(inner);
+    if (turn_dir > 0.0f) {
+      applyWithCorrection(outer, inner);
+    } else {
+      applyWithCorrection(inner, outer);
+    }
+
+    dly_tsk(TurnStepMs * 1000U);
+    elapsed_ms += TurnStepMs;
+  }
+
+  heading_correction_ = prev_heading_correction;
+  if (stop_end) {
+    stop();
+  }
 }

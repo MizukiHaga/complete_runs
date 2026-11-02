@@ -37,6 +37,18 @@ extern "C" {
 
 class Straight {
 public:
+  // 別シーンのジャイロを使用する場合の読み出し先。未指定なら共通gGyro。
+  void setHeadingSource(float (*heading)(), float (*raw)()) {
+    heading_reader_ = heading;
+    raw_heading_reader_ = raw;
+  }
+  struct TurnEncoder180Snapshot {
+    bool reached = false;
+    uint32_t elapsed_ms = 0;
+    int32_t left = 0, right = 0; // 旋回開始からの符号付き回転量
+    float gyro_delta = 0.0f;
+  };
+  const TurnEncoder180Snapshot &turnEncoder180Snapshot() const { return turn_encoder180_; }
   static constexpr uint32_t DecelMs = 800U;
   static constexpr uint32_t DecelStepMs = 40U;
   static constexpr uint32_t MaxDurationMs = 4000000U;
@@ -106,6 +118,8 @@ public:
   void run(int left_power, int right_power, int32_t encoder_deg = 0,
            bool stop_end = true);
   void stop();
+  /* KYOKU用の互換API。Nansho3の旧制御からは呼ばない。 */
+  void brake();
   /* 左右モータのエンコーダ [deg] で直進／ピボットを終了する。 */
   void runFor(int left_power, int right_power, int32_t target_deg);
   /* 左右それぞれ指定 deg まで。先に着いた側は 0。 */
@@ -267,6 +281,12 @@ public:
                              int32_t target_deg, uint32_t step_ms);
 
 private:
+  float (*heading_reader_)() = nullptr;
+  float (*raw_heading_reader_)() = nullptr;
+  float readHeading() const;
+  float readRawHeading() const;
+  TurnEncoder180Snapshot turn_encoder180_;
+  void captureEncoder180(uint32_t ms, int32_t left, int32_t right, float gyro_delta);
   TurnDrift turn_drift_;
   static constexpr uint32_t TurnStepMs = 1U;
   /* その場旋回: 左右エンコーダ回転量を揃える P 補正
@@ -276,8 +296,8 @@ private:
 <<<<<<< HEAD
   static constexpr int   TurnEncBalanceMinPower = 12;
   static constexpr int32_t TurnEncBalanceDeadbandDeg = 0;
-  /* 左輪が強い機械差。旋回中の左パワーから常に引く（大きいほど左を弱める）。
-   * P は差が出てから切るので、左が先に進む癖はこれで先に殺す。 */
+  /* 旋回中の左パワー絶対値に加算する（正値が大きいほど左を強める）。
+   * 左右どちらの旋回でも適用し、加算後の上限は100。 */
   static constexpr int TurnLeftPowerTrim = 7;
 =======
   static constexpr int   TurnEncBalanceMinPower = 30;

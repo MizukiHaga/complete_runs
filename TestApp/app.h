@@ -26,8 +26,17 @@ extern "C" {
  *   8: FixedRun 完成（FixedRunComplete。ETROBO_COURSE_L で L/R）
  *   9: FixedRun 短縮（FixedRunShort。ETROBO_COURSE_L で L/R）
  * 試合前にここだけ変更する。 */
+/* Nansho3補正切替: 0=固定値（旧Honban）、1=エンコーダ＋ジャイロTurnDrift。
+ * 旋回・直進・距離・ゲートの設定は両モード共通。KFではない。 */
+#ifndef NANSHO3_USE_TURN_DRIFT
+#define NANSHO3_USE_TURN_DRIFT 1
+#endif
+#if NANSHO3_USE_TURN_DRIFT != 0 && NANSHO3_USE_TURN_DRIFT != 1
+#error "NANSHO3_USE_TURN_DRIFT must be 0 or 1"
+#endif
+
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 8
+#define ETROBO_SCENE 4
 #endif
 
 /* タスク優先度 */

@@ -14,6 +14,7 @@ private:
   enum class StopReason : char {
     Complete       = 'D',
     PlanFailed     = 'E',
+    PlanTimeout    = 'Q',
     TrackingFailed = 'F',
     CollisionRisk  = 'C',
     GyroJump       = 'G',
@@ -30,11 +31,12 @@ private:
 
   /* 現在姿勢と左右速度で短時間先を予測し、接触する指令を止める。 */
   bool isPredictedMotionSafe(kyoku::Pose pose, float left_speed,
-                             float right_speed, float wheel_track) const;
+                             float right_speed);
   void finishRun(StopReason reason);
 
   /* 経路は約96KiB。タスクのローカル変数ではなく、静的Sceneのメンバで保持。 */
   kyoku::Path path_;
+  kyoku::MotionRisk collision_risk_ = kyoku::MotionRisk::Safe;
 };
 
 #endif // NANSHO3_KYOKU_H

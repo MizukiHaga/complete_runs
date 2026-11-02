@@ -4,19 +4,14 @@
 #include <math.h>
 #include <stdint.h>
 
-/* CW正。両輪逆回転のその場旋回専用。 */
+/* CW正、車輪回転は前進正。符号付き左右差から旋回角を求める。 */
 namespace TurnDriftConfig {
 constexpr bool Enabled = true;
 constexpr float EncoderPer90Deg = 180.0f;
-constexpr float EncoderWeight = 0.159f;
+constexpr float EncoderWeightLeft = 0.15f;  // 左旋回(CCW)
+constexpr float EncoderWeightRight = 0.145f; // 右旋回(CW)
 constexpr uint32_t SettleMs = 80U;
-constexpr float MaxWheelMismatch = 0.35f;
-// エンコーダ量子化の影響が大きい走り出しだけジャイロを使う。
-constexpr float MinSampleEncoderDeg = 20.0f;
-constexpr float WheelDifferenceToleranceDeg = 4.0f;
-constexpr float ReverseWheelToleranceDeg = 4.0f;
-constexpr float ReverseGyroToleranceDeg = 2.0f;
-constexpr uint32_t MotionFaultConfirmMs = 20U;
+
 }
 
 class TurnDrift {
@@ -32,30 +27,18 @@ public:
                  bool direction_valid = true)
   {
     if (applied_) return total_;
-    if (faulted_) return 0.0f;
+    (void)sample_ms;
+    (void)direction_valid;
     gain_ = total_ = angle_error_ = residual_ = 0.0f;
     if (!encoder_valid || !isfinite(gyro_angle) || !isfinite(l) || !isfinite(r) ||
-        l < 0.0f || r < 0.0f || (direction != -1.0f && direction != 1.0f))
+        (direction != -1.0f && direction != 1.0f))
       return reject(Invalid);
-    const bool wrong_direction = !direction_valid ||
-        direction * gyro_angle < -TurnDriftConfig::ReverseGyroToleranceDeg;
-    // 大きな逆回転は暖機中でも確認する。小さな起動時の揺れは許容する。
-    if (wrong_direction) return motionFault(WrongDirection, sample_ms);
-    if (0.5f * (l + r) < TurnDriftConfig::MinSampleEncoderDeg) {
-      pending_ = false;
-      status_ = WarmingUp;
-      ++counts_[WarmingUp];
-      return 0.0f;
-    }
-    const float difference = fabsf(l-r);
-    if (difference > TurnDriftConfig::WheelDifferenceToleranceDeg &&
-        difference / fmaxf(l,r) > TurnDriftConfig::MaxWheelMismatch)
-      return motionFault(WheelMismatch, sample_ms);
-    pending_ = false;
-    const float enc_angle = direction * 0.5f * (l+r) *
+    const float enc_angle = 0.5f * (l-r) *
                             90.0f / TurnDriftConfig::EncoderPer90Deg;
     angle_error_ = enc_angle - gyro_angle;
-    gain_ = TurnDriftConfig::EncoderWeight;
+    // 旋回指令の向きで重みを選ぶ。車輪角の符号は実測値を維持する。
+    gain_ = direction < 0.0f ? TurnDriftConfig::EncoderWeightLeft
+                             : TurnDriftConfig::EncoderWeightRight;
     total_ = gain_ * angle_error_;
     residual_ = angle_error_ - total_;
     status_ = Accepted;
@@ -68,11 +51,11 @@ public:
                bool encoder_valid = true, bool direction_valid = true)
   {
     if (applied_) return 0.0f;
-    if (!isfinite(elapsed) || elapsed <= 0.0f) return reject(Invalid);
+    (void)elapsed;
     const float correction = estimate(gyro_angle, l, r, direction, encoder_valid,
-                                      static_cast<uint32_t>(elapsed * 1000.0f),
+                                      0U,
                                       direction_valid);
-    applied_ = true;
+    applied_ = status_ == Accepted;
     return correction;
   }
   float gain() const { return gain_; }
@@ -83,31 +66,13 @@ public:
   Status status() const { return status_; }
   uint32_t count(Status status) const { return counts_[status]; }
 private:
-  float motionFault(Status status, uint32_t sample_ms) {
-    if (!pending_ || pending_status_ != status) {
-      pending_ = true;
-      pending_status_ = status;
-      pending_since_ms_ = sample_ms;
-    }
-    if (sample_ms - pending_since_ms_ >= TurnDriftConfig::MotionFaultConfirmMs)
-      return reject(status);
-    // 確認中は一時的にジャイロだけを使い、正常復帰を許す。
-    status_ = WarmingUp;
-    ++counts_[WarmingUp];
-    return 0.0f;
-  }
-  bool pending_ = false;
-  Status pending_status_ = WarmingUp;
-  uint32_t pending_since_ms_ = 0U;
   float reject(Status status) {
     status_ = status;
     ++counts_[status];
-    faulted_ = true; // 同じ旋回中はジャイロへ切り替えたままにする。
     gain_ = total_ = 0.0f;
     return 0.0f;
   }
   bool applied_ = false;
-  bool faulted_ = false;
   float gain_ = 0.0f;
   float total_ = 0.0f;
   float angle_error_ = 0.0f;
@@ -116,7 +81,9 @@ private:
   uint32_t counts_[StatusCount] = {};
 };
 static_assert(TurnDriftConfig::EncoderPer90Deg > 0.0f, "encoder scale must be positive");
-static_assert(TurnDriftConfig::EncoderWeight >= 0.0f &&
-              TurnDriftConfig::EncoderWeight <= 1.0f, "weight must be in [0,1]");
-static_assert(TurnDriftConfig::MaxWheelMismatch > 0.0f, "wheel threshold must be positive");
+static_assert(TurnDriftConfig::EncoderWeightLeft >= 0.0f &&
+              TurnDriftConfig::EncoderWeightLeft <= 1.0f &&
+              TurnDriftConfig::EncoderWeightRight >= 0.0f &&
+              TurnDriftConfig::EncoderWeightRight <= 1.0f,
+              "left/right weights must be in [0,1]");
 #endif

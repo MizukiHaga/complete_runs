@@ -19,6 +19,28 @@ extern Nansho3KYOKUScene    gNansho3KYOKU;
 
 namespace {
 
+struct PlanningClock {
+  SYSTIM start;
+  SYSTIM last_yield;
+};
+
+/* 経路探索の途中でも時間上限を調べ、Hubの他タスクへ実行を譲る。 */
+bool keepPlanning(void *context)
+{
+  using namespace kyoku_settings;
+  PlanningClock &clock = *static_cast<PlanningClock *>(context);
+  SYSTIM now;
+  if (get_tim(&now) != E_OK ||
+      now - clock.start >= static_cast<SYSTIM>(PlanTimeoutMs) * 1000U) {
+    return false;
+  }
+  if (now - clock.last_yield >= static_cast<SYSTIM>(PlanYieldIntervalMs) * 1000U) {
+    dly_tsk(1000U);
+    clock.last_yield = now;
+  }
+  return true;
+}
+
 /* 目標速度を1周期あたりの加減速上限以内で更新する。 */
 float approachSpeed(float current_speed, float target_speed, float max_change)
 {
@@ -35,15 +57,11 @@ void Nansho3KYOKUScene::runInitialApproach()
 
   gMotors.setHeadingCorrection(true);
   gMotors.setEncoderStraightBalance(false);
-  sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
-
-  /* 新しいインスタンスを使い、既存gNansho3の実行状態を引き継がない。 */
+  /* 新しいインスタンスで初期動作とログ接続待ちを共用する。 */
   Nansho3Scene initial_scene;
-  initial_scene.testInitialTrace();
-  initial_scene.initialRun(/*continue_after=*/false);
+  initial_scene.runInitialTest();
 
   dly_tsk(InitialSettleMs * 1000U);
-  stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
 }
 
 bool Nansho3KYOKUScene::planRallyPath(const kyoku::Config &config)
@@ -51,26 +69,26 @@ bool Nansho3KYOKUScene::planRallyPath(const kyoku::Config &config)
   using namespace kyoku_settings;
 
   hub_display_char('P');
-  return path_.plan(config, Start, Gates, Finish);
+  PlanningClock clock;
+  if (get_tim(&clock.start) != E_OK) {
+    return false;
+  }
+  clock.last_yield = clock.start;
+  kyoku::Gate rally_gates[3];
+  gates(rally_gates, ETROBO_COURSE_L != 0);
+  return path_.plan(config, Start, rally_gates,
+                    finishPose(ETROBO_COURSE_L != 0), keepPlanning, &clock);
 }
 
 bool Nansho3KYOKUScene::isPredictedMotionSafe(
-    kyoku::Pose pose, float left_speed, float right_speed,
-    float wheel_track) const
+    kyoku::Pose pose, float left_speed, float right_speed)
 {
   using namespace kyoku_settings;
 
-  const float step_sec = PredictionStepMs / 1000.0f;
-  const float yaw_rate = (right_speed - left_speed) / wheel_track;
-  for (int step = 0; step < PredictionStepCount; ++step) {
-    const float next_yaw = pose.yaw + yaw_rate * step_sec;
-    pose = kyoku::odometry(pose, left_speed * step_sec,
-                            right_speed * step_sec, next_yaw);
-    if (!path_.safe(pose, PredictionExtraMarginMm)) {
-      return false;
-    }
-  }
-  return true;
+  collision_risk_ = path_.predictMotion(pose, left_speed, right_speed,
+                                       PredictionStepMs / 1000.0f,
+                                       PredictionStepCount, PredictionExtraMarginMm);
+  return collision_risk_ == kyoku::MotionRisk::Safe;
 }
 
 Nansho3KYOKUScene::StopReason Nansho3KYOKUScene::followRallyPath(
@@ -160,7 +178,7 @@ Nansho3KYOKUScene::StopReason Nansho3KYOKUScene::followRallyPath(
 
     /* 4) 接触予測と停滞を確認してからモータへ出力する。 */
     if (!isPredictedMotionSafe(pose, left_target_speed,
-                               right_target_speed, config.track)) {
+                               right_target_speed)) {
       return StopReason::CollisionRisk;
     }
     const bool commanded_to_move =
@@ -184,14 +202,29 @@ Nansho3KYOKUScene::StopReason Nansho3KYOKUScene::followRallyPath(
 
 void Nansho3KYOKUScene::finishRun(StopReason reason)
 {
-  gMotors.stop();
+  if (reason == StopReason::CollisionRisk) {
+    gMotors.brake();
+  } else {
+    gMotors.stop();
+  }
   hub_display_char(static_cast<char>(reason));
   if (reason == StopReason::PlanFailed) {
     hub_speaker_play_tone(kyoku_settings::PlanErrorToneHz,
                           kyoku_settings::PlanErrorToneMs);
   }
+  gGyro.setRateHeading(false);
   gMotors.setHeadingCorrection(true);
   sta_cyc(STRAIGHT_BALANCE_TASK_CYC);
+  if (reason == StopReason::CollisionRisk) {
+    /* 停止後だけ詳細を表示する。走行中の制御を表示待ちで止めない。 */
+    for (int repeat = 0; repeat < 3; ++repeat) {
+      hub_display_char('C');
+      dly_tsk(700000U);
+      hub_display_number(static_cast<int8_t>(collision_risk_));
+      dly_tsk(700000U);
+    }
+    hub_display_char('C');
+  }
 }
 
 void Nansho3KYOKUScene::run()
@@ -202,9 +235,10 @@ void Nansho3KYOKUScene::run()
   /* 従来のapp.cppの押す→離すを受け、低速LTから開始する。 */
   runInitialApproach();
 
-  const kyoku::Config config = kyoku_settings::config();
+  const kyoku::Config config = kyoku_settings::config(ETROBO_COURSE_L != 0);
   if (!planRallyPath(config)) {
-    finishRun(StopReason::PlanFailed);
+    finishRun(path_.planningCancelled() ? StopReason::PlanTimeout
+                                        : StopReason::PlanFailed);
     return;
   }
   finishRun(followRallyPath(config));
