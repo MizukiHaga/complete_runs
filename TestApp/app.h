@@ -1,111 +1,3 @@
-/*
-仏説摩訶般若波羅蜜多心経
-観自在菩薩
-
-行深般若波羅蜜多時
-
-照見五蘊皆空
-
-度一切苦厄
-
-舎利子
-
-色不異空
-
-空不異色
-
-色即是空
-
-空即是色
-
-受想行識
-
-亦復如是
-
-舎利子
-
-是諸法空相
-
-不生不滅
-
-不垢不浄
-
-不増不減
-
-是故空中
-
-無色無受想行識
-
-無眼耳鼻舌身意
-
-無色声香味触法
-
-無眼界乃至無意識界
-
-無無明
-
-亦無無明尽
-
-乃至無老死
-
-亦無老死尽
-
-無苦集滅道
-
-無智亦無得
-
-以無所得故
-
-菩提薩埵
-
-依般若波羅蜜多故
-
-心無罣礙
-
-無罣礙故
-
-無有恐怖
-
-遠離一切顛倒夢想
-
-究竟涅槃
-
-三世諸仏
-
-依般若波羅蜜多故
-
-得阿耨多羅三藐三菩提
-
-故知般若波羅蜜多
-
-是大神呪
-
-是大明呪
-
-是無上呪
-
-是無等等呪
-
-能除一切苦
-
-真実不虚
-
-故説般若波羅蜜多呪
-
-即説呪曰
-
-羯諦
-
-羯諦
-
-波羅羯諦
-
-波羅僧羯諦
-
-菩提薩婆訶
-
-般若心経
-*/
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -159,8 +51,9 @@ extern "C" {
 #define FIXEDRUN_PRIORITY         12 /* FixedRunタスク */
 
 /* タスク周期の定義 */
-#define LINE_TRACER_PERIOD       (5 * 1000) /* ライントレースタスク:5msec周期 */
+#define LINE_TRACER_PERIOD       ( 5 * 1000) /* ライントレースタスク:5msec周期 */
 #define STRAIGHT_BALANCE_PERIOD  ( 10 * 1000) /* Straight PID 補正タスク:10msec周期 */
+#define GYRO_UPDATE_PERIOD       ( 5 * 1000) /* ジャイロ更新タスク:5msec周期 */
 
 #ifndef STACK_SIZE
 #define STACK_SIZE      (4096)
@@ -199,6 +92,7 @@ extern void Nansho3KYOKUTask(intptr_t exinf);
 extern void TestTask(intptr_t exinf);
 extern void StraightBalanceTask(intptr_t exinf);
 extern void FixedRunTask(intptr_t exinf);
+extern void GyroUpdateTask(intptr_t exinf);
 
 #endif /* TOPPERS_MACRO_ONLY */
 

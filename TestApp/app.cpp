@@ -1,9 +1,6 @@
 #include "kernel_cfg.h"
 #include "app.h"
 #include <stdio.h>
-#include <serial/newlib.h>
-#include <serial/serial.h>
-#include <cstdio>
 #include "LineTracer.h"
 #include "Nansho1.h"
 #include "Nansho2.h"
@@ -24,9 +21,13 @@ extern "C" {
 #include <spike/pup/forcesensor.h>
 #include <spike/hub/battery.h>
 #include <spike/hub/speaker.h>
+#include <serial/newlib.h>
+#include <serial/serial.h>
+#include <syssvc/serial.h>
 }
 
 /* === Common インスタンス === */
+FILE *gBluetoothOut = nullptr;
 Straight   gMotors;
 LineTracer gLineTracer;
 ColorHSV   gColorHSV;
@@ -62,13 +63,29 @@ void main_task(intptr_t unused)
   (void)unused;
 
   gMotors.configure(left_motor_port, right_motor_port);
+  /* デバッグ出力を使うときだけ PowerShell 用の Bluetooth シリアルを開く。 */
+  if (gMotors.isDebugEnabled()) {
+    serial_opn_por(SIO_BLUETOOTH_PORTID);
+    gBluetoothOut = serial_open_newlib_file(SIO_BLUETOOTH_PORTID);
+  }
   gColorHSV.configure(color_sensor_port);
   gColorLAB.configure(color_sensor_port);
   gColorRGB.configure(color_sensor_port);
   gSonic.configure(ultrasonic_port);
   gArm.configure(arm_motor_port);
+  if (!gArm.isConfigured()) {
+    printf("Arm: configuration failed; driving will not start\n");
+    hub_speaker_play_tone(400, 500);
+    ext_tsk();
+    return;
+  }
   gLineTracer.configure(left_motor_port, right_motor_port, color_sensor_port);
   gGyro.init();
+  /* 詳細ログは走行タスクを止める可能性があるため、シーン側で必要時だけ有効化する。 */
+  gMotors.setDebug(false);
+  // センサーの値を取るための周期タスクを起動する。
+  // 起動すると偶に異常終了する
+  gMotors.setHeadingDebug(false);
 
   pup_device_t *force_sensor = pup_force_sensor_get_device(force_sensor_port);
   hub_speaker_set_volume(50);
@@ -85,15 +102,10 @@ void main_task(intptr_t unused)
 
 #if ETROBO_SCENE == 0
   gHCR.configure_hrc(left_motor_port, right_motor_port, color_sensor_port);
-<<<<<<< HEAD
   // gHCR.run_hrc();
-  gHCR.AllLineTrace();
-  act_tsk(NANSHO1_TASK);
-=======
-  gHCR.run_hrc();
   // gHCR.AllLineTrace();
-  // act_tsk(NANSHO1_TASK);
->>>>>>> 218edf0 (AddRotationRun)
+  // gHCR.StraightRotation(100, 3.0f, 3.0f, 0.6f);  // gHCR.LineTraceRotationCheck(1.0f);
+  act_tsk(NANSHO1_TASK);
 #elif ETROBO_SCENE == 1 || ETROBO_SCENE == 5
   act_tsk(NANSHO1_TASK);
 #elif ETROBO_SCENE == 2
@@ -146,5 +158,10 @@ extern "C" void FixedRunTask(intptr_t exinf)
   FixedRunComplete scene;
 #endif
   scene.run();
+}
+extern "C" void GyroUpdateTask(intptr_t exinf)
+{
+  (void)exinf;
+  gGyro.update();
   ext_tsk();
 }

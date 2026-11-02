@@ -79,23 +79,38 @@ public:
    * i_max: 積分項クランプ上限 [deg] (省略時 BalanceIntegralMax)。
    * deadband_deg: |error| がこの以内なら P=0・I を減衰（省略時は不感帯なし）。 */
   void setBalancePid(float kp, float ki, float i_max = BalanceIntegralMax,
-                     float deadband_deg = 0.0f);
+                     float deadband_deg = 0.0f, float kd = 0.0f);
+  void setHeadingTrimLimit(int limit);
+  void setHeadingRunPowerScale(float scale);
+  void setHeadingCorrectionScale(float scale);
 
   /* シリアルに tgt/cur/err/trim/L/R を出す（調整用）。 */
   void setCorrectionDebug(bool enabled) { correction_debug_ = enabled; }
+  void setSyncDebug(bool enabled);
+  void setDebug(bool enabled);
+  bool isDebugEnabled() const { return correction_debug_ || sync_debug_; }
+  void setHeadingDebug(bool enabled);
+  void shutdownDebugOutput();
+  void setHeadingDebugPhase(const char *phase);
+  /* Bluetooth シリアルへ現在のヨー角を定期出力する。 */
+  void debugHeading();
 
   /* ヨー角 PI 直進補正の有効/無効。false なら 1:1 直進も open-loop。
    * stop() とは別（stop 中の出力抑止は correction_enabled_ 側）。 */
   void setHeadingCorrection(bool enabled);
 
+<<<<<<< HEAD
   /* true: 1:1 直進の補正をヨー角ではなく左右エンコーダ差にする。
    * 誤差 = 進行方向の (左進み − 右進み) [deg]。左が進みすぎなら左を弱くする。
    * ゲインは setBalancePid の Kp/Ki。false のときは従来のヨー PI。 */
   void setEncoderStraightBalance(bool enabled);
 
   static constexpr uint32_t EncoderStepMs      = 5U;
+=======
+  static constexpr uint32_t EncoderStepMs      = 1U;
+>>>>>>> 3166f3a (Nansyo2_kimeuti)
   /* エンコーダ未到達時の安全打ち切り [ms]（距離制御には使わない） */
-  static constexpr uint32_t EncoderRunMaxMs    = 5000U;
+  static constexpr uint32_t EncoderRunMaxMs    = 8000U;
 
   /* encoder_deg>0 なら、開始時点からの左右エンコーダ平均 [deg] で終了。
    * 0 以下は指令だけ出して戻る（従来どおり）。ヨー補正は掛けたまま。
@@ -119,6 +134,51 @@ public:
                        float left_rotations, float right_rotations);
   void runForRotationsSameTime(int left_power, int right_power,
                                float left_rotations, float right_rotations);
+  void runForRotationsSameTime(float left_power, float right_power,
+                               float left_rotations, float right_rotations);
+  bool runForRotationsSameTimeWithHeading(float left_power, float right_power,
+                                          float left_rotations,
+                                          float right_rotations,
+                                          bool stop_at_end = true,
+                                          float tolerance_deg = 1.0f);
+  /* 最低回転数まで目標角を補正し、最大回転数以内の到達を保証する。
+   * pivot_min_power は補正旋回中に下回らない最低パワー。 */
+  bool runForRotationsUntilHeading(float left_power, float right_power,
+                                   float left_rotations, float right_rotations,
+                                   float target_heading,
+                                   float tolerance_deg = 1.0f,
+                                   float min_left_rotations = 0.0f,
+                                   float min_right_rotations = 0.0f,
+                                   bool pivot_on_failure = false,
+                                   int pivot_min_power = 40,
+                                   uint32_t pivot_max_ms = 3000U);
+  /* gGyro.reset() を 0°とした angle_deg へ、その場で旋回する。 */
+  void turnByAngle(float angle_deg, float tolerance_deg = 1.0f,
+                   int left_power = 40, int right_power = 40,
+                   uint32_t max_ms = 3000U,
+                   float slow_approach_deg = 30.0f,
+                   int slow_power = 33, float stop_early_deg = 0.0f,
+                   bool coast_end = false, int prefer_sign = 0);
+  /* 指定回転数を走り切った後、gGyro.reset() 基準の角度を補正する。
+   * allow_negative_power が false の場合、初期走行のパワーを正値に制限する。
+   * pivot_min_power は未達時の補正旋回で下回らない最低パワー。 */
+  bool runForRotationsUntilAngle(
+      float left_power, float right_power,
+      float left_rotations, float right_rotations,
+      float angle_deg, float tolerance_deg = 1.0f,
+      bool pivot_on_failure = false, int pivot_min_power = 40,
+      uint32_t pivot_max_ms = 3000U,
+      bool allow_negative_power = true);
+  /* 難所2の決め打ち走行用。通常の旋回制御と呼び出し経路を分離する。 */
+  bool runForRotationsUntilAngleNansho2Kimeuti(
+      float left_power, float right_power,
+      float left_rotations, float right_rotations,
+      float angle_deg, float tolerance_deg = 1.0f,
+      bool pivot_on_failure = false, int pivot_min_power = 40,
+      uint32_t pivot_max_ms = 3000U,
+      bool allow_negative_power = true);
+  void runBalancedRotationsSameTime(int left_power, int right_power,
+                                    float left_rotations, float right_rotations);
   /* 指定時間 [ms] 走行して台形減速停止（後退など時間制御向け）。
    * decel_ms: 終端でパワーを線形に落とす時間。省略時は DecelMs。
    * step_ms: 減速の更新間隔。大きいほど 1 段の減少幅が大きい。 */
@@ -233,11 +293,16 @@ private:
    * （機械差で片輪だけ進むと並進成分が出るため） */
   static constexpr float TurnEncBalanceKp       = 2.5f;
   static constexpr int   TurnEncBalanceMaxCorr  = 30;
+<<<<<<< HEAD
   static constexpr int   TurnEncBalanceMinPower = 12;
   static constexpr int32_t TurnEncBalanceDeadbandDeg = 0;
   /* 旋回中の左パワー絶対値に加算する（正値が大きいほど左を強める）。
    * 左右どちらの旋回でも適用し、加算後の上限は100。 */
   static constexpr int TurnLeftPowerTrim = 7;
+=======
+  static constexpr int   TurnEncBalanceMinPower = 30;
+  static constexpr int32_t TurnEncBalanceDeadbandDeg = 2;
+>>>>>>> 3166f3a (Nansyo2_kimeuti)
 
   static int clampMotorPower(int power);
   static int clampInt(int value, int min_value, int max_value);
@@ -251,11 +316,21 @@ private:
 
   void setPowerRaw(int left_power, int right_power);
   void applyWithCorrection(int left_power, int right_power);
+  void resetEncoderCountNoBrake();
   void resetCorrection();
   void syncStoppedState();
   bool encoderReached(int left_power, int right_power, int32_t target_deg);
+<<<<<<< HEAD
   void captureTurnStopSnapshot(uint32_t elapsed_ms, float gyro_acc,
                                int32_t left_abs, int32_t right_abs);
+=======
+  void runForEachSynchronized(int left_power, int right_power,
+                              int32_t left_target_deg,
+                              int32_t right_target_deg);
+  void runForEachSynchronizedFractional(float left_power, float right_power,
+                                        int32_t left_target_deg,
+                                        int32_t right_target_deg);
+>>>>>>> 3166f3a (Nansyo2_kimeuti)
 
   pup_motor_t *left_ = nullptr;
   pup_motor_t *right_ = nullptr;
@@ -274,22 +349,23 @@ private:
   bool    cmd_initialized_  = false;
   bool    correction_enabled_ = true;
   bool    heading_correction_ = true;
-  bool    encoder_straight_   = false;
+  bool    allow_heading_correction_for_ratio_ = false;
   bool    correction_debug_   = false;
-  int32_t enc_bal_left_       = 0;
-  int32_t enc_bal_right_      = 0;
+  bool    sync_debug_         = false;
+  bool    heading_debug_enabled_ = false;
+  const char *heading_debug_phase_ = "idle";
   bool    manual_target_heading_ = false;
   uint8_t correction_debug_div_ = 0;
+  uint8_t sync_debug_div_       = 0;
+  uint8_t heading_debug_div_    = 0;
   float   kp_               = DefaultBalanceKp;
   float   ki_               = DefaultBalanceKi;
+  float   kd_               = 0.0f;
+  float   heading_correction_scale_ = 1.0f;
   float   i_max_            = BalanceIntegralMax;
   float   deadband_deg_     = 0.0f;
-
-  uint32_t last_turn_elapsed_ms_   = 0U;
-  float    last_turn_gyro_acc_deg_ = 0.0f;
-  int32_t  last_turn_enc_left_abs_  = 0;
-  int32_t  last_turn_enc_right_abs_ = 0;
-  float    last_turn_heading_deg_  = 0.0f;
+  int     heading_trim_limit_ = MaxHeadingTrim;
+  float   heading_run_power_scale_ = 1.0f;
 };
 
 #endif  // TESTAPP_STRAIGHT_H_

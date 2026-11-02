@@ -176,9 +176,11 @@ private:
   static constexpr uint32_t FinalSlowTraceMs     = 700U;
   static constexpr float    FinalSlowTraceKp     = 0.30f;
   static constexpr float    FinalSlowTraceKi     = 0.01f;
-  static constexpr float    FinalSlowTraceKd     = 0.8f;
+  static constexpr float    FinalSlowTraceKd     = 0.f;
   static constexpr float    FinalSlowTraceOutMax = 100.0f;
   static constexpr float    FinalSlowTraceScale  = 1.0f;
+  /* 低速LT後の通常速度LT。青判定はこの区間では行わない。 */
+  static constexpr uint32_t FinalBlueTraceCruiseMs = 200U;
   /* 本線 LT（SKYBLUE/BLUE 検知で終了）。 */
   static constexpr float    FinalBlueTracePower             = 80.0f;
   static constexpr float    FinalBlueTraceKp                = 0.45f;
