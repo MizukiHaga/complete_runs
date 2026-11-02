@@ -380,8 +380,8 @@ private:
     static constexpr float motor_speed = 100.0f;
     static constexpr float motor_speed_slow = 50.0f;
     /* 0°から±90°へ旋回する主速度。左右の符号はコースに合わせる。 */
-    static constexpr float turn_speed_r = ETROBO_COURSE_L ? -50.0f : 50.0f;
-    static constexpr float turn_speed_l = ETROBO_COURSE_L ? 50.0f : -50.0f;
+    static constexpr float turn_speed_r = ETROBO_COURSE_L ? -40.0f : 40.0f;
+    static constexpr float turn_speed_l = ETROBO_COURSE_L ? 40.0f : -40.0f;
     static constexpr float heading_90 = ETROBO_COURSE_L ? 90.0f : -90.0f;
     static constexpr float heading_180 = 180.0f;
     static constexpr float heading_100_rotation = 9.5f;
@@ -391,17 +391,17 @@ private:
     static constexpr float turn_90_r = ETROBO_COURSE_L ? 0.0f : 0.5f;
     static constexpr float turn_90_l = ETROBO_COURSE_L ? 0.5f : 0.0f;
     static constexpr float heading_90_diff = ETROBO_COURSE_L ? 89.7f : -89.7f;
-    static constexpr float HeadingRunKp = 4.0f;
-    static constexpr float HeadingRunKi = 0.8f;
-    static constexpr float HeadingRunKd = 0.0f;
+    static constexpr float HeadingRunKp = 2.8f;
+    static constexpr float HeadingRunKi = 0.08f;
+    static constexpr float HeadingRunKd = 0.5f;
     static constexpr float HeadingRunIntegralMax = 30.0f;
     static constexpr int HeadingRunTrimLimit = 100;
     static constexpr float HeadingRunPowerScale = 3.0f;
     
-    static constexpr float Heading90RunKp = 3.5f;
+    static constexpr float Heading90RunKp = 2.8f;
     static constexpr float Heading90RunKi = 1.0f;
     static constexpr float Heading90RunKd = 0.0f;
-    static constexpr float Heading90RunCorrectionScale = 5.7f;
+    static constexpr float Heading90RunCorrectionScale = 2.0f;
 
     static constexpr float Heading90RunIntegralMax = 30.0f;
     static constexpr float Heading90RunPowerScale = 0.9f;

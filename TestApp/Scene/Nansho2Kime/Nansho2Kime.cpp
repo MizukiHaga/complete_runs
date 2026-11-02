@@ -936,10 +936,12 @@ void Nansho2KimeScene::run()
         heading_90,    // gGyro.reset()基準の目標角
         1.0f,          // 許容誤差
         true,          // 未達ならピボット補正
-        40.0f,            // 最低補正旋回パワー
+        35.0f,            // 最低補正旋回パワー
         5000U,          // 補正最大時間
         true
       );
+      gMotors.stop();
+      dly_tsk(3000 * 1000U);
       gMotors.setTargetHeading(heading_90);
       gMotors.setBalancePid(Heading90RunKp, Heading90RunKi,
                             Heading90RunIntegralMax, 0.0f,
@@ -949,9 +951,9 @@ void Nansho2KimeScene::run()
       gMotors.setHeadingDebugPhase(
           "Straight::runForRotationsSameTimeWithHeading(initial)");
       gMotors.runForRotationsSameTimeWithHeading(
-          motor_speed, motor_speed,
+          turn_speed_l, turn_speed_r,
           HeadingRunInitialRotations, HeadingRunInitialRotations,
-          true, 0.3f);
+          true, 0.3f, 35.0f);
       gMotors.runForRotationsSameTimeWithHeading(
           motor_speed, motor_speed,
           heading_100_rotation - HeadingRunInitialRotations,
@@ -969,7 +971,7 @@ void Nansho2KimeScene::run()
         180.0f,    // gGyro.reset()基準の目標角
         1.0f,          // 許容誤差
         true,          // 未達ならピボット補正
-        40.0f,            // 最低補正旋回パワー
+        30.0f,            // 最低補正旋回パワー
         5000U,          // 補正最大時間
         true
       );

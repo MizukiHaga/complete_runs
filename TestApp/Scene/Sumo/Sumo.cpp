@@ -160,7 +160,7 @@ extern "C" void SumoTask(intptr_t exinf){
   /* Nansho2 以降は既定どおりヨー角 PI 補正を使う */
   gMotors.setHeadingCorrection(true);
 
-#if ETROBO_SCENE == 0
+#if ETROBO_SCENE == 0 || ETROBO_SCENE == 1
   gMotors.stop();
   gLineTracer.setEnabled(false);
   dly_tsk(50 * 1000U);

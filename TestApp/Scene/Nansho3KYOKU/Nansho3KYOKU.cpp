@@ -15,7 +15,6 @@
 extern Straight            gMotors;
 extern Gyro                gGyro;
 extern LineTracer          gLineTracer;
-extern Nansho3KYOKUScene    gNansho3KYOKU;
 
 namespace {
 
@@ -247,6 +246,9 @@ void Nansho3KYOKUScene::run()
 extern "C" void Nansho3KYOKUTask(intptr_t exinf)
 {
   (void)exinf;
-  gNansho3KYOKU.run();
+#if ETROBO_SCENE == 7
+  static Nansho3KYOKUScene scene;
+  scene.run();
+#endif
   ext_tsk();
 }

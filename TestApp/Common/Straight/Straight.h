@@ -136,7 +136,8 @@ public:
                                           float left_rotations,
                                           float right_rotations,
                                           bool stop_at_end = true,
-                                          float tolerance_deg = 1.0f);
+                                          float tolerance_deg = 1.0f,
+                                          float settle_min_power = 5.0f);
   /* 最低回転数まで目標角を補正し、最大回転数以内の到達を保証する。
    * pivot_min_power は補正旋回中に下回らない最低パワー。 */
   bool runForRotationsUntilHeading(float left_power, float right_power,

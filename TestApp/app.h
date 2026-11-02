@@ -43,7 +43,7 @@ extern "C" {
 #endif
 
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE  6
+#define ETROBO_SCENE  1
 #endif
 
 /* タスク優先度 */

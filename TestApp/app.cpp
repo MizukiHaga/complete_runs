@@ -6,7 +6,6 @@
 #include "Nansho2.h"
 #include "Nansho2Kime.h"
 #include "Nansho3.h"
-#include "Nansho3KYOKU.h"
 #include "Test.h"
 #include "FixedRun.h"
 #include "Sumo.h"
@@ -47,7 +46,6 @@ Nansho1Scene gNansho1;
 Nansho2Scene gNansho2;
 Nansho2KimeScene gNansho2Kime;
 Nansho3Scene gNansho3;
-Nansho3KYOKUScene gNansho3KYOKU;
 
 /* === Scene: Test === */
 TestScene gTest;
@@ -108,7 +106,8 @@ void main_task(intptr_t unused)
 #if ETROBO_SCENE == 0
   act_tsk(FIXEDRUN_TASK);
 #elif ETROBO_SCENE == 1 || ETROBO_SCENE == 5
-  act_tsk(NANSHO1_TASK);
+  // act_tsk(NANSHO1_TASK);
+  act_tsk(SUMO_TASK);
 #elif ETROBO_SCENE == ETROBO_SCENE_NANSHO2
   act_tsk(NANSHO2_TASK);
 #elif ETROBO_SCENE == ETROBO_SCENE_NANSHO2KIME

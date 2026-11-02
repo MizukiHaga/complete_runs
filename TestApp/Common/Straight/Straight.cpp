@@ -921,7 +921,8 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
                                                   float left_rotations,
                                                   float right_rotations,
                                                   bool stop_at_end,
-                                                  float tolerance_deg)
+                                                  float tolerance_deg,
+                                                  float settle_min_power)
 {
   const int32_t left_target_deg =
       (int32_t)ceilf(fabsf(left_rotations) * 360.0f);
@@ -1009,7 +1010,8 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
           (left_target_deg > 0) ? left_target_deg : right_target_deg;
       const float progress =
           clampFloat((float)pivot_count / (float)pivot_target, 0.0f, 1.0f);
-      const float ramp = clampFloat(progress / 0.25f, 0.0f, 1.0f);
+      /* 旋回開始直後の加速を長くし、途中で急に基本パワーへ上がらないようにする。 */
+      const float ramp = clampFloat(progress / 0.50f, 0.0f, 1.0f);
       const float decel =
           clampFloat((1.0f - progress) / 0.25f, 0.0f, 1.0f);
       const float profile = 0.55f + 0.45f * ((ramp < decel) ? ramp : decel);
@@ -1024,6 +1026,17 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
           (1.0f - heading_run_power_scale_) * error_ratio;
       left_desired *= power_scale;
       right_desired *= power_scale;
+    }
+    if (!distance_done && pivot_profile) {
+      const float min_pivot_power = clampFloat(settle_min_power, 1.0f, 100.0f);
+      if (left_desired != 0.0f &&
+          fabsf(left_desired) < min_pivot_power) {
+        left_desired = copysignf(min_pivot_power, left_desired);
+      }
+      if (right_desired != 0.0f &&
+          fabsf(right_desired) < min_pivot_power) {
+        right_desired = copysignf(min_pivot_power, right_desired);
+      }
     }
     float sync_correction = 0.0f;
     if (!left_done && !right_done) {
@@ -1063,7 +1076,9 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
     }
     if (distance_done) {
       /* 距離到達後は走行パワーを残さず、角度だけピボットで収束させる。 */
-      const int settle_power = clampInt(abs(heading_diff), 5, 35);
+        const int settle_power = clampInt(
+            (int)roundf(fmaxf((float)abs(heading_diff), settle_min_power)),
+            1, 100);
       if (heading_error > 0.0f) {
         left_desired = -(float)settle_power;
         right_desired = (float)settle_power;
@@ -1357,7 +1372,8 @@ bool Straight::runForRotationsUntilAngle(
   setTargetHeading(target_heading);
   runForRotationsSameTimeWithHeading(
       initial_left_power, initial_right_power,
-      left_rotations, right_rotations, true, tolerance_deg);
+      left_rotations, right_rotations, true, tolerance_deg,
+      (float)pivot_min_power);
 
   if (fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
       tolerance_deg) {
@@ -1365,9 +1381,10 @@ bool Straight::runForRotationsUntilAngle(
   }
 
   if (pivot_on_failure) {
+    const int correction_power = clampInt(pivot_min_power, 1, 100);
     turnToHeading(target_heading, tolerance_deg,
-                  70, 70, pivot_max_ms, 60.0f,
-                  pivot_min_power);
+                  correction_power, correction_power, pivot_max_ms,
+                  correction_power, correction_power);
   }
 
   return fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
