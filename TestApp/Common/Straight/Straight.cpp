@@ -1675,14 +1675,10 @@ void Straight::turnToHeading(float target_heading, float tolerance_deg,
       base = -base;
     }
     if (slow_approach_deg > 0.0f && rem <= slow_approach_deg) {
-      const float full_power = (float)base;
-      const float minimum_power = (slow_power < 0)
-                                      ? (float)-slow_power
-                                      : (float)slow_power;
-      const float approach_ratio = clampFloat(
-          rem / slow_approach_deg, 0.0f, 1.0f);
-      base = (int)roundf(minimum_power +
-                         (full_power - minimum_power) * approach_ratio);
+      base = slow_power;
+      if (base < 0) {
+        base = -base;
+      }
     }
     if (base < TurnEncBalanceMinPower) {
       base = TurnEncBalanceMinPower;

@@ -1260,9 +1260,9 @@ void Nansho3Scene::run()
   const GateSeg yellow = {{4}, {4, 5}}; /* Y連続 */
 #else
   /* Lコース */
-  const GateSeg red    = {{4}, {4, 5}}; /* Y連続 */
-  const GateSeg blue   = {{0, 1}, {2}}; /* X連続 */
-  const GateSeg yellow = {{2}, {3, 4}}; /* Y連続 */
+  const GateSeg red    = {{2}, {3, 4}}; /* Y連続 */
+  const GateSeg blue   = {{3, 4}, {4}}; /* X連続 */
+  const GateSeg yellow = {{1}, {2, 3}}; /* Y連続 */
 #endif
 
   facing_deg_            = 0.0f;

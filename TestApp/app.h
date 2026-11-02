@@ -15,7 +15,7 @@ extern "C" {
 
 /* === 実行シーン切り替え ==========================================
  * ETROBO_SCENE:
- *   0: FixedRun → Sumo → Nansho1 → Nansho2Kime → Nansho3（本番）
+ *   0: FixedRun → Sumo → Nansho2Kime → Nansho3（本番）
  *   1: Nansho1 のみ
  *   2: Nansho2 のみ（取り込み前）
  *   3: HCR のみ
@@ -25,7 +25,7 @@ extern "C" {
  *   7: Nansho3KYOKU（事前曲線計画＋Pure Pursuit。Settings.h参照）
  *   8: FixedRun 完成（FixedRunComplete。ETROBO_COURSE_L で L/R）
  *   9: FixedRun 短縮（FixedRunShort。ETROBO_COURSE_L で L/R）
- *  10: Sumo
+ *  10: Sumo（ETROBO_COURSE_L で L/R）
  *  11: Nansho2Kime（決め打ち）
  * 試合前にここだけ変更する。 */
 #define ETROBO_SCENE_NANSHO2      2
@@ -43,7 +43,7 @@ extern "C" {
 #endif
 
 #ifndef ETROBO_SCENE
-#define ETROBO_SCENE 0
+#define ETROBO_SCENE  6
 #endif
 
 /* タスク優先度 */
