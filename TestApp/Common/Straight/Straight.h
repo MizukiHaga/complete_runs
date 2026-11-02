@@ -99,16 +99,12 @@ public:
    * stop() とは別（stop 中の出力抑止は correction_enabled_ 側）。 */
   void setHeadingCorrection(bool enabled);
 
-<<<<<<< HEAD
   /* true: 1:1 直進の補正をヨー角ではなく左右エンコーダ差にする。
    * 誤差 = 進行方向の (左進み − 右進み) [deg]。左が進みすぎなら左を弱くする。
    * ゲインは setBalancePid の Kp/Ki。false のときは従来のヨー PI。 */
   void setEncoderStraightBalance(bool enabled);
 
   static constexpr uint32_t EncoderStepMs      = 5U;
-=======
-  static constexpr uint32_t EncoderStepMs      = 1U;
->>>>>>> 3166f3a (Nansyo2_kimeuti)
   /* エンコーダ未到達時の安全打ち切り [ms]（距離制御には使わない） */
   static constexpr uint32_t EncoderRunMaxMs    = 8000U;
 
@@ -293,16 +289,11 @@ private:
    * （機械差で片輪だけ進むと並進成分が出るため） */
   static constexpr float TurnEncBalanceKp       = 2.5f;
   static constexpr int   TurnEncBalanceMaxCorr  = 30;
-<<<<<<< HEAD
   static constexpr int   TurnEncBalanceMinPower = 12;
   static constexpr int32_t TurnEncBalanceDeadbandDeg = 0;
   /* 旋回中の左パワー絶対値に加算する（正値が大きいほど左を強める）。
    * 左右どちらの旋回でも適用し、加算後の上限は100。 */
   static constexpr int TurnLeftPowerTrim = 7;
-=======
-  static constexpr int   TurnEncBalanceMinPower = 30;
-  static constexpr int32_t TurnEncBalanceDeadbandDeg = 2;
->>>>>>> 3166f3a (Nansyo2_kimeuti)
 
   static int clampMotorPower(int power);
   static int clampInt(int value, int min_value, int max_value);
@@ -320,17 +311,11 @@ private:
   void resetCorrection();
   void syncStoppedState();
   bool encoderReached(int left_power, int right_power, int32_t target_deg);
-<<<<<<< HEAD
   void captureTurnStopSnapshot(uint32_t elapsed_ms, float gyro_acc,
                                int32_t left_abs, int32_t right_abs);
-=======
-  void runForEachSynchronized(int left_power, int right_power,
-                              int32_t left_target_deg,
-                              int32_t right_target_deg);
   void runForEachSynchronizedFractional(float left_power, float right_power,
                                         int32_t left_target_deg,
                                         int32_t right_target_deg);
->>>>>>> 3166f3a (Nansyo2_kimeuti)
 
   pup_motor_t *left_ = nullptr;
   pup_motor_t *right_ = nullptr;
@@ -349,6 +334,9 @@ private:
   bool    cmd_initialized_  = false;
   bool    correction_enabled_ = true;
   bool    heading_correction_ = true;
+  bool    encoder_straight_   = false;
+  int32_t enc_bal_left_       = 0;
+  int32_t enc_bal_right_      = 0;
   bool    allow_heading_correction_for_ratio_ = false;
   bool    correction_debug_   = false;
   bool    sync_debug_         = false;
@@ -366,6 +354,12 @@ private:
   float   deadband_deg_     = 0.0f;
   int     heading_trim_limit_ = MaxHeadingTrim;
   float   heading_run_power_scale_ = 1.0f;
+
+  uint32_t last_turn_elapsed_ms_   = 0U;
+  float    last_turn_gyro_acc_deg_ = 0.0f;
+  int32_t  last_turn_enc_left_abs_  = 0;
+  int32_t  last_turn_enc_right_abs_ = 0;
+  float    last_turn_heading_deg_  = 0.0f;
 };
 
 #endif  // TESTAPP_STRAIGHT_H_
