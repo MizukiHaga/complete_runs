@@ -113,24 +113,15 @@ void HCR::LineTraceRotation(float left_rotation,float right_rotation, float left
   gLineTracer.setBaseSpeed(left_speed, right_speed);
   gLineTracer.setPid(p,i,d,100.0f);
   gLineTracer.setScale(scale);
-  uint32_t elapsed_ms = 0U;
   while (true) {
     gMotors.setHeadingDebugPhase("HCR::LineTraceRotation");
     gLineTracer.step();
-    gMotors.debugHeading();
     const float moved_left = gMotors.leftRotationCount() - start_left;
     const float moved_right = gMotors.rightRotationCount() - start_right;
-    if ((elapsed_ms % 100U) == 0U) {
-      fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
-              "HCR: LineTraceRotation,moved_left=%.3f,"
-              "moved_right=%.3f,target_left=%.3f,target_right=%.3f\n",
-              moved_left, moved_right, left_rotation, right_rotation);
-    }
     if (moved_left >= left_rotation && moved_right >= right_rotation) {
       fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
-              "HCR: LineTraceRotation,complete,moved_left=%.3f,"
-              "moved_right=%.3f,target_left=%.3f,target_right=%.3f\n",
-              moved_left, moved_right, left_rotation, right_rotation);
+              "HCR: LineTraceRotation,complete,H=%.2f\n",
+              gGyro.heading());
       gLineTracer.setEnabled(false);
       gMotors.stop();
       stp_cyc(LINE_TRACER_TASK_CYC);
@@ -138,7 +129,6 @@ void HCR::LineTraceRotation(float left_rotation,float right_rotation, float left
       return;
     }
     dly_tsk(1 * 1000);
-    ++elapsed_ms;
   }
 }
 // void HCR::LineTrace()

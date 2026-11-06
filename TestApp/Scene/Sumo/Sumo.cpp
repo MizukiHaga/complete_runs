@@ -59,7 +59,7 @@ void SumoScene::run(){
     // 旋回しながら押し出し
     int senkai_power_wiperdetect_outer = 60;
     int senkai_power_wiperdetect_inner = 35;
-    float target_angle_wiperdetect = -150.0f; 
+    float target_angle_wiperdetect = -130.0f; 
     drive_senkai(invert_angle(target_angle_wiperdetect), senkai_power_wiperdetect_outer, senkai_power_wiperdetect_inner, base_tolerance_deg, invert_ccw(true));
 
     // 斜めに黒ラインへ向かう
@@ -97,7 +97,7 @@ void SumoScene::run(){
     drive_chokushin_distance(chokushin_dist_dohyodetect, base_chokushin_power, 0.0f);
 
     // 斜めに黒ラインまで直進
-    float target_angle_dohyodetect = -135.0f;
+    float target_angle_dohyodetect = -120.0f;
     gArm.raise(50,180,1000);
     drive_senkai(invert_angle(target_angle_dohyodetect), base_senkai_power, -base_senkai_power, base_tolerance_deg, invert_ccw(true));
     gArm.lower(-50, 1000, 0);

@@ -102,6 +102,7 @@ private:
   static constexpr uint32_t StepMs = 3U;  /* 制御ループ周期 [ms] */
   static constexpr uint32_t LtMaxMs = 8000U;  /* LT のタイムアウト [ms] */
   static constexpr uint32_t StraightRunMaxMs = 15000U;
+  static constexpr uint32_t BlackDetectionPauseMs = 0U;
 
   /* === 共通（その場旋回） === */
   static constexpr float    TurnSlowApproachDeg   = 15.0f; /* この角度以内で減速旋回 [deg] */
@@ -219,8 +220,8 @@ private:
 
   /* === ① 左向き旋回直後の低速LT（線に乗せる） === */
   static constexpr float    PostBlackSlowTracePower  = 37.0f; /* 低速LT パワー */
-  static constexpr uint32_t PostBlackSlowTraceMs     = 0U;    /* 青検知前の無視時間 [ms] */
-  static constexpr float    PostBlackSlowTraceKp     = 0.30f;
+  static constexpr uint32_t PostBlackSlowTraceMs     = 500U;    /* 青検知前の無視時間 [ms] */
+  static constexpr float    PostBlackSlowTraceKp     = 0.90f;
   static constexpr float    PostBlackSlowTraceKi     = 0.01f;
   static constexpr float    PostBlackSlowTraceKd     = 0.8f;
   static constexpr float    PostBlackSlowTraceOutMax = 100.0f;
@@ -229,7 +230,7 @@ private:
   /* === ① 左向き旋回後LT（SKYBLUE①まで） === */
   static constexpr float    PostBlackTraceLeftPower  = 60.0f;  /* LT 左ベースパワー */
   static constexpr float    PostBlackTraceRightPower = 60.0f; /* LT 右ベースパワー */
-  static constexpr float    PostBlackTraceKp         = 0.55;  /* LT PID: P */
+  static constexpr float    PostBlackTraceKp         = 0.75;  /* LT PID: P */
   static constexpr float    PostBlackTraceKi         = 0.01f;   /* LT PID: I */
   static constexpr float    PostBlackTraceKd         = 0.8f;   /* LT PID: D */
   static constexpr float    PostBlackTraceOutMax     = 100.0f; /* LT PID 出力上限 */
@@ -379,29 +380,33 @@ private:
   /* === 決め打ち用の値 === */
     static constexpr float motor_speed = 100.0f;
     static constexpr float motor_speed_slow = 50.0f;
+    static constexpr float BlackLineForwardRotations = 0.2f;
     /* 0°から±90°へ旋回する主速度。左右の符号はコースに合わせる。 */
-    static constexpr float turn_speed_r = ETROBO_COURSE_L ? -40.0f : 40.0f;
-    static constexpr float turn_speed_l = ETROBO_COURSE_L ? 40.0f : -40.0f;
+    static constexpr float turn_speed_r = ETROBO_COURSE_L ? -45.0f : 45.0f;
+    static constexpr float turn_speed_l = ETROBO_COURSE_L ? 45.0f : -45.0f;
     static constexpr float heading_90 = ETROBO_COURSE_L ? 90.0f : -90.0f;
     static constexpr float heading_180 = 180.0f;
     static constexpr float heading_100_rotation = 9.5f;
     static constexpr float HeadingRunInitialRotations = 0.5f;
     static constexpr uint32_t HeadingBlackLineMaxMs = 15000U;
     static constexpr float heading_170 = ETROBO_COURSE_L ? 140.0f : -140.0f;
-    static constexpr float turn_90_r = ETROBO_COURSE_L ? 0.0f : 0.5f;
-    static constexpr float turn_90_l = ETROBO_COURSE_L ? 0.5f : 0.0f;
+    static constexpr float turn_90_r = ETROBO_COURSE_L ? 0.0f : 0.2f;
+    static constexpr float turn_90_l = ETROBO_COURSE_L ? 0.2f : 0.0f;
     static constexpr float heading_90_diff = ETROBO_COURSE_L ? 89.7f : -89.7f;
-    static constexpr float HeadingRunKp = 2.8f;
+    static constexpr float HeadingRunKp = 1.8f;
     static constexpr float HeadingRunKi = 0.08f;
-    static constexpr float HeadingRunKd = 0.5f;
+    static constexpr float HeadingRunKd = 0.0f;
     static constexpr float HeadingRunIntegralMax = 30.0f;
     static constexpr int HeadingRunTrimLimit = 100;
     static constexpr float HeadingRunPowerScale = 3.0f;
     
-    static constexpr float Heading90RunKp = 2.8f;
-    static constexpr float Heading90RunKi = 1.0f;
+    static constexpr float Heading90RunKp = 3.0f;
+    // static constexpr float Heading90RunKp = 3.2f;
+    static constexpr float Heading90RunKi = 0.3f;
+    // static constexpr float Heading90RunKi = 1.5f;
     static constexpr float Heading90RunKd = 0.0f;
-    static constexpr float Heading90RunCorrectionScale = 2.0f;
+    static constexpr float Heading90RunCorrectionScale = 6.0f;
+    // static constexpr float Heading90RunCorrectionScale = 1.5f;
 
     static constexpr float Heading90RunIntegralMax = 30.0f;
     static constexpr float Heading90RunPowerScale = 0.9f;

@@ -87,8 +87,8 @@ void main_task(intptr_t unused)
   gGyro.init();
   /* 詳細ログは走行タスクを止める可能性があるため、シーン側で必要時だけ有効化する。 */
   gMotors.setDebug(false);
-  // センサーの値を取るための周期タスクを起動する。
-  // 起動すると偶に異常終了する
+  /* Headingログは制御ループ内でBluetooth送信を行うため、
+   * 送信待ちがモーター制御周期を止めないよう通常走行では無効にする。 */
   gMotors.setHeadingDebug(false);
 
   pup_device_t *force_sensor = pup_force_sensor_get_device(force_sensor_port);

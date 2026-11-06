@@ -94,6 +94,8 @@ public:
   void setHeadingDebugPhase(const char *phase);
   /* Bluetooth シリアルへ現在のヨー角を定期出力する。 */
   void debugHeading();
+  /* 制御ループ中に蓄積したHeadingログを停止後に送信する。 */
+  void flushHeadingDebugLog();
 
   /* ヨー角 PI 直進補正の有効/無効。false なら 1:1 直進も open-loop。
    * stop() とは別（stop 中の出力抑止は correction_enabled_ 側）。 */
@@ -137,7 +139,8 @@ public:
                                           float right_rotations,
                                           bool stop_at_end = true,
                                           float tolerance_deg = 1.0f,
-                                          float settle_min_power = 5.0f);
+                                          float settle_min_power = 5.0f,
+                                          bool emit_debug = true);
   /* 最低回転数まで目標角を補正し、最大回転数以内の到達を保証する。
    * pivot_min_power は補正旋回中に下回らない最低パワー。 */
   bool runForRotationsUntilHeading(float left_power, float right_power,
@@ -165,7 +168,8 @@ public:
       float angle_deg, float tolerance_deg = 1.0f,
       bool pivot_on_failure = false, int pivot_min_power = 40,
       uint32_t pivot_max_ms = 3000U,
-      bool allow_negative_power = true);
+      bool allow_negative_power = true,
+      bool emit_debug = true);
   /* 難所2の決め打ち走行用。通常の旋回制御と呼び出し経路を分離する。 */
   bool runForRotationsUntilAngleNansho2Kimeuti(
       float left_power, float right_power,

@@ -102,6 +102,8 @@ void Nansho2KimeScene::beepOnRouteBranchDetected()
 
 void Nansho2KimeScene::beepOnBlackDetected()
 {
+  gMotors.stop();
+  dly_tsk(BlackDetectionPauseMs * 1000U);
 }
 
 void Nansho2KimeScene::beepOnBlueDetected()
@@ -924,24 +926,36 @@ void Nansho2KimeScene::run()
       runLineTraceUntilHeadingThenStraight();
     }else{
       gMotors.setHeadingDebugPhase("HCR::LineTraceRotation");
-      gHCR.LineTraceRotation(1.77f,1.77f,80.0f,80.0f,0.07f,0.0006f,0.5f,10.0f);
+      // gHCR.LineTraceRotation(1.8f,1.8f,80.0f,80.0f,0.07f,0.0006f,0.5f,10.0f);
+      const int32_t left_encoder_before = gMotors.leftEncoderCount();
+      const int32_t right_encoder_before = gMotors.rightEncoderCount();
+      gMotors.runForRotationsSameTime(
+          motor_speed_slow, motor_speed_slow,
+          1.8f,
+          1.8f);
+      const int32_t left_encoder_delta =
+          gMotors.leftEncoderCount() - left_encoder_before;
+      const int32_t right_encoder_delta =
+          gMotors.rightEncoderCount() - right_encoder_before;
+      fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+              "Nansho2: runForRotationsSameTime,left_rot=%.3f,"
+              "right_rot=%.3f\n",
+              (float)left_encoder_delta / 360.0f,
+              (float)right_encoder_delta / 360.0f);
       gMotors.setBalancePid(HeadingRunKp, HeadingRunKi,
                             HeadingRunIntegralMax, 0.0f, HeadingRunKd);
       gMotors.setHeadingTrimLimit(HeadingRunTrimLimit);
       gMotors.setHeadingRunPowerScale(HeadingRunPowerScale);
-      gMotors.setHeadingDebugPhase("Straight::runForRotationsUntilAngle");
       gMotors.runForRotationsUntilAngleNansho2Kimeuti(
         turn_speed_l, turn_speed_r,  // 左右パワー
         turn_90_l, turn_90_r,    // 左右最大回転数
         heading_90,    // gGyro.reset()基準の目標角
-        1.0f,          // 許容誤差
+        0.5f,          // 許容誤差
         true,          // 未達ならピボット補正
         35.0f,            // 最低補正旋回パワー
         5000U,          // 補正最大時間
         true
       );
-      gMotors.stop();
-      dly_tsk(3000 * 1000U);
       gMotors.setTargetHeading(heading_90);
       gMotors.setBalancePid(Heading90RunKp, Heading90RunKi,
                             Heading90RunIntegralMax, 0.0f,
@@ -950,28 +964,44 @@ void Nansho2KimeScene::run()
       gMotors.setHeadingCorrectionScale(Heading90RunCorrectionScale);
       gMotors.setHeadingDebugPhase(
           "Straight::runForRotationsSameTimeWithHeading(initial)");
-      gMotors.runForRotationsSameTimeWithHeading(
-          turn_speed_l, turn_speed_r,
-          HeadingRunInitialRotations, HeadingRunInitialRotations,
-          true, 0.3f, 35.0f);
+      fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+              "AngleControl,Phase=Straight90,Target=%.2f,"
+              "LPower=%.1f,RPower=%.1f,"
+              "Kp=%.3f,Ki=%.3f,Kd=%.3f,Imax=%.2f,"
+              "CorrScale=%.2f,PowerScale=%.2f,MinPower=%.1f\n",
+              heading_90, motor_speed, motor_speed,
+              Heading90RunKp, Heading90RunKi, Heading90RunKd,
+              Heading90RunIntegralMax, Heading90RunCorrectionScale,
+              Heading90RunPowerScale, 35.0f);
+      // gMotors.runForRotationsSameTimeWithHeading(
+      //     turn_speed_l, turn_speed_r,
+      //     HeadingRunInitialRotations, HeadingRunInitialRotations,
+      //     true, 0.3f, 35.0f);
       gMotors.runForRotationsSameTimeWithHeading(
           motor_speed, motor_speed,
-          heading_100_rotation - HeadingRunInitialRotations,
-          heading_100_rotation - HeadingRunInitialRotations,
+          heading_100_rotation,
+          heading_100_rotation,
+          // heading_100_rotation - HeadingRunInitialRotations,
+          // heading_100_rotation - HeadingRunInitialRotations,
           true, 0.3f);
       stp_cyc(LINE_TRACER_TASK_CYC);
       stp_cyc(STRAIGHT_BALANCE_TASK_CYC);
       gMotors.shutdownDebugOutput();
       runStraightAtHeadingUntilBlackLine(heading_90, (int)motor_speed_slow,
                                           (int)motor_speed_slow);
+      // 黒検知位置から低速で指定回転数だけ直進してから旋回する。
+      gMotors.runForRotationsSameTime(
+          motor_speed_slow, motor_speed_slow,
+          BlackLineForwardRotations,
+          BlackLineForwardRotations);
       // 90度直進: 指定角度を維持し、黒線検知で停止
       gMotors.runForRotationsUntilAngleNansho2Kimeuti(
         turn_speed_l, turn_speed_r,  // 左右パワー
         turn_90_l, turn_90_r,    // 左右最大回転数
         180.0f,    // gGyro.reset()基準の目標角
-        1.0f,          // 許容誤差
+        0.5f,          // 許容誤差
         true,          // 未達ならピボット補正
-        30.0f,            // 最低補正旋回パワー
+        35.0f,            // 最低補正旋回パワー
         5000U,          // 補正最大時間
         true
       );

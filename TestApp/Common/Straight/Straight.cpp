@@ -10,6 +10,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 /* pup_motor_get_count() は pbio のサーボ更新ループが動いているときしか値を返さない。
  * set_power (dcmotor duty) を呼ぶとサーボが親から切り離されて更新ループが止まり、
@@ -25,6 +26,40 @@ extern "C" {
 extern Straight gMotors;
 extern Gyro     gGyro;
 extern FILE     *gBluetoothOut;
+
+static constexpr uint32_t KimeSettleMs = 100U;
+static constexpr size_t HeadingLogBufferSize = 16384U;
+static char heading_log_buffer[HeadingLogBufferSize];
+static size_t heading_log_length = 0U;
+static uint32_t heading_log_dropped = 0U;
+
+static void appendHeadingLog(const char *format, ...)
+{
+  if (heading_log_length >= HeadingLogBufferSize - 1U) {
+    ++heading_log_dropped;
+    return;
+  }
+
+  va_list args;
+  va_start(args, format);
+  const int written = vsnprintf(
+      heading_log_buffer + heading_log_length,
+      HeadingLogBufferSize - heading_log_length,
+      format, args);
+  va_end(args);
+  if (written < 0) {
+    return;
+  }
+
+  const size_t available = HeadingLogBufferSize - heading_log_length - 1U;
+  if (static_cast<size_t>(written) > available) {
+    heading_log_length += available;
+    heading_log_buffer[heading_log_length] = '\0';
+    ++heading_log_dropped;
+    return;
+  }
+  heading_log_length += static_cast<size_t>(written);
+}
 
 /* 回転センサの角度 [deg]。取得できなければ 0。 */
 static int32_t tachoDeg(pup_motor_t *motor, bool *valid = nullptr)
@@ -82,6 +117,7 @@ void Straight::shutdownDebugOutput()
   heading_debug_div_ = 0;
   correction_debug_div_ = 0;
   sync_debug_div_ = 0;
+  flushHeadingDebugLog();
 
   FILE *output = gBluetoothOut;
   gBluetoothOut = nullptr;
@@ -107,10 +143,29 @@ void Straight::debugHeading()
     return;
   }
   heading_debug_div_ = 0;
-  fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
-          "Heading,Phase=%s,H=%.2f,T=%.2f,E=%.2f\n",
-          heading_debug_phase_, gGyro.heading(), target_heading_,
-          Gyro::wrapDeg180(gGyro.heading() - target_heading_));
+  appendHeadingLog("Heading,Phase=%s,H=%.2f,T=%.2f,E=%.2f\n",
+                   heading_debug_phase_, gGyro.heading(), target_heading_,
+                   Gyro::wrapDeg180(gGyro.heading() - target_heading_));
+}
+
+void Straight::flushHeadingDebugLog()
+{
+  if (heading_log_length == 0U && heading_log_dropped == 0U) {
+    return;
+  }
+
+  FILE *output = gBluetoothOut != nullptr ? gBluetoothOut : stdout;
+  if (heading_log_length > 0U) {
+    fwrite(heading_log_buffer, 1U, heading_log_length, output);
+  }
+  if (heading_log_dropped > 0U) {
+    fprintf(output, "Heading,log-dropped=%lu\n",
+            (unsigned long)heading_log_dropped);
+  }
+  fflush(output);
+  heading_log_length = 0U;
+  heading_log_dropped = 0U;
+  heading_log_buffer[0] = '\0';
 }
 
 float Straight::clampFloat(float value, float min_value, float max_value)
@@ -705,6 +760,7 @@ void Straight::stop()
   /* 目標角は残す（次 run で現在角を目標に掴み直さない） */
   pup_motor_set_power(left_, 0);
   pup_motor_set_power(right_, 0);
+  flushHeadingDebugLog();
 }
 
 void Straight::brake()
@@ -922,7 +978,8 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
                                                   float right_rotations,
                                                   bool stop_at_end,
                                                   float tolerance_deg,
-                                                  float settle_min_power)
+                                                  float settle_min_power,
+                                                  bool emit_debug)
 {
   const int32_t left_target_deg =
       (int32_t)ceilf(fabsf(left_rotations) * 360.0f);
@@ -972,8 +1029,13 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
     resetEncoderCountNoBrake();
   }
   uint32_t safety_ms = 0U;
+  uint32_t detailed_debug_div = 0U;
+  if (emit_debug && (sync_debug_ || heading_debug_enabled_)) {
+    appendHeadingLog("Heading,start,T=%.2f,H=%.2f,E=%.2f\n",
+                     target_heading_, gGyro.heading(),
+                     Gyro::wrapDeg180(gGyro.heading() - target_heading_));
+  }
   while (safety_ms < EncoderRunMaxMs) {
-    debugHeading();
     const int32_t left_count =
         absEncoderDeg(tachoDeg(left_) - enc_zero_left_);
     const int32_t right_count =
@@ -1003,20 +1065,34 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
         (distance_done || left_done) ? 0.0f : left_base_power;
     float right_desired =
         (distance_done || right_done) ? 0.0f : right_base_power;
+    float pivot_progress = 0.0f;
     if (!distance_done && pivot_profile) {
       const int32_t pivot_count =
           (left_target_deg > 0) ? left_count : right_count;
       const int32_t pivot_target =
           (left_target_deg > 0) ? left_target_deg : right_target_deg;
-      const float progress =
+      pivot_progress =
           clampFloat((float)pivot_count / (float)pivot_target, 0.0f, 1.0f);
-      /* 旋回開始直後の加速を長くし、途中で急に基本パワーへ上がらないようにする。 */
-      const float ramp = clampFloat(progress / 0.50f, 0.0f, 1.0f);
-      const float decel =
-          clampFloat((1.0f - progress) / 0.25f, 0.0f, 1.0f);
-      const float profile = 0.55f + 0.45f * ((ramp < decel) ? ramp : decel);
-      left_desired *= profile;
-      right_desired *= profile;
+      const float start_power =
+          fmaxf(fabsf(left_base_power), fabsf(right_base_power));
+      const float middle_power = fmaxf(start_power - 5.0f, 0.0f);
+      float profile_power;
+      if (pivot_progress <= 0.25f) {
+        const float phase = pivot_progress / 0.25f;
+        profile_power = start_power +
+                        (middle_power - start_power) * phase;
+      } else if (pivot_progress <= 0.75f) {
+        profile_power = middle_power;
+      } else {
+        const float phase = (pivot_progress - 0.75f) / 0.25f;
+        profile_power = middle_power * (1.0f - phase);
+      }
+      if (left_desired != 0.0f) {
+        left_desired = copysignf(profile_power, left_base_power);
+      }
+      if (right_desired != 0.0f) {
+        right_desired = copysignf(profile_power, right_base_power);
+      }
     }
     if (!distance_done && heading_run_power_scale_ < 1.0f) {
       const float error_ratio = clampFloat(fabsf(heading_error) / 15.0f,
@@ -1026,17 +1102,6 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
           (1.0f - heading_run_power_scale_) * error_ratio;
       left_desired *= power_scale;
       right_desired *= power_scale;
-    }
-    if (!distance_done && pivot_profile) {
-      const float min_pivot_power = clampFloat(settle_min_power, 1.0f, 100.0f);
-      if (left_desired != 0.0f &&
-          fabsf(left_desired) < min_pivot_power) {
-        left_desired = copysignf(min_pivot_power, left_desired);
-      }
-      if (right_desired != 0.0f &&
-          fabsf(right_desired) < min_pivot_power) {
-        right_desired = copysignf(min_pivot_power, right_desired);
-      }
     }
     float sync_correction = 0.0f;
     if (!left_done && !right_done) {
@@ -1076,10 +1141,14 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
     }
     if (distance_done) {
       /* 距離到達後は走行パワーを残さず、角度だけピボットで収束させる。 */
+        const int settle_power_limit = clampInt(
+            (int)ceilf(fmaxf(fabsf(left_base_power),
+                             fabsf(right_base_power))) + 5,
+            1, 100);
         const int settle_power = clampInt(
             (int)roundf(fmaxf((float)abs(heading_diff), settle_min_power)),
-            1, 100);
-      if (heading_error > 0.0f) {
+            1, settle_power_limit);
+        if (heading_error > 0.0f) {
         left_desired = -(float)settle_power;
         right_desired = (float)settle_power;
       } else {
@@ -1113,12 +1182,13 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
     const int right_command = nextPower(right_desired, right_fraction);
     pup_motor_set_power(left_, left_command);
     pup_motor_set_power(right_, right_command);
-    if (sync_debug_ && ++sync_debug_div_ >= 10U) {
-      sync_debug_div_ = 0U;
-      fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
-              "SyncH,phase=%s,T=%.2f,H=%.2f,E=%.2f,Hc=%.2f\n",
-              heading_debug_phase_, target_heading_, gGyro.heading(),
-              heading_error, heading_correction);
+    if (emit_debug && (sync_debug_ || heading_debug_enabled_) &&
+        ++detailed_debug_div >= 20U) {
+      detailed_debug_div = 0U;
+      appendHeadingLog("Heading,step,T=%.2f,H=%.2f,E=%.2f,Hc=%.2f,"
+                       "Lcmd=%d,Rcmd=%d\n",
+                       target_heading_, gGyro.heading(), heading_error,
+                       heading_correction, left_command, right_command);
     }
     dly_tsk(EncoderStepMs * 1000U);
     safety_ms += EncoderStepMs;
@@ -1135,23 +1205,17 @@ bool Straight::runForRotationsSameTimeWithHeading(float left_power,
       final_left_count >= left_target_deg &&
       final_right_count >= right_target_deg &&
       fabsf(final_error) <= heading_tolerance;
-  if (sync_debug_ || heading_debug_enabled_) {
-    fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
-            "RunH,done=%s,ms=%lu,L=%ld/%ld,R=%ld/%ld,"
-            "T=%.2f,H=%.2f,E=%.2f\n",
-            completed ? "true" : "false",
-            (unsigned long)safety_ms,
-            (long)final_left_count, (long)left_target_deg,
-            (long)final_right_count, (long)right_target_deg,
-            target_heading_, final_heading, final_error);
+  if (emit_debug && (sync_debug_ || heading_debug_enabled_)) {
+    appendHeadingLog("Heading,end,T=%.2f,H=%.2f,E=%.2f\n",
+                     target_heading_, final_heading, final_error);
   }
-  return completed;
-
+  flushHeadingDebugLog();
   if (stop_at_end) {
     pup_motor_brake(left_);
     pup_motor_brake(right_);
     syncStoppedState();
   }
+  return completed;
 }
 
 void Straight::runForEachSynchronizedFractional(float left_power,
@@ -1236,14 +1300,15 @@ void Straight::runForEachSynchronizedFractional(float left_power,
     pup_motor_set_power(right_, right_command);
     if (sync_debug_ && ++sync_debug_div_ >= 10U) {
       sync_debug_div_ = 0U;
-            fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
-              "Sync,Lcmd=%d,Rcmd=%d,Ldeg=%ld/%ld,Rdeg=%ld/%ld,Lp=%.3f,Rp=%.3f,C=%.2f\n",
-              left_command, right_command,
-              (long)left_count, (long)left_target_deg,
-              (long)right_count, (long)right_target_deg,
-              (float)left_count / (float)left_target_deg,
-              (float)right_count / (float)right_target_deg,
-              sync_correction);
+      appendHeadingLog(
+          "Sync,Lcmd=%d,Rcmd=%d,Ldeg=%ld/%ld,Rdeg=%ld/%ld,"
+          "Lp=%.3f,Rp=%.3f,C=%.2f\n",
+          left_command, right_command,
+          (long)left_count, (long)left_target_deg,
+          (long)right_count, (long)right_target_deg,
+          (float)left_count / (float)left_target_deg,
+          (float)right_count / (float)right_target_deg,
+          sync_correction);
     }
     dly_tsk(EncoderStepMs * 1000U);
     safety_ms += EncoderStepMs;
@@ -1252,6 +1317,7 @@ void Straight::runForEachSynchronizedFractional(float left_power,
   pup_motor_brake(left_);
   pup_motor_brake(right_);
   syncStoppedState();
+  flushHeadingDebugLog();
 }
 
 bool Straight::runForRotationsUntilHeading(float left_power, float right_power,
@@ -1361,22 +1427,35 @@ bool Straight::runForRotationsUntilAngle(
     float left_rotations, float right_rotations,
     float angle_deg, float tolerance_deg,
     bool pivot_on_failure, int pivot_min_power, uint32_t pivot_max_ms,
-    bool allow_negative_power)
+    bool allow_negative_power, bool emit_debug)
 {
   const float target_heading = Gyro::wrapDeg180(angle_deg);
   const float initial_left_power =
       allow_negative_power ? left_power : fabsf(left_power);
   const float initial_right_power =
       allow_negative_power ? right_power : fabsf(right_power);
+  if (emit_debug && (sync_debug_ || heading_debug_enabled_)) {
+    appendHeadingLog("kime,start,T=%.2f,H=%.2f,E=%.2f\n",
+                     target_heading, gGyro.heading(),
+                     Gyro::wrapDeg180(gGyro.heading() - target_heading));
+  }
   /* 指定角度を走行開始時から目標にし、距離走行中もヨー角を補正する。 */
   setTargetHeading(target_heading);
   runForRotationsSameTimeWithHeading(
       initial_left_power, initial_right_power,
       left_rotations, right_rotations, true, tolerance_deg,
-      (float)pivot_min_power);
+      (float)pivot_min_power, false);
 
-  if (fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
-      tolerance_deg) {
+  /* 停止直後の慣性による行き過ぎを確認してから補正の要否を判定する。 */
+  dly_tsk(KimeSettleMs * 1000U);
+  float final_error =
+      Gyro::wrapDeg180(gGyro.heading() - target_heading);
+  if (fabsf(final_error) <= tolerance_deg) {
+    if (emit_debug && (sync_debug_ || heading_debug_enabled_)) {
+      appendHeadingLog("kime,end,T=%.2f,H=%.2f,E=%.2f\n",
+                       target_heading, gGyro.heading(), final_error);
+    }
+    flushHeadingDebugLog();
     return true;
   }
 
@@ -1385,10 +1464,16 @@ bool Straight::runForRotationsUntilAngle(
     turnToHeading(target_heading, tolerance_deg,
                   correction_power, correction_power, pivot_max_ms,
                   correction_power, correction_power);
+    final_error = Gyro::wrapDeg180(gGyro.heading() - target_heading);
   }
 
-  return fabsf(Gyro::wrapDeg180(gGyro.heading() - target_heading)) <=
-         tolerance_deg;
+  const bool completed = fabsf(final_error) <= tolerance_deg;
+  if (emit_debug && (sync_debug_ || heading_debug_enabled_)) {
+    appendHeadingLog("kime,end,T=%.2f,H=%.2f,E=%.2f\n",
+                     target_heading, gGyro.heading(), final_error);
+  }
+  flushHeadingDebugLog();
+  return completed;
 }
 
 bool Straight::runForRotationsUntilAngleNansho2Kimeuti(
@@ -1398,10 +1483,19 @@ bool Straight::runForRotationsUntilAngleNansho2Kimeuti(
     bool pivot_on_failure, int pivot_min_power, uint32_t pivot_max_ms,
     bool allow_negative_power)
 {
-  return runForRotationsUntilAngle(
+  const bool completed = runForRotationsUntilAngle(
       left_power, right_power, left_rotations, right_rotations,
       angle_deg, tolerance_deg, pivot_on_failure, pivot_min_power,
-      pivot_max_ms, allow_negative_power);
+      pivot_max_ms, allow_negative_power, false);
+  if (completed) {
+    const float target_heading = Gyro::wrapDeg180(angle_deg);
+    const float current_heading = gGyro.heading();
+    fprintf(gBluetoothOut != nullptr ? gBluetoothOut : stdout,
+            "KimeComplete,T=%.2f,H=%.2f,E=%.2f\n",
+            target_heading, current_heading,
+            Gyro::wrapDeg180(current_heading - target_heading));
+  }
+  return completed;
 }
 
 void Straight::runBalancedRotationsSameTime(int left_power, int right_power,
